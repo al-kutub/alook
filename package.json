@@ -17,6 +17,7 @@
     "test:shared": "pnpm --filter @alook/shared test",
     "test:cli": "pnpm --filter @alook/cli test",
     "test:web": "pnpm --filter @alook/web test",
+    "test:e2e": "pnpm --filter @alook/web test:e2e",
     "db:migrate": "pnpm --filter @alook/web exec wrangler d1 migrations apply alook-app --local",
     "db:reset": "rm -rf src/web/.wrangler/state && pnpm run db:migrate",
     "test:all": "vitest run"

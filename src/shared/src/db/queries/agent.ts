@@ -71,16 +71,14 @@ export async function deleteAgent(
   id: string,
   workspaceId: string
 ) {
-  return db.transaction(async (tx) => {
-    await tx
-      .delete(agentTaskQueue)
-      .where(eq(agentTaskQueue.agentId, id));
-    const rows = await tx
-      .delete(agent)
-      .where(and(eq(agent.id, id), eq(agent.workspaceId, workspaceId)))
-      .returning();
-    return rows[0] ?? null;
-  });
+  await db
+    .delete(agentTaskQueue)
+    .where(eq(agentTaskQueue.agentId, id));
+  const rows = await db
+    .delete(agent)
+    .where(and(eq(agent.id, id), eq(agent.workspaceId, workspaceId)))
+    .returning();
+  return rows[0] ?? null;
 }
 
 export async function updateAgent(
