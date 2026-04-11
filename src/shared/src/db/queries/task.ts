@@ -215,7 +215,9 @@ export async function cancelTask(db: Database, id: string) {
   return rows[0] ?? null;
 }
 
-export async function failStaleDispatchedTasks(db: Database, staleSeconds = 20) {
+const DEFAULT_STALE_SECONDS = Number(process.env.ALOOK_STALE_DISPATCH_TIMEOUT_S) || 20;
+
+export async function failStaleDispatchedTasks(db: Database, staleSeconds = DEFAULT_STALE_SECONDS) {
   const threshold = new Date(Date.now() - staleSeconds * 1000).toISOString();
   const rows = await db
     .update(agentTaskQueue)

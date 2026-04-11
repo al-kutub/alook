@@ -150,7 +150,8 @@ export async function startDaemon(
     log.info("Shutting down...");
     clearInterval(heartbeatTimer);
     clearInterval(pollTimer);
-    const timeout = setTimeout(() => process.exit(1), 5000);
+    const shutdownMs = Number(process.env.ALOOK_SHUTDOWN_TIMEOUT_MS) || 5000;
+    const timeout = setTimeout(() => process.exit(1), shutdownMs);
     try {
       await client.deregister(allRuntimeIds);
     } catch {
@@ -256,8 +257,8 @@ async function runTask(
     output?: string;
   }[] = [];
   let seq = 0;
-  const BATCH_SIZE = 20;
-  const FLUSH_INTERVAL_MS = 2000;
+  const BATCH_SIZE = Number(process.env.ALOOK_MESSAGE_BATCH_SIZE) || 20;
+  const FLUSH_INTERVAL_MS = Number(process.env.ALOOK_MESSAGE_FLUSH_INTERVAL_MS) || 2000;
 
   const flushMessages = async () => {
     if (pendingMessages.length === 0) return;

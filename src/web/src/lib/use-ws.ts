@@ -3,11 +3,13 @@ import { useEffect, useRef, useCallback } from "react"
 import type { WsMessage } from "@alook/shared"
 
 const isDev = process.env.NODE_ENV === "development"
-const WS_DO_PORT = 8789
+const WS_DO_PORT = Number(process.env.NEXT_PUBLIC_WS_DO_PORT) || 8789
+const WS_RECONNECT_INIT = Number(process.env.NEXT_PUBLIC_WS_RECONNECT_DELAY_MS) || 1000
+const WS_RECONNECT_MAX = Number(process.env.NEXT_PUBLIC_WS_RECONNECT_MAX_DELAY_MS) || 30_000
 
 export function useAgentWs(agentId: string, onMessage: (msg: WsMessage) => void) {
   const wsRef = useRef<WebSocket | null>(null)
-  const reconnectDelay = useRef(1000)
+  const reconnectDelay = useRef(WS_RECONNECT_INIT)
 
   const connect = useCallback(async () => {
     let url: string
@@ -38,7 +40,7 @@ export function useAgentWs(agentId: string, onMessage: (msg: WsMessage) => void)
     wsRef.current = ws
 
     ws.onopen = () => {
-      reconnectDelay.current = 1000
+      reconnectDelay.current = WS_RECONNECT_INIT
       if (authToken) {
         ws.send(JSON.stringify({ type: "auth", token: authToken }))
       }
@@ -55,8 +57,8 @@ export function useAgentWs(agentId: string, onMessage: (msg: WsMessage) => void)
     ws.onerror = () => {}
 
     ws.onclose = () => {
-      const delay = Math.min(reconnectDelay.current, 30_000)
-      reconnectDelay.current = Math.min(delay * 2, 30_000)
+      const delay = Math.min(reconnectDelay.current, WS_RECONNECT_MAX)
+      reconnectDelay.current = Math.min(delay * 2, WS_RECONNECT_MAX)
       setTimeout(connect, delay + Math.random() * 500)
     }
   }, [agentId, onMessage])

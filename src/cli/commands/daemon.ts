@@ -30,7 +30,8 @@ export function daemonCommand(): Command {
     .command("status")
     .description("Show daemon status")
     .action(() => {
-      console.log("check http://localhost:19514/health");
+      const port = process.env.ALOOK_HEALTH_PORT || "19514";
+      console.log(`check http://localhost:${port}/health`);
     });
 
   return cmd;

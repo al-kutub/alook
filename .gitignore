@@ -10,4 +10,6 @@ dist/
 temp/
 docs/
 .DS_Store
+.alook/
+.dev.vars
 plans/
