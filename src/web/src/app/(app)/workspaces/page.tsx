@@ -18,7 +18,11 @@ function randomSuffix(): string {
   return Math.random().toString(36).slice(2, 8)
 }
 
-export default async function WorkspacesPage() {
+export default async function WorkspacesPage({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | undefined>>
+}) {
   const session = await requireSession()
   const { env } = await getCloudflareContext({ async: true })
   const db = createDb((env as Env).DB)
@@ -52,8 +56,9 @@ export default async function WorkspacesPage() {
     workspaces = await queries.workspace.listWorkspaces(db, session.user.id)
   }
 
-  // Single workspace — skip the list page
-  if (workspaces.length === 1) {
+  // Auto-redirect to single workspace only on post-login flow
+  const params = await searchParams
+  if (workspaces.length === 1 && params.auto !== undefined) {
     redirect(`/w/${workspaces[0].slug}/home`)
   }
 

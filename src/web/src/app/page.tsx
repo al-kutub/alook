@@ -3,6 +3,6 @@ import { redirect } from "next/navigation";
 
 export default async function Page() {
   const session = await getSession();
-  if (session) redirect("/workspaces");
+  if (session) redirect("/workspaces?auto");
   redirect("/sign-in");
 }

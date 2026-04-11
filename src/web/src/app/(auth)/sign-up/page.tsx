@@ -33,7 +33,7 @@ function SignUpForm() {
     if (error) {
       setError(error.message ?? "")
     } else {
-      window.location.href = "/workspaces"
+      window.location.href = "/workspaces?auto"
       return
     }
     setLoading(false)
