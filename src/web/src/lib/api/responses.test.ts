@@ -282,7 +282,7 @@ describe("AgentResponse shape", () => {
       maxConcurrentTasks: 3, ...baseFields(),
     });
     expect(Object.keys(res).sort()).toEqual([
-      "created_at", "description", "id", "instructions", "max_concurrent_tasks",
+      "created_at", "description", "email_handle", "id", "instructions", "max_concurrent_tasks",
       "name", "runtime_config", "runtime_id", "runtime_mode", "status",
       "updated_at", "workspace_id",
     ]);
