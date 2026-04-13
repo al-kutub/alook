@@ -42,7 +42,7 @@ export const POST = withAuth(async (req: NextRequest, ctx) => {
     return writeError("agentId, to, and subject are required", 400);
   }
 
-  const agent = await queries.agent.getAgentInWorkspace(db, body.agentId, ws.workspaceId);
+  const agent = await queries.agent.getAgent(db, body.agentId, ws.workspaceId);
   if (!agent) return writeError("agent not found in workspace", 404);
 
   if (!agent.emailHandle) {
@@ -125,6 +125,7 @@ export const POST = withAuth(async (req: NextRequest, ctx) => {
   // Create DB record
   const email = await queries.email.createEmail(db, {
     agentId: body.agentId,
+    workspaceId: ws.workspaceId,
     fromEmail: fromAddress,
     toEmail: body.to,
     subject: body.subject,
