@@ -173,17 +173,17 @@ describe("POST /api/daemon/heartbeat", () => {
     mockUpdateAgentRuntimeHeartbeat.mockResolvedValue(undefined);
     mockMarkStaleRuntimesOffline.mockResolvedValue(undefined);
     mockFailStaleDispatchedTasks.mockResolvedValue([
-      { agentId: "a1" },
-      { agentId: "a2" },
-      { agentId: "a1" },
+      { agentId: "a1", workspaceId: "w1" },
+      { agentId: "a2", workspaceId: "w1" },
+      { agentId: "a1", workspaceId: "w1" },
     ]);
 
     await POST(makeReq({ runtime_id: "rt1" }));
 
     expect(mockFailStaleDispatchedTasks).toHaveBeenCalledOnce();
-    // reconcile called for each unique agentId (a1 and a2)
+    // reconcile called for each unique (agentId, workspaceId) pair
     expect(mockReconcileAgentStatus).toHaveBeenCalledTimes(2);
-    expect(mockReconcileAgentStatus).toHaveBeenCalledWith("a1");
-    expect(mockReconcileAgentStatus).toHaveBeenCalledWith("a2");
+    expect(mockReconcileAgentStatus).toHaveBeenCalledWith("a1", "w1");
+    expect(mockReconcileAgentStatus).toHaveBeenCalledWith("a2", "w1");
   });
 });

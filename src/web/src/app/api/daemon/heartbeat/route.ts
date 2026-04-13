@@ -43,9 +43,12 @@ export const POST = withAuth(async (req: NextRequest, ctx) => {
   const stale = await queries.task.failStaleDispatchedTasks(db);
   if (stale.length > 0) {
     const taskService = new TaskService(db);
-    const agentIds = [...new Set(stale.map((r) => r.agentId))];
-    for (const agentId of agentIds) {
-      await taskService.reconcileAgentStatus(agentId);
+    const seen = new Set<string>();
+    for (const r of stale) {
+      const key = `${r.agentId}:${r.workspaceId}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      await taskService.reconcileAgentStatus(r.agentId, r.workspaceId);
     }
   }
 

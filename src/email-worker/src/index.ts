@@ -88,7 +88,7 @@ export default {
       return
     }
 
-    const whitelisted = await queries.whitelist.isWhitelisted(db, agent.id, message.from)
+    const whitelisted = await queries.whitelist.isWhitelisted(db, agent.id, agent.workspaceId, message.from)
 
     const rawBytes = await new Response(message.raw).arrayBuffer()
     const r2Id = nanoid()
@@ -102,6 +102,7 @@ export default {
     if (whitelisted) {
       await notifyWeb(env, {
         agentId: agent.id,
+        workspaceId: agent.workspaceId,
         r2Key,
         from: message.from,
         to: message.to,
@@ -121,6 +122,7 @@ export default {
 
       await notifyWeb(env, {
         agentId: agent.id,
+        workspaceId: agent.workspaceId,
         r2Key,
         from: message.from,
         to: message.to,

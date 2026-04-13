@@ -9,11 +9,14 @@ export async function POST(req: NextRequest) {
   const { env } = getCloudflareContext()
   const db = createDb((env as Env).DB)
 
-  let body: { agentId: string; r2Key: string; from: string; to?: string; subject: string; isWhitelisted: boolean; forwarded?: boolean }
+  let body: { agentId: string; workspaceId: string; r2Key: string; from: string; to?: string; subject: string; isWhitelisted: boolean; forwarded?: boolean }
   try { body = await req.json() } catch { return writeError("invalid body", 400) }
+
+  const agent = await queries.agent.getAgent(db, body.agentId, body.workspaceId)
 
   await queries.email.createEmail(db, {
     agentId: body.agentId,
+    workspaceId: body.workspaceId,
     fromEmail: body.from,
     toEmail: body.to ?? "",
     subject: body.subject,
@@ -21,8 +24,6 @@ export async function POST(req: NextRequest) {
     isWhitelisted: body.isWhitelisted,
     forwarded: body.forwarded ?? false,
   })
-
-  const agent = await queries.agent.getAgent(db, body.agentId)
 
   if (body.isWhitelisted && agent && agent.runtimeId) {
     const conv = await queries.conversation.createConversation(db, {

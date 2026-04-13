@@ -2,16 +2,7 @@ import { eq, and, desc } from "drizzle-orm";
 import { agent, agentTaskQueue } from "../schema";
 import type { Database } from "../index";
 
-export async function getAgent(db: Database, id: string) {
-  const rows = await db.select().from(agent).where(eq(agent.id, id));
-  return rows[0] ?? null;
-}
-
-export async function getAgentInWorkspace(
-  db: Database,
-  id: string,
-  workspaceId: string
-) {
+export async function getAgent(db: Database, id: string, workspaceId: string) {
   const rows = await db
     .select()
     .from(agent)
@@ -75,7 +66,7 @@ export async function deleteAgent(
 ) {
   await db
     .delete(agentTaskQueue)
-    .where(eq(agentTaskQueue.agentId, id));
+    .where(and(eq(agentTaskQueue.agentId, id), eq(agentTaskQueue.workspaceId, workspaceId)));
   const rows = await db
     .delete(agent)
     .where(and(eq(agent.id, id), eq(agent.workspaceId, workspaceId)))
@@ -105,12 +96,13 @@ export async function updateAgent(
 export async function updateAgentStatus(
   db: Database,
   id: string,
+  workspaceId: string,
   status: string
 ) {
   const rows = await db
     .update(agent)
     .set({ status, updatedAt: new Date().toISOString() })
-    .where(eq(agent.id, id))
+    .where(and(eq(agent.id, id), eq(agent.workspaceId, workspaceId)))
     .returning();
   return rows[0] ?? null;
 }

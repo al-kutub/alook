@@ -89,8 +89,8 @@ export const POST = withAuth(async (req: NextRequest, ctx) => {
 
   if (runtime.status === "online") {
     const taskService = new TaskService(db);
-    await taskService.reconcileAgentStatus(newAgent.id);
-    const updated = await queries.agent.getAgentInWorkspace(
+    await taskService.reconcileAgentStatus(newAgent.id, ws.workspaceId);
+    const updated = await queries.agent.getAgent(
       db,
       newAgent.id,
       ws.workspaceId

@@ -5,6 +5,8 @@ import {
   uniqueIndex,
   index,
   unique,
+  primaryKey,
+  foreignKey,
 } from "drizzle-orm/sqlite-core";
 import { sql } from "drizzle-orm";
 import { nanoid } from "nanoid";
@@ -68,7 +70,7 @@ export const verification = sqliteTable("verification", {
 // ---------------------------------------------------------------------------
 
 export const workspace = sqliteTable("workspace", {
-  id: text("id").primaryKey().$defaultFn(() => nanoid()),
+  id: text("id").primaryKey().$defaultFn(() => "sp_" + nanoid()),
   name: text("name").notNull(),
   slug: text("slug").unique().notNull(),
   createdAt: text("created_at").notNull().$defaultFn(() => new Date().toISOString()),
@@ -118,57 +120,73 @@ export const agentRuntime = sqliteTable(
   ]
 );
 
-export const agent = sqliteTable("agent", {
-  id: text("id").primaryKey().$defaultFn(() => nanoid()),
-  workspaceId: text("workspace_id")
-    .notNull()
-    .references(() => workspace.id, { onDelete: "cascade" }),
-  name: text("name").notNull(),
-  description: text("description").notNull().default(""),
-  instructions: text("instructions").notNull().default(""),
-  avatarUrl: text("avatar_url"),
-  runtimeId: text("runtime_id").references(() => agentRuntime.id),
-  runtimeMode: text("runtime_mode").notNull().default("local"),
-  runtimeConfig: text("runtime_config", { mode: "json" }),
-  visibility: text("visibility").notNull().default("private"),
-  status: text("status").notNull().default("idle"),
-  maxConcurrentTasks: integer("max_concurrent_tasks").notNull().default(6),
-  ownerId: text("owner_id").references(() => user.id),
-  tools: text("tools", { mode: "json" }),
-  triggers: text("triggers", { mode: "json" }),
-  emailHandle: text("email_handle").unique(),
-  forwardToEmail: text("forward_to_email").default(""),
-  createdAt: text("created_at").notNull().$defaultFn(() => new Date().toISOString()),
-  updatedAt: text("updated_at").notNull().$defaultFn(() => new Date().toISOString()),
-});
+export const agent = sqliteTable(
+  "agent",
+  {
+    id: text("id").notNull().$defaultFn(() => "ag_" + nanoid(8)),
+    workspaceId: text("workspace_id")
+      .notNull()
+      .references(() => workspace.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    description: text("description").notNull().default(""),
+    instructions: text("instructions").notNull().default(""),
+    avatarUrl: text("avatar_url"),
+    runtimeId: text("runtime_id").references(() => agentRuntime.id),
+    runtimeMode: text("runtime_mode").notNull().default("local"),
+    runtimeConfig: text("runtime_config", { mode: "json" }),
+    visibility: text("visibility").notNull().default("private"),
+    status: text("status").notNull().default("idle"),
+    maxConcurrentTasks: integer("max_concurrent_tasks").notNull().default(6),
+    ownerId: text("owner_id").references(() => user.id),
+    tools: text("tools", { mode: "json" }),
+    triggers: text("triggers", { mode: "json" }),
+    emailHandle: text("email_handle").unique(),
+    forwardToEmail: text("forward_to_email").default(""),
+    createdAt: text("created_at").notNull().$defaultFn(() => new Date().toISOString()),
+    updatedAt: text("updated_at").notNull().$defaultFn(() => new Date().toISOString()),
+  },
+  (t) => [primaryKey({ columns: [t.id, t.workspaceId] })]
+);
 
 export const agentWhitelist = sqliteTable(
   "agent_whitelist",
   {
     id: text("id").primaryKey().$defaultFn(() => nanoid()),
-    agentId: text("agent_id")
-      .notNull()
-      .references(() => agent.id, { onDelete: "cascade" }),
+    agentId: text("agent_id").notNull(),
+    workspaceId: text("workspace_id").notNull(),
     email: text("email").notNull(),
     createdAt: text("created_at").notNull().$defaultFn(() => new Date().toISOString()),
   },
-  (t) => [unique("agent_whitelist_agent_email").on(t.agentId, t.email)]
+  (t) => [
+    unique("agent_whitelist_agent_ws_email").on(t.agentId, t.workspaceId, t.email),
+    foreignKey({
+      columns: [t.agentId, t.workspaceId],
+      foreignColumns: [agent.id, agent.workspaceId],
+    }).onDelete("cascade"),
+  ]
 );
 
-export const conversation = sqliteTable("conversation", {
-  id: text("id").primaryKey().$defaultFn(() => nanoid()),
-  workspaceId: text("workspace_id")
-    .notNull()
-    .references(() => workspace.id, { onDelete: "cascade" }),
-  agentId: text("agent_id")
-    .notNull()
-    .references(() => agent.id, { onDelete: "cascade" }),
-  userId: text("user_id")
-    .notNull()
-    .references(() => user.id, { onDelete: "cascade" }),
-  title: text("title").notNull().default(""),
-  createdAt: text("created_at").notNull().$defaultFn(() => new Date().toISOString()),
-});
+export const conversation = sqliteTable(
+  "conversation",
+  {
+    id: text("id").primaryKey().$defaultFn(() => nanoid()),
+    workspaceId: text("workspace_id")
+      .notNull()
+      .references(() => workspace.id, { onDelete: "cascade" }),
+    agentId: text("agent_id").notNull(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    title: text("title").notNull().default(""),
+    createdAt: text("created_at").notNull().$defaultFn(() => new Date().toISOString()),
+  },
+  (t) => [
+    foreignKey({
+      columns: [t.agentId, t.workspaceId],
+      foreignColumns: [agent.id, agent.workspaceId],
+    }).onDelete("cascade"),
+  ]
+);
 
 export const message = sqliteTable("message", {
   id: text("id").primaryKey().$defaultFn(() => nanoid()),
@@ -185,9 +203,7 @@ export const agentTaskQueue = sqliteTable(
   "agent_task_queue",
   {
     id: text("id").primaryKey().$defaultFn(() => nanoid()),
-    agentId: text("agent_id")
-      .notNull()
-      .references(() => agent.id, { onDelete: "cascade" }),
+    agentId: text("agent_id").notNull(),
     runtimeId: text("runtime_id")
       .notNull()
       .references(() => agentRuntime.id),
@@ -216,6 +232,10 @@ export const agentTaskQueue = sqliteTable(
     index("idx_task_queue_pending")
       .on(t.agentId, t.status)
       .where(sql`status IN ('queued', 'dispatched')`),
+    foreignKey({
+      columns: [t.agentId, t.workspaceId],
+      foreignColumns: [agent.id, agent.workspaceId],
+    }).onDelete("cascade"),
   ]
 );
 
@@ -238,21 +258,29 @@ export const taskMessage = sqliteTable(
   (t) => [index("idx_task_message_task_seq").on(t.taskId, t.seq)]
 );
 
-export const emails = sqliteTable("emails", {
-  id: text("id").primaryKey().$defaultFn(() => nanoid()),
-  agentId: text("agent_id")
-    .notNull()
-    .references(() => agent.id, { onDelete: "cascade" }),
-  fromEmail: text("from_email").notNull(),
-  toEmail: text("to_email").notNull(),
-  subject: text("subject").notNull().default(""),
-  r2Key: text("r2_key").notNull(),
-  isWhitelisted: integer("is_whitelisted", { mode: "boolean" }).notNull().default(false),
-  forwarded: integer("forwarded", { mode: "boolean" }).notNull().default(false),
-  htmlBody: text("html_body").notNull().default(""),
-  attachments: text("attachments").notNull().default("[]"),
-  createdAt: text("created_at").notNull().$defaultFn(() => new Date().toISOString()),
-});
+export const emails = sqliteTable(
+  "emails",
+  {
+    id: text("id").primaryKey().$defaultFn(() => nanoid()),
+    agentId: text("agent_id").notNull(),
+    workspaceId: text("workspace_id").notNull(),
+    fromEmail: text("from_email").notNull(),
+    toEmail: text("to_email").notNull(),
+    subject: text("subject").notNull().default(""),
+    r2Key: text("r2_key").notNull(),
+    isWhitelisted: integer("is_whitelisted", { mode: "boolean" }).notNull().default(false),
+    forwarded: integer("forwarded", { mode: "boolean" }).notNull().default(false),
+    htmlBody: text("html_body").notNull().default(""),
+    attachments: text("attachments").notNull().default("[]"),
+    createdAt: text("created_at").notNull().$defaultFn(() => new Date().toISOString()),
+  },
+  (t) => [
+    foreignKey({
+      columns: [t.agentId, t.workspaceId],
+      foreignColumns: [agent.id, agent.workspaceId],
+    }).onDelete("cascade"),
+  ]
+);
 
 export const machineToken = sqliteTable(
   "machine_token",

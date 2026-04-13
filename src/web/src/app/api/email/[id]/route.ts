@@ -18,7 +18,7 @@ export const GET = withAuth(async (req, ctx) => {
   const email = await queries.email.getEmailById(db, id);
   if (!email) return writeError("email not found", 404);
 
-  const agent = await queries.agent.getAgentInWorkspace(db, email.agentId, ws.workspaceId);
+  const agent = await queries.agent.getAgent(db, email.agentId, ws.workspaceId);
   if (!agent) return writeError("email not found", 404);
 
   return writeJSON(emailToResponse(email));

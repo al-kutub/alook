@@ -4,14 +4,14 @@ vi.mock("@opennextjs/cloudflare", () => ({
   getCloudflareContext: vi.fn(() => ({ env: { DB: {} } })),
 }));
 
-const mockGetAgentInWorkspace = vi.fn();
+const mockGetAgent = vi.fn();
 const mockListConversationsByAgent = vi.fn();
 
 vi.mock("@alook/shared", () => ({
   createDb: vi.fn(() => ({})),
   queries: {
     agent: {
-      getAgentInWorkspace: (...args: unknown[]) => mockGetAgentInWorkspace(...args),
+      getAgent: (...args: unknown[]) => mockGetAgent(...args),
     },
     conversation: {
       listConversationsByAgent: (...args: unknown[]) => mockListConversationsByAgent(...args),
@@ -40,7 +40,7 @@ beforeEach(() => vi.clearAllMocks());
 
 describe("GET /api/agents/[id]/conversations", () => {
   it("returns 200 with filtered conversations", async () => {
-    mockGetAgentInWorkspace.mockResolvedValue({ id: "a1", name: "Agent 1" });
+    mockGetAgent.mockResolvedValue({ id: "a1", name: "Agent 1" });
     mockListConversationsByAgent.mockResolvedValue([
       { id: "c1", title: "Conv 1" },
       { id: "c2", title: "Conv 2" },
@@ -59,7 +59,7 @@ describe("GET /api/agents/[id]/conversations", () => {
   });
 
   it("returns 404 for non-existent agent", async () => {
-    mockGetAgentInWorkspace.mockResolvedValue(null);
+    mockGetAgent.mockResolvedValue(null);
 
     const req = new NextRequest("http://localhost/api/agents/a1/conversations");
     const ctx = { params: Promise.resolve({ id: "a1" }) };
@@ -71,7 +71,7 @@ describe("GET /api/agents/[id]/conversations", () => {
   });
 
   it("returns empty array for agent with no conversations", async () => {
-    mockGetAgentInWorkspace.mockResolvedValue({ id: "a1", name: "Agent 1" });
+    mockGetAgent.mockResolvedValue({ id: "a1", name: "Agent 1" });
     mockListConversationsByAgent.mockResolvedValue([]);
 
     const req = new NextRequest("http://localhost/api/agents/a1/conversations");

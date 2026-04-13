@@ -22,7 +22,7 @@ function nanoid() {
  */
 export function seedTestData(): TestSeed {
   const userId = `u_${nanoid()}`
-  const workspaceId = `ws_${nanoid()}`
+  const workspaceId = `sp_${nanoid()}`
   const memberId = `mb_${nanoid()}`
   const runtimeId = `rt_${nanoid()}`
   const agentId = `ag_${nanoid()}`

@@ -44,7 +44,7 @@ export async function getTaskStatus(db: Database, id: string) {
   return rows[0]?.status ?? null;
 }
 
-export async function claimTask(db: Database, agentId: string) {
+export async function claimTask(db: Database, agentId: string, workspaceId: string) {
   // Step 1: Get conversations that have active (dispatched/running) tasks
   const activeConversations = await db
     .select({ conversationId: agentTaskQueue.conversationId })
@@ -52,6 +52,7 @@ export async function claimTask(db: Database, agentId: string) {
     .where(
       and(
         eq(agentTaskQueue.agentId, agentId),
+        eq(agentTaskQueue.workspaceId, workspaceId),
         inArray(agentTaskQueue.status, ["dispatched", "running"])
       )
     );
@@ -65,6 +66,7 @@ export async function claimTask(db: Database, agentId: string) {
     .where(
       and(
         eq(agentTaskQueue.agentId, agentId),
+        eq(agentTaskQueue.workspaceId, workspaceId),
         eq(agentTaskQueue.status, "queued"),
         ...(activeConvIds.length > 0
           ? [notInArray(agentTaskQueue.conversationId, activeConvIds)]
@@ -230,7 +232,7 @@ export async function failStaleDispatchedTasks(db: Database, staleSeconds = DEFA
         lt(agentTaskQueue.dispatchedAt, threshold)
       )
     )
-    .returning({ agentId: agentTaskQueue.agentId });
+    .returning({ agentId: agentTaskQueue.agentId, workspaceId: agentTaskQueue.workspaceId });
   return rows;
 }
 
@@ -244,13 +246,14 @@ export async function deleteTasksByConversation(
     .returning({ id: agentTaskQueue.id });
 }
 
-export async function countRunningTasks(db: Database, agentId: string) {
+export async function countRunningTasks(db: Database, agentId: string, workspaceId: string) {
   const rows = await db
     .select({ value: count() })
     .from(agentTaskQueue)
     .where(
       and(
         eq(agentTaskQueue.agentId, agentId),
+        eq(agentTaskQueue.workspaceId, workspaceId),
         inArray(agentTaskQueue.status, ["dispatched", "running"])
       )
     );

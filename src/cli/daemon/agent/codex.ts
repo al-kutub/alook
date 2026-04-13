@@ -180,7 +180,6 @@ export class CodexBackend implements AgentBackend {
 
       switch (method) {
         case "turn/started": {
-          pushMessage({ type: "status", status: "turn_start" });
           break;
         }
 
@@ -288,7 +287,6 @@ export class CodexBackend implements AgentBackend {
 
       switch (eventType) {
         case "task_started":
-          pushMessage({ type: "status", status: "running" });
           break;
 
         case "agent_message": {

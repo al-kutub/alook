@@ -6,7 +6,7 @@ vi.mock("@opennextjs/cloudflare", () => ({
 
 const mockListAgents = vi.fn();
 const mockCreateAgent = vi.fn();
-const mockGetAgentInWorkspace = vi.fn();
+const mockGetAgent = vi.fn();
 const mockGetAgentRuntimeForWorkspace = vi.fn();
 
 vi.mock("@alook/shared", () => ({
@@ -15,7 +15,7 @@ vi.mock("@alook/shared", () => ({
     agent: {
       listAgents: (...args: unknown[]) => mockListAgents(...args),
       createAgent: (...args: unknown[]) => mockCreateAgent(...args),
-      getAgentInWorkspace: (...args: unknown[]) => mockGetAgentInWorkspace(...args),
+      getAgent: (...args: unknown[]) => mockGetAgent(...args),
     },
     runtime: {
       getAgentRuntimeForWorkspace: (...args: unknown[]) => mockGetAgentRuntimeForWorkspace(...args),
@@ -128,7 +128,7 @@ describe("POST /api/agents", () => {
   it("creates agent with reconcile when runtime is online", async () => {
     mockGetAgentRuntimeForWorkspace.mockResolvedValue({ status: "online", runtimeMode: "local" });
     mockCreateAgent.mockResolvedValue({ id: "a1", name: "New Agent" });
-    mockGetAgentInWorkspace.mockResolvedValue({ id: "a1", name: "Reconciled Agent" });
+    mockGetAgent.mockResolvedValue({ id: "a1", name: "Reconciled Agent" });
 
     const req = new NextRequest("http://localhost/api/agents", {
       method: "POST",
@@ -138,7 +138,7 @@ describe("POST /api/agents", () => {
     const body = await res.json();
 
     expect(res.status).toBe(201);
-    expect(mockReconcileAgentStatus).toHaveBeenCalledWith("a1");
+    expect(mockReconcileAgentStatus).toHaveBeenCalledWith("a1", "w1");
     expect(body).toEqual({ id: "a1", name: "Reconciled Agent" });
   });
 

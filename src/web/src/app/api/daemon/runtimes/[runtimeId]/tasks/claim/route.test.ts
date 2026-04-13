@@ -126,7 +126,7 @@ describe("POST /api/daemon/runtimes/[runtimeId]/tasks/claim", () => {
       runtime_config: { model: "gpt-4" },
     });
     expect(body.task.prior_session_id).toBe("sess1");
-    expect(mockGetAgent).toHaveBeenCalledWith({}, "a1");
+    expect(mockGetAgent).toHaveBeenCalledWith({}, "a1", "w1");
     expect(mockGetLastTaskSession).toHaveBeenCalledWith({}, "a1", "conv1");
   });
 });

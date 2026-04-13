@@ -4,7 +4,7 @@ vi.mock("@opennextjs/cloudflare", () => ({
   getCloudflareContext: vi.fn(() => ({ env: { DB: {} } })),
 }));
 
-const mockGetAgentInWorkspace = vi.fn();
+const mockGetAgent = vi.fn();
 const mockDeleteAgent = vi.fn();
 const mockUpdateAgent = vi.fn();
 
@@ -12,7 +12,7 @@ vi.mock("@alook/shared", () => ({
   createDb: vi.fn(() => ({})),
   queries: {
     agent: {
-      getAgentInWorkspace: (...args: unknown[]) => mockGetAgentInWorkspace(...args),
+      getAgent: (...args: unknown[]) => mockGetAgent(...args),
       deleteAgent: (...args: unknown[]) => mockDeleteAgent(...args),
       updateAgent: (...args: unknown[]) => mockUpdateAgent(...args),
     },
@@ -40,7 +40,7 @@ beforeEach(() => vi.clearAllMocks());
 
 describe("GET /api/agents/[id]", () => {
   it("returns agent", async () => {
-    mockGetAgentInWorkspace.mockResolvedValue({ id: "a1", name: "Agent 1" });
+    mockGetAgent.mockResolvedValue({ id: "a1", name: "Agent 1" });
 
     const req = new NextRequest("http://localhost/api/agents/a1");
     const ctx = { params: Promise.resolve({ id: "a1" }) };
@@ -52,7 +52,7 @@ describe("GET /api/agents/[id]", () => {
   });
 
   it("returns 404 when not found", async () => {
-    mockGetAgentInWorkspace.mockResolvedValue(null);
+    mockGetAgent.mockResolvedValue(null);
 
     const req = new NextRequest("http://localhost/api/agents/a1");
     const ctx = { params: Promise.resolve({ id: "a1" }) };

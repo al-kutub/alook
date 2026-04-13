@@ -21,7 +21,7 @@ export const POST = withAuth(async (_req, ctx) => {
     return writeJSON({ task: null });
   }
 
-  const agent = await queries.agent.getAgent(db, task.agentId);
+  const agent = await queries.agent.getAgent(db, task.agentId, task.workspaceId);
   const priorSession = await queries.task.getLastTaskSession(
     db,
     task.agentId,

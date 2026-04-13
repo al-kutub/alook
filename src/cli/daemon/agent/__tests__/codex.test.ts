@@ -317,7 +317,7 @@ describe("CodexBackend", () => {
     mock.proc.emit("close", 0);
 
     const messages = await collectMessages(session.messages);
-    expect(messages).toContainEqual({ type: "status", status: "running" });
+    expect(messages).not.toContainEqual(expect.objectContaining({ type: "status" }));
   });
 
   it("legacy codex/event — agent_message emits MessageText", async () => {
@@ -403,7 +403,7 @@ describe("CodexBackend", () => {
     mock.proc.emit("close", 0);
 
     const messages = await collectMessages(session.messages);
-    expect(messages).toContainEqual({ type: "status", status: "turn_start" });
+    expect(messages).not.toContainEqual(expect.objectContaining({ type: "status" }));
   });
 
   it("raw protocol — turn/completed with completed triggers turn done", async () => {
@@ -545,8 +545,8 @@ describe("CodexBackend", () => {
     mock.proc.emit("close", 0);
 
     const messages = await collectMessages(session.messages);
-    expect(messages).toContainEqual({ type: "status", status: "running" });
-    expect(messages).not.toContainEqual({ type: "status", status: "turn_start" });
+    // Legacy event processed but no status messages emitted; raw event ignored
+    expect(messages).not.toContainEqual(expect.objectContaining({ type: "status" }));
   });
 
   it("first raw event locks protocol to raw", async () => {
@@ -559,7 +559,8 @@ describe("CodexBackend", () => {
     mock.proc.emit("close", 0);
 
     const messages = await collectMessages(session.messages);
-    expect(messages).toContainEqual({ type: "status", status: "turn_start" });
+    // Raw event processed but no status messages emitted; legacy event ignored
+    expect(messages).not.toContainEqual(expect.objectContaining({ type: "status" }));
     expect(messages).not.toContainEqual({ type: "text", content: "ignored" });
   });
 

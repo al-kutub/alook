@@ -15,7 +15,7 @@ export class TaskService {
     workspaceId: string,
     prompt: string
   ) {
-    const agent = await agentQueries.getAgent(this.db, agentId);
+    const agent = await agentQueries.getAgent(this.db, agentId, workspaceId);
     if (!agent) {
       throw new Error("agent not found");
     }
@@ -33,23 +33,23 @@ export class TaskService {
     });
   }
 
-  async claimTask(agentId: string) {
-    const agent = await agentQueries.getAgent(this.db, agentId);
+  async claimTask(agentId: string, workspaceId: string) {
+    const agent = await agentQueries.getAgent(this.db, agentId, workspaceId);
     if (!agent) {
       return null;
     }
 
-    const running = await taskQueries.countRunningTasks(this.db, agentId);
+    const running = await taskQueries.countRunningTasks(this.db, agentId, workspaceId);
     if (running >= agent.maxConcurrentTasks) {
       return null;
     }
 
-    const task = await taskQueries.claimTask(this.db, agentId);
+    const task = await taskQueries.claimTask(this.db, agentId, workspaceId);
     if (!task) {
       return null;
     }
 
-    await agentQueries.updateAgentStatus(this.db, agentId, "working");
+    await agentQueries.updateAgentStatus(this.db, agentId, workspaceId, "working");
     return task;
   }
 
@@ -61,12 +61,13 @@ export class TaskService {
     const triedAgents = new Set<string>();
 
     for (const candidate of tasks) {
-      if (triedAgents.has(candidate.agentId)) {
+      const key = `${candidate.agentId}:${candidate.workspaceId}`;
+      if (triedAgents.has(key)) {
         continue;
       }
-      triedAgents.add(candidate.agentId);
+      triedAgents.add(key);
 
-      const task = await this.claimTask(candidate.agentId);
+      const task = await this.claimTask(candidate.agentId, candidate.workspaceId);
       if (task && task.runtimeId === runtimeId) {
         return task;
       }
@@ -120,7 +121,7 @@ export class TaskService {
       });
     }
 
-    await this.reconcileAgentStatus(task.agentId);
+    await this.reconcileAgentStatus(task.agentId, task.workspaceId);
     return task;
   }
 
@@ -143,13 +144,13 @@ export class TaskService {
       });
     }
 
-    await this.reconcileAgentStatus(task.agentId);
+    await this.reconcileAgentStatus(task.agentId, task.workspaceId);
     return task;
   }
 
-  async reconcileAgentStatus(agentId: string) {
-    const running = await taskQueries.countRunningTasks(this.db, agentId);
+  async reconcileAgentStatus(agentId: string, workspaceId: string) {
+    const running = await taskQueries.countRunningTasks(this.db, agentId, workspaceId);
     const status = running > 0 ? "working" : "idle";
-    await agentQueries.updateAgentStatus(this.db, agentId, status);
+    await agentQueries.updateAgentStatus(this.db, agentId, workspaceId, status);
   }
 }

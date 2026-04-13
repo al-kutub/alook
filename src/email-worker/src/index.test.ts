@@ -9,7 +9,7 @@ vi.mock("nanoid", () => ({
 
 // Mock @alook/shared at module level — the handler never touches Drizzle
 const mockGetAgentByHandle = vi.fn<(db: unknown, handle: unknown) => unknown>()
-const mockIsWhitelisted = vi.fn<(db: unknown, agentId: unknown, email: unknown) => unknown>()
+const mockIsWhitelisted = vi.fn<(db: unknown, agentId: unknown, workspaceId: unknown, email: unknown) => unknown>()
 const mockGetUser = vi.fn<(db: unknown, id: unknown) => unknown>()
 const mockCreateDb = vi.fn<(d1: unknown) => Record<string, unknown>>().mockReturnValue({})
 
@@ -21,7 +21,7 @@ vi.mock("@alook/shared", () => ({
   },
   queries: {
     agent: { getAgentByHandle: (db: unknown, handle: unknown) => mockGetAgentByHandle(db, handle) },
-    whitelist: { isWhitelisted: (db: unknown, agentId: unknown, email: unknown) => mockIsWhitelisted(db, agentId, email) },
+    whitelist: { isWhitelisted: (db: unknown, agentId: unknown, workspaceId: unknown, email: unknown) => mockIsWhitelisted(db, agentId, workspaceId, email) },
     user: { getUser: (db: unknown, id: unknown) => mockGetUser(db, id) },
   },
 }))
@@ -150,6 +150,7 @@ describe("whitelisted path", () => {
     expect(init.method).toBe("POST")
     const body = JSON.parse(init.body)
     expect(body.agentId).toBe("agent-1")
+    expect(body.workspaceId).toBe("ws-1")
     expect(body.r2Key).toBe("emails/mock-id-1/raw")
     expect(body.from).toBe("owner@example.com")
     expect(body.subject).toBe("Hello")

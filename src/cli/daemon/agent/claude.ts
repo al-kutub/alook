@@ -143,11 +143,6 @@ export class ClaudeBackend implements AgentBackend {
               const sid = event.session_id as string | undefined;
               if (sid) lastSessionId = sid;
             }
-            pushMessage({
-              type: "status",
-              status: subtype || "system",
-              content: JSON.stringify(event),
-            });
             break;
           }
 

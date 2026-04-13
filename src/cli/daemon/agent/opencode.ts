@@ -81,11 +81,6 @@ export class OpenCodeBackend implements AgentBackend {
           case "session": {
             const sessionId = event.session_id as string | undefined;
             if (sessionId) lastSessionId = sessionId;
-            pushMessage({
-              type: "status",
-              status: "session",
-              content: sessionId,
-            });
             break;
           }
 
