@@ -1,4 +1,10 @@
+-- Alook schema — single merged migration
+-- Tables match src/shared/src/db/schema.ts
+
+-- =========================================================================
 -- Better Auth managed tables (camelCase columns as expected by Better Auth)
+-- =========================================================================
+
 CREATE TABLE IF NOT EXISTS "user" (
   id TEXT PRIMARY KEY,
   name TEXT NOT NULL DEFAULT '',
@@ -45,7 +51,10 @@ CREATE TABLE IF NOT EXISTS "verification" (
   updatedAt TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
--- Workspaces
+-- =========================================================================
+-- Application tables
+-- =========================================================================
+
 CREATE TABLE IF NOT EXISTS workspace (
   id TEXT PRIMARY KEY,
   name TEXT NOT NULL,
@@ -54,7 +63,6 @@ CREATE TABLE IF NOT EXISTS workspace (
   updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
--- Members
 CREATE TABLE IF NOT EXISTS member (
   id TEXT PRIMARY KEY,
   workspace_id TEXT NOT NULL REFERENCES workspace(id) ON DELETE CASCADE,
@@ -64,7 +72,6 @@ CREATE TABLE IF NOT EXISTS member (
   UNIQUE(workspace_id, user_id)
 );
 
--- Agent Runtimes
 CREATE TABLE IF NOT EXISTS agent_runtime (
   id TEXT PRIMARY KEY,
   workspace_id TEXT NOT NULL REFERENCES workspace(id) ON DELETE CASCADE,
@@ -81,9 +88,8 @@ CREATE TABLE IF NOT EXISTS agent_runtime (
   UNIQUE(workspace_id, daemon_id, provider)
 );
 
--- Agents
 CREATE TABLE IF NOT EXISTS agent (
-  id TEXT PRIMARY KEY,
+  id TEXT NOT NULL,
   workspace_id TEXT NOT NULL REFERENCES workspace(id) ON DELETE CASCADE,
   name TEXT NOT NULL,
   description TEXT NOT NULL DEFAULT '',
@@ -101,29 +107,30 @@ CREATE TABLE IF NOT EXISTS agent (
   email_handle TEXT UNIQUE,
   forward_to_email TEXT DEFAULT '',
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
-  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+  updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+  PRIMARY KEY (id, workspace_id)
 );
 
--- Agent Whitelist
 CREATE TABLE IF NOT EXISTS agent_whitelist (
   id TEXT PRIMARY KEY,
-  agent_id TEXT NOT NULL REFERENCES agent(id) ON DELETE CASCADE,
+  agent_id TEXT NOT NULL,
+  workspace_id TEXT NOT NULL,
   email TEXT NOT NULL,
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
-  UNIQUE(agent_id, email)
+  UNIQUE(agent_id, workspace_id, email),
+  FOREIGN KEY (agent_id, workspace_id) REFERENCES agent(id, workspace_id) ON DELETE CASCADE
 );
 
--- Conversations
 CREATE TABLE IF NOT EXISTS conversation (
   id TEXT PRIMARY KEY,
   workspace_id TEXT NOT NULL REFERENCES workspace(id) ON DELETE CASCADE,
-  agent_id TEXT NOT NULL REFERENCES agent(id) ON DELETE CASCADE,
+  agent_id TEXT NOT NULL,
   user_id TEXT NOT NULL REFERENCES "user"(id) ON DELETE CASCADE,
   title TEXT NOT NULL DEFAULT '',
-  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  FOREIGN KEY (agent_id, workspace_id) REFERENCES agent(id, workspace_id) ON DELETE CASCADE
 );
 
--- Messages
 CREATE TABLE IF NOT EXISTS message (
   id TEXT PRIMARY KEY,
   conversation_id TEXT NOT NULL REFERENCES conversation(id) ON DELETE CASCADE,
@@ -133,10 +140,9 @@ CREATE TABLE IF NOT EXISTS message (
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
--- Agent Task Queue
 CREATE TABLE IF NOT EXISTS agent_task_queue (
   id TEXT PRIMARY KEY,
-  agent_id TEXT NOT NULL REFERENCES agent(id) ON DELETE CASCADE,
+  agent_id TEXT NOT NULL,
   runtime_id TEXT NOT NULL REFERENCES agent_runtime(id),
   workspace_id TEXT NOT NULL REFERENCES workspace(id),
   conversation_id TEXT NOT NULL REFERENCES conversation(id),
@@ -150,7 +156,8 @@ CREATE TABLE IF NOT EXISTS agent_task_queue (
   dispatched_at TEXT,
   started_at TEXT,
   completed_at TEXT,
-  error TEXT
+  error TEXT,
+  FOREIGN KEY (agent_id, workspace_id) REFERENCES agent(id, workspace_id) ON DELETE CASCADE
 );
 
 CREATE UNIQUE INDEX IF NOT EXISTS idx_one_pending_per_conversation
@@ -161,7 +168,6 @@ CREATE INDEX IF NOT EXISTS idx_task_queue_pending
   ON agent_task_queue(agent_id, status)
   WHERE status IN ('queued', 'dispatched');
 
--- Task Messages
 CREATE TABLE IF NOT EXISTS task_message (
   id TEXT PRIMARY KEY,
   task_id TEXT NOT NULL REFERENCES agent_task_queue(id) ON DELETE CASCADE,
@@ -177,10 +183,10 @@ CREATE TABLE IF NOT EXISTS task_message (
 
 CREATE INDEX IF NOT EXISTS idx_task_message_task_seq ON task_message(task_id, seq);
 
--- Emails
 CREATE TABLE IF NOT EXISTS emails (
   id TEXT PRIMARY KEY,
-  agent_id TEXT NOT NULL REFERENCES agent(id) ON DELETE CASCADE,
+  agent_id TEXT NOT NULL,
+  workspace_id TEXT NOT NULL,
   from_email TEXT NOT NULL,
   to_email TEXT NOT NULL,
   subject TEXT NOT NULL DEFAULT '',
@@ -189,10 +195,10 @@ CREATE TABLE IF NOT EXISTS emails (
   forwarded INTEGER NOT NULL DEFAULT 0,
   html_body TEXT NOT NULL DEFAULT '',
   attachments TEXT NOT NULL DEFAULT '[]',
-  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  FOREIGN KEY (agent_id, workspace_id) REFERENCES agent(id, workspace_id) ON DELETE CASCADE
 );
 
--- Machine Tokens
 CREATE TABLE IF NOT EXISTS machine_token (
   id TEXT PRIMARY KEY,
   user_id TEXT NOT NULL REFERENCES "user"(id) ON DELETE CASCADE,
