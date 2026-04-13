@@ -106,15 +106,15 @@ describe("daemonId profile suffix", () => {
 });
 
 describe("workspacesRoot profile handling", () => {
-  it("defaults to ~/alook_workspaces without profile in production", () => {
+  it("defaults to ~/.alook/workspaces without profile in production", () => {
     const cfg = loadDaemonConfig();
-    expect(cfg.workspacesRoot).toBe(join(homedir(), "alook_workspaces"));
+    expect(cfg.workspacesRoot).toBe(join(homedir(), ".alook", "workspaces"));
   });
 
-  it("uses ~/alook_workspaces_{profile} with profile in production", () => {
+  it("uses ~/.alook/workspaces_{profile} with profile in production", () => {
     const cfg = loadDaemonConfig("dev");
     expect(cfg.workspacesRoot).toBe(
-      join(homedir(), "alook_workspaces_dev"),
+      join(homedir(), ".alook", "workspaces_dev"),
     );
   });
 

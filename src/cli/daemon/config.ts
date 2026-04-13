@@ -1,6 +1,6 @@
-import { hostname, homedir } from "os";
+import { hostname } from "os";
 import { join } from "path";
-import { isDev } from "../lib/env.js";
+import { configDir } from "../lib/config.js";
 
 function parseDuration(s: string): number {
   if (!s) return 0;
@@ -61,15 +61,10 @@ export function loadDaemonConfig(profile?: string): DaemonConfig {
     daemonId = `${daemonId}-${profile}`;
   }
 
-  let defaultRoot: string;
-  if (isDev() && process.env.ALOOK_PROJECT_ROOT) {
-    defaultRoot = join(process.env.ALOOK_PROJECT_ROOT, ".alook", "workspaces");
-  } else {
-    defaultRoot = join(
-      homedir(),
-      profile ? `alook_workspaces_${profile}` : "alook_workspaces",
-    );
-  }
+  const defaultRoot = join(
+    configDir(),
+    profile ? `workspaces_${profile}` : "workspaces",
+  );
   const workspacesRoot = process.env.ALOOK_WORKSPACES_ROOT || defaultRoot;
 
   return {
