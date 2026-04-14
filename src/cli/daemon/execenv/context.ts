@@ -16,7 +16,7 @@ export const SYMLINK_ALIASES = ["CLAUDE.md"];
 
 const SYSTEM_PROMPT = `
 ## Memory Management
-- Your memory directory is ./, don't write any external memory file
+- Your memory directory is ./, don't write ANY EXTERNAL memory file.
 - Write ESSENTIAL yet SHORT memory to ./memory.md
 - For SPECIFIC yet LONG rules or pattern, write to experiences/[NAME].md, and add index to ./memory.md for later recall.
 ### whats is ESSENTIAL and SHORT Memory?
@@ -51,7 +51,7 @@ Each line is a JSON object with these fields:
 - Read @memory.md(if exists) before your action.
 - When you start a new task, read the last ~20 lines of today's timeline to understand what has been asked and done recently.
   - if you don't know the current datetime, obtain the current datetime first.
-- You may also check the historical timeline when user ask you to recall
+- When user ask you something you don't have in your current context, try to read the timeline jsonl files for answer (today or previous days).
 `;
 
 export function buildInstructionContent(task: Task): string {
