@@ -5,11 +5,11 @@ import { buildPrompt } from "./prompt.js";
 import { createBackend, detectVersion } from "./agent/index.js";
 import { type Task, type TaskResult, fromApiTask } from "./types.js";
 import { prepare } from "./execenv/index.js";
+import { initEntryAsync, updateEntry, createTimelineEntry, localISOString } from "./execenv/timeline.js";
 import { loadCLIConfigForProfile } from "../lib/config.js";
 import { log } from "../lib/logger.js";
 import { cmdPrefix } from "../lib/env.js";
 import { createWriteStream } from "fs";
-import { join } from "path";
 import { execSync } from "child_process";
 
 interface WorkspaceState {
@@ -231,7 +231,7 @@ async function runTask(
 
   const prompt = buildPrompt(task);
 
-  const { workDir, logFile, env } = prepare(
+  const { workDir, logFile, timelineDir, env } = prepare(
     { workspacesRoot: config.workspacesRoot },
     task,
     provider,
@@ -242,8 +242,11 @@ async function runTask(
     model: model || undefined,
     env,
     timeout: config.agentTimeout,
-    resumeSessionId: task.priorSessionId,
   });
+
+  // Context timeline — wait for session ID, then write init entry
+  const earlySessionId = await session.sessionId;
+  await initEntryAsync(timelineDir, createTimelineEntry(task.id, task.prompt, earlySessionId, session.pid));
 
   const pendingMessages: {
     seq: number;
@@ -276,7 +279,7 @@ async function runTask(
     logStream = createWriteStream(logFile, { flags: "a" });
     logStream.write(
       JSON.stringify({
-        ts: new Date().toISOString(),
+        ts: localISOString(),
         type: "text",
         role: "user",
         content: prompt,
@@ -299,11 +302,18 @@ async function runTask(
         output: msg.output,
       });
 
+      // Context timeline — record assistant text messages as steps
+      if (msg.type === "text" && msg.content) {
+        updateEntry(timelineDir, task.id, (entry) => {
+          entry.steps.push(msg.content!);
+        });
+      }
+
       if (logStream) {
         try {
           logStream.write(
             JSON.stringify({
-              ts: new Date().toISOString(),
+              ts: localISOString(),
               role: "assistant",
               ...msg,
             }) + "\n",
@@ -325,6 +335,23 @@ async function runTask(
   }
 
   const result = await session.result;
+
+  // Context timeline — finalize entry
+  if (result.status === "completed") {
+    updateEntry(timelineDir, task.id, (entry) => {
+      entry.session_id = result.sessionId || null;
+      entry.pid = null;
+      entry.status = "completed";
+      entry.response = result.output || null;
+    });
+  } else {
+    updateEntry(timelineDir, task.id, (entry) => {
+      entry.pid = null;
+      entry.status = "failed";
+      entry.errmsg = result.error || "unknown error";
+    });
+  }
+
   return {
     status: result.status === "completed" ? "completed" : "failed",
     comment: result.output || result.error,

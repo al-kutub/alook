@@ -5,7 +5,9 @@ import { OpenCodeBackend } from "./opencode.js";
 import { execSync } from "child_process";
 
 export interface AgentSession {
+  pid: number | undefined;
   messages: AsyncIterable<AgentMessage>;
+  sessionId: Promise<string>;
   result: Promise<AgentResult>;
 }
 

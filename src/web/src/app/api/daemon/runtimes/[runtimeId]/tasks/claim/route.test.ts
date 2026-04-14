@@ -3,7 +3,6 @@ import { NextRequest } from "next/server";
 
 const mockClaimTaskForRuntime = vi.fn();
 const mockGetAgent = vi.fn();
-const mockGetLastTaskSession = vi.fn();
 const mockTaskToResponse = vi.fn();
 
 vi.mock("@opennextjs/cloudflare", () => ({
@@ -15,9 +14,7 @@ vi.mock("@alook/shared", () => ({
     agent: {
       getAgent: (...args: any[]) => mockGetAgent(...args),
     },
-    task: {
-      getLastTaskSession: (...args: any[]) => mockGetLastTaskSession(...args),
-    },
+    task: {},
   },
 }));
 vi.mock("@/lib/middleware/auth", () => ({
@@ -67,7 +64,7 @@ describe("POST /api/daemon/runtimes/[runtimeId]/tasks/claim", () => {
     expect(mockClaimTaskForRuntime).toHaveBeenCalledWith("rt1");
   });
 
-  it("returns task with agent data and prior session", async () => {
+  it("returns task with agent data and prior_session_id always null", async () => {
     const fakeTask = {
       id: "t1",
       agentId: "a1",
@@ -88,11 +85,9 @@ describe("POST /api/daemon/runtimes/[runtimeId]/tasks/claim", () => {
       instructions: "be helpful",
       runtimeConfig: { model: "gpt-4" },
     };
-    const fakeSession = { sessionId: "sess1" };
 
     mockClaimTaskForRuntime.mockResolvedValue(fakeTask);
     mockGetAgent.mockResolvedValue(fakeAgent);
-    mockGetLastTaskSession.mockResolvedValue(fakeSession);
     mockTaskToResponse.mockReturnValue({
       id: "t1",
       agent_id: "a1",
@@ -125,8 +120,7 @@ describe("POST /api/daemon/runtimes/[runtimeId]/tasks/claim", () => {
       name: "Agent 1",
       runtime_config: { model: "gpt-4" },
     });
-    expect(body.task.prior_session_id).toBe("sess1");
+    expect(body.task.prior_session_id).toBeNull();
     expect(mockGetAgent).toHaveBeenCalledWith({}, "a1", "w1");
-    expect(mockGetLastTaskSession).toHaveBeenCalledWith({}, "a1", "conv1");
   });
 });

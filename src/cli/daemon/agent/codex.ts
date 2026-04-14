@@ -66,6 +66,10 @@ export class CodexBackend implements AgentBackend {
     let lastError = "";
     let resultStatus: AgentResult["status"] = "completed";
     let sessionId = "";
+    let resolveSessionId: (id: string) => void;
+    const sessionIdPromise = new Promise<string>((resolve) => {
+      resolveSessionId = resolve;
+    });
 
     // Protocol detection state
     let notificationProtocol: NotificationProtocol = "unknown";
@@ -439,6 +443,8 @@ export class CodexBackend implements AgentBackend {
             sessionId = extractThreadID(threadResponse);
           }
 
+          resolveSessionId(sessionId);
+
           // 5. Send turn/start with the prompt
           await sendRpc("turn/start", {
             threadId: sessionId,
@@ -470,6 +476,9 @@ export class CodexBackend implements AgentBackend {
         if (stderr && !lastError) {
           lastError = stderr;
         }
+
+        // Resolve sessionId promise (fallback if handshake never completed)
+        resolveSessionId(sessionId);
 
         messageDone = true;
         if (messageResolve) {
@@ -506,6 +515,6 @@ export class CodexBackend implements AgentBackend {
       },
     };
 
-    return { messages, result: resultPromise };
+    return { pid: proc.pid, messages, sessionId: sessionIdPromise, result: resultPromise };
   }
 }

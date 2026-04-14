@@ -72,6 +72,7 @@ vi.mock("./execenv/index.js", () => ({
   prepare: vi.fn(() => ({
     workDir: "/tmp/ws/ws1/agent1/workdir",
     logFile: "/tmp/ws/ws1/agent1/agent.log",
+    timelineDir: "/tmp/ws/ws1/agent1/workdir/.context_timeline",
     env: {
       ALOOK_WORKSPACE_ID: "ws1",
       ALOOK_AGENT_ID: "agent1",
@@ -80,6 +81,26 @@ vi.mock("./execenv/index.js", () => ({
       ALOOK_HEALTH_PORT: "19514",
     },
   })),
+}));
+
+const mockInitEntryAsync = vi.fn(async () => {});
+const mockUpdateEntry = vi.fn();
+const mockCreateTimelineEntry = vi.fn((taskId: string, prompt: string, sessionId?: string, pid?: number) => ({
+  task_id: taskId,
+  session_id: sessionId || null,
+  pid: pid ?? null,
+  status: "running",
+  datetime: "2026-04-13T10:30:00-05:00",
+  type: "user_dm_message",
+  prompt,
+  steps: [],
+  response: null,
+  errmsg: null,
+}));
+vi.mock("./execenv/timeline.js", () => ({
+  initEntryAsync: (...args: any[]) => mockInitEntryAsync(...args),
+  updateEntry: (...args: any[]) => mockUpdateEntry(...args),
+  createTimelineEntry: (...args: any[]) => mockCreateTimelineEntry(...args),
 }));
 
 // Capture signal handlers and prevent actual process.exit
@@ -112,7 +133,198 @@ vi.spyOn(globalThis, "clearInterval").mockImplementation(((timer: any) => {
   realClearInterval(timer);
 }) as any);
 
+import { createBackend } from "./agent/index.js";
 import { startDaemon } from "./daemon.js";
+
+describe("daemon timeline integration", () => {
+  beforeEach(() => {
+    signalHandlers.clear();
+    intervalTimers.length = 0;
+    clearedTimers.length = 0;
+    vi.clearAllMocks();
+    mockProcessExit.mockImplementation((() => {}) as any);
+  });
+
+  afterEach(() => {
+    for (const t of intervalTimers) realClearInterval(t);
+  });
+
+  function setupTaskClaim() {
+    const fakeTask = {
+      id: "t1",
+      agent_id: "a1",
+      runtime_id: "rt1",
+      conversation_id: "c1",
+      workspace_id: "ws1",
+      prompt: "do stuff",
+      status: "dispatched",
+      priority: 0,
+      dispatched_at: null,
+      started_at: null,
+      completed_at: null,
+      created_at: "2026-01-01T00:00:00Z",
+      result: null,
+      error: null,
+      agent: { name: "Agent 1", instructions: "be helpful" },
+      prior_session_id: null,
+    };
+
+    let claimed = false;
+    mockClientInstance.claimTask.mockImplementation(async () => {
+      if (!claimed) {
+        claimed = true;
+        return { task: fakeTask };
+      }
+      return { task: null };
+    });
+
+    // Mock startTask and completeTask
+    (mockClientInstance as any).startTask = vi.fn(async () => ({}));
+    (mockClientInstance as any).completeTask = vi.fn(async () => ({}));
+    (mockClientInstance as any).failTask = vi.fn(async () => ({}));
+    (mockClientInstance as any).reportMessages = vi.fn(async () => ({}));
+
+    return fakeTask;
+  }
+
+  function setupBackend(messages: any[], result: any) {
+    async function* messageIterator() {
+      for (const msg of messages) yield msg;
+    }
+
+    const mockBackend = {
+      name: "claude",
+      execute: vi.fn(() => ({
+        pid: 12345,
+        messages: messageIterator(),
+        sessionId: Promise.resolve(result.sessionId || ""),
+        result: Promise.resolve(result),
+      })),
+    };
+
+    vi.mocked(createBackend).mockReturnValue(mockBackend);
+    return mockBackend;
+  }
+
+  it("task start writes init entry to timeline", async () => {
+    setupTaskClaim();
+    setupBackend([], {
+      status: "completed",
+      output: "Done",
+      error: "",
+      durationMs: 1000,
+      sessionId: "s1",
+    });
+
+    await startDaemon();
+
+    // Wait for async task handling
+    await new Promise((r) => setTimeout(r, 50));
+
+    expect(mockCreateTimelineEntry).toHaveBeenCalledWith("t1", "do stuff", "s1", 12345);
+    expect(mockInitEntryAsync).toHaveBeenCalledWith(
+      "/tmp/ws/ws1/agent1/workdir/.context_timeline",
+      expect.objectContaining({ task_id: "t1", session_id: "s1", pid: 12345 }),
+    );
+  });
+
+  it("assistant text messages update steps array", async () => {
+    setupTaskClaim();
+    setupBackend(
+      [
+        { type: "text", content: "Looking at code..." },
+        { type: "tool-use", tool: "read", content: undefined },
+        { type: "text", content: "Found the issue." },
+      ],
+      {
+        status: "completed",
+        output: "Fixed it",
+        error: "",
+        durationMs: 2000,
+        sessionId: "s2",
+      },
+    );
+
+    await startDaemon();
+    await new Promise((r) => setTimeout(r, 50));
+
+    // Should have been called for each text message
+    const textCalls = mockUpdateEntry.mock.calls.filter(
+      (call: any[]) => {
+        // The updater is the third argument, but we check it was called for steps
+        const updater = call[2];
+        const testEntry = { steps: [] as string[], response: null };
+        updater(testEntry);
+        return testEntry.steps.length > 0;
+      }
+    );
+    expect(textCalls.length).toBe(2);
+  });
+
+  it("task completion updates response field", async () => {
+    setupTaskClaim();
+    setupBackend([], {
+      status: "completed",
+      output: "All done!",
+      error: "",
+      durationMs: 500,
+      sessionId: "s3",
+    });
+
+    await startDaemon();
+    await new Promise((r) => setTimeout(r, 50));
+
+    // Last updateEntry call should set completion fields
+    const calls = mockUpdateEntry.mock.calls;
+    const lastCall = calls[calls.length - 1];
+    const testEntry = {
+      steps: [] as string[],
+      response: null as string | null,
+      session_id: null as string | null,
+      pid: process.pid as number | null,
+      status: "running" as string,
+      errmsg: null as string | null,
+    };
+    lastCall[2](testEntry);
+    expect(testEntry.response).toBe("All done!");
+    expect(testEntry.session_id).toBe("s3");
+    expect(testEntry.pid).toBeNull();
+    expect(testEntry.status).toBe("completed");
+  });
+
+  it("failed tasks get init entry and failure fields set", async () => {
+    setupTaskClaim();
+    setupBackend([], {
+      status: "failed",
+      output: "",
+      error: "something went wrong",
+      durationMs: 100,
+      sessionId: "s4",
+    });
+
+    await startDaemon();
+    await new Promise((r) => setTimeout(r, 50));
+
+    // initEntry should have been called
+    expect(mockInitEntryAsync).toHaveBeenCalled();
+
+    // Last updateEntry call should set failure fields
+    const calls = mockUpdateEntry.mock.calls;
+    const lastCall = calls[calls.length - 1];
+    const testEntry = {
+      steps: [] as string[],
+      response: null as string | null,
+      pid: process.pid as number | null,
+      status: "running" as string,
+      errmsg: null as string | null,
+    };
+    lastCall[2](testEntry);
+    expect(testEntry.pid).toBeNull();
+    expect(testEntry.status).toBe("failed");
+    expect(testEntry.errmsg).toBe("something went wrong");
+    expect(testEntry.response).toBeNull();
+  });
+});
 
 describe("daemon shutdown", () => {
   beforeEach(() => {

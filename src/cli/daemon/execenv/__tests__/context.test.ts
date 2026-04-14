@@ -49,6 +49,24 @@ describe("buildInstructionContent", () => {
     expect(content).toContain("## System");
     expect(content).not.toContain("## Agent Instructions");
   });
+
+  it("includes Context Timeline section with format explanation", () => {
+    const task = makeTask();
+    const content = buildInstructionContent(task);
+
+    expect(content).toContain("## Context Timeline");
+    expect(content).toContain(".context_timeline/YYYY-MM-DD.jsonl");
+    expect(content).toContain("task_id");
+    expect(content).toContain("session_id");
+    expect(content).toContain("pid");
+    expect(content).toContain("status");
+    expect(content).toContain("datetime");
+    expect(content).toContain("prompt");
+    expect(content).toContain("steps");
+    expect(content).toContain("response");
+    expect(content).toContain("errmsg");
+    expect(content).toContain("last ~20 lines");
+  });
 });
 
 describe("writeInstructionFile", () => {

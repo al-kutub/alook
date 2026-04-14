@@ -22,11 +22,6 @@ export const POST = withAuth(async (_req, ctx) => {
   }
 
   const agent = await queries.agent.getAgent(db, task.agentId, task.workspaceId);
-  const priorSession = await queries.task.getLastTaskSession(
-    db,
-    task.agentId,
-    task.conversationId
-  );
 
   return writeJSON({
     task: {
@@ -38,7 +33,7 @@ export const POST = withAuth(async (_req, ctx) => {
             runtime_config: agent.runtimeConfig || {},
           }
         : null,
-      prior_session_id: priorSession?.sessionId ?? null,
+      prior_session_id: null,
     },
   });
 });

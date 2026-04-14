@@ -2,7 +2,6 @@ import {
   sqliteTable,
   text,
   integer,
-  uniqueIndex,
   index,
   unique,
   primaryKey,
@@ -226,9 +225,6 @@ export const agentTaskQueue = sqliteTable(
     error: text("error"),
   },
   (t) => [
-    uniqueIndex("idx_one_pending_per_conversation")
-      .on(t.conversationId)
-      .where(sql`status IN ('queued', 'dispatched')`),
     index("idx_task_queue_pending")
       .on(t.agentId, t.status)
       .where(sql`status IN ('queued', 'dispatched')`),

@@ -66,6 +66,21 @@ describe("prepare", () => {
     expect(result.logFile).toBe(join(root, "ws1", "a1", "agent.log"));
   });
 
+  it("creates .context_timeline/ directory inside workdir", () => {
+    const task = makeTask();
+    const result = prepare({ workspacesRoot: root }, task, "claude");
+
+    const timelineDir = join(result.workDir, ".context_timeline");
+    expect(existsSync(timelineDir)).toBe(true);
+  });
+
+  it("returns timelineDir in result", () => {
+    const task = makeTask();
+    const result = prepare({ workspacesRoot: root }, task, "claude");
+
+    expect(result.timelineDir).toBe(join(result.workDir, ".context_timeline"));
+  });
+
   it("returns env with all expected keys", () => {
     const task = makeTask();
     const result = prepare({ workspacesRoot: root }, task, "claude");

@@ -1,4 +1,4 @@
-import { eq, and, desc, asc, inArray, notInArray, isNotNull, count, lt } from "drizzle-orm";
+import { eq, and, desc, asc, inArray, notInArray, count, lt } from "drizzle-orm";
 import { agentTaskQueue } from "../schema";
 import type { Database } from "../index";
 import { ClaimedTaskRowSchema } from "../../schemas";
@@ -145,28 +145,6 @@ export async function failTask(
   return rows[0] ?? null;
 }
 
-export async function getLastTaskSession(
-  db: Database,
-  agentId: string,
-  conversationId: string
-) {
-  const rows = await db
-    .select({
-      sessionId: agentTaskQueue.sessionId,
-    })
-    .from(agentTaskQueue)
-    .where(
-      and(
-        eq(agentTaskQueue.agentId, agentId),
-        eq(agentTaskQueue.conversationId, conversationId),
-        eq(agentTaskQueue.status, "completed"),
-        isNotNull(agentTaskQueue.sessionId)
-      )
-    )
-    .orderBy(desc(agentTaskQueue.completedAt))
-    .limit(1);
-  return rows[0] ?? null;
-}
 
 export async function listPendingTasksByRuntime(
   db: Database,

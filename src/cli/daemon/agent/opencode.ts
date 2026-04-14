@@ -41,6 +41,10 @@ export class OpenCodeBackend implements AgentBackend {
     let lastOutput = "";
     let lastError = "";
     let resultStatus: AgentResult["status"] = "completed";
+    let resolveSessionId: (id: string) => void;
+    const sessionIdPromise = new Promise<string>((resolve) => {
+      resolveSessionId = resolve;
+    });
 
     const messageQueue: AgentMessage[] = [];
     let messageResolve: (() => void) | null = null;
@@ -80,7 +84,10 @@ export class OpenCodeBackend implements AgentBackend {
         switch (eventType) {
           case "session": {
             const sessionId = event.session_id as string | undefined;
-            if (sessionId) lastSessionId = sessionId;
+            if (sessionId) {
+              lastSessionId = sessionId;
+              resolveSessionId(sessionId);
+            }
             break;
           }
 
@@ -166,6 +173,9 @@ export class OpenCodeBackend implements AgentBackend {
           lastError = stderr;
         }
 
+        // Resolve sessionId promise (fallback if session event never fired)
+        resolveSessionId(lastSessionId);
+
         messageDone = true;
         if (messageResolve) {
           const r = messageResolve;
@@ -201,6 +211,6 @@ export class OpenCodeBackend implements AgentBackend {
       },
     };
 
-    return { messages, result: resultPromise };
+    return { pid: proc.pid, messages, sessionId: sessionIdPromise, result: resultPromise };
   }
 }

@@ -49,6 +49,10 @@ export class ClaudeBackend implements AgentBackend {
     let lastOutput = "";
     let lastError = "";
     let resultStatus: AgentResult["status"] = "completed";
+    let resolveSessionId: (id: string) => void;
+    const sessionIdPromise = new Promise<string>((resolve) => {
+      resolveSessionId = resolve;
+    });
 
     const messageQueue: AgentMessage[] = [];
     let messageResolve: (() => void) | null = null;
@@ -141,7 +145,10 @@ export class ClaudeBackend implements AgentBackend {
             const subtype = event.subtype as string | undefined;
             if (subtype === "init") {
               const sid = event.session_id as string | undefined;
-              if (sid) lastSessionId = sid;
+              if (sid) {
+                lastSessionId = sid;
+                resolveSessionId(sid);
+              }
             }
             break;
           }
@@ -174,6 +181,9 @@ export class ClaudeBackend implements AgentBackend {
         if (stderr && !lastError) {
           lastError = stderr;
         }
+
+        // Resolve sessionId promise (fallback if system/init never fired)
+        resolveSessionId(lastSessionId);
 
         messageDone = true;
         if (messageResolve) {
@@ -210,7 +220,7 @@ export class ClaudeBackend implements AgentBackend {
       },
     };
 
-    return { messages, result: resultPromise };
+    return { pid: proc.pid, messages, sessionId: sessionIdPromise, result: resultPromise };
   }
 }
 

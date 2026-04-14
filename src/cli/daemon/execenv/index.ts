@@ -10,6 +10,7 @@ export interface ExecEnvConfig {
 export interface ExecEnvResult {
   workDir: string;
   logFile: string;
+  timelineDir: string;
   env: Record<string, string>;
 }
 
@@ -21,6 +22,9 @@ export function prepare(
   const workDir = join(config.workspacesRoot, task.workspaceId, task.agentId, "workdir");
 
   mkdirSync(workDir, { recursive: true });
+
+  const timelineDir = join(workDir, ".context_timeline");
+  mkdirSync(timelineDir, { recursive: true });
 
   writeInstructionFile(workDir, task, provider);
   cleanStaleProviderFiles(workDir, provider);
@@ -41,7 +45,7 @@ export function prepare(
     ALOOK_HEALTH_PORT: process.env.ALOOK_HEALTH_PORT || "19514",
   };
 
-  return { workDir, logFile, env };
+  return { workDir, logFile, timelineDir, env };
 }
 
 export { buildInstructionContent, writeInstructionFile, cleanStaleProviderFiles } from "./context.js";
