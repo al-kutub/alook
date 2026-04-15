@@ -81,8 +81,8 @@ function OTPSignIn() {
         <h1 className="text-2xl font-bold">Welcome back</h1>
         <p className="text-balance text-muted-foreground">
           {step === "email"
-            ? "Sign in with your email"
-            : "Enter the verification code"}
+            ? "We\u2019ll send a verification code to your inbox"
+            : "Enter the code we sent you"}
         </p>
       </div>
       {error && <FieldError>{error}</FieldError>}
@@ -208,7 +208,7 @@ function PasswordSignIn() {
         <div className="flex flex-col items-center gap-2 text-center">
           <h1 className="text-2xl font-bold">Welcome back</h1>
           <p className="text-balance text-muted-foreground">
-            Sign in to your Alook account
+            Sign in or create an account to get started
           </p>
         </div>
         {error && <FieldError>{error}</FieldError>}
@@ -279,8 +279,8 @@ export default function SignInPage() {
               <div className="p-6 md:p-8">
                 {isProd ? <OTPSignIn /> : <PasswordSignIn />}
               </div>
-              <div className="relative hidden bg-muted md:block overflow-hidden">
-                <TypewriterVisual className="h-full scale-[0.6] origin-center" />
+              <div className="hidden bg-muted md:flex items-center justify-center overflow-hidden min-h-[320px]">
+                <TypewriterVisual className="scale-[0.55] shrink-0" />
               </div>
             </CardContent>
           </Card>
