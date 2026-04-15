@@ -23,7 +23,8 @@ async function notifyWeb(env: EmailEnv, payload: Record<string, unknown>, traceI
       body,
     })
     if (!res.ok) throw new Error(`WEB_SERVICE responded ${res.status}`)
-  } catch {
+  } catch (err) {
+    log.warn("WEB_SERVICE notify failed, falling back to DEV_WEB_URL", { err })
     await fetch(`${DEV_WEB_URL}/api/email/notify`, {
       method: "POST",
       headers,

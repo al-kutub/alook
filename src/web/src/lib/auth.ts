@@ -1,8 +1,10 @@
 import { betterAuth } from "better-auth"
 import { emailOTP } from "better-auth/plugins"
+import { createLogger } from "@alook/shared"
 import { getOtpSubject, renderOtpEmail } from "./email-templates"
 
 const isProd = process.env.NODE_ENV === "production"
+const log = createLogger({ service: "auth" })
 
 export function createAuth(env: Env) {
   return betterAuth({
@@ -27,12 +29,19 @@ export function createAuth(env: Env) {
       ? [
           emailOTP({
             async sendVerificationOTP({ email, otp, type }) {
-              await env.SEND_EMAIL.send({
-                from: "no-reply@alook.ai",
-                to: email,
-                subject: getOtpSubject(type),
-                html: renderOtpEmail(otp, type),
-              })
+              log.info("sending OTP email", { to: email, type })
+              try {
+                await env.SEND_EMAIL.send({
+                  from: "no-reply@alook.ai",
+                  to: email,
+                  subject: getOtpSubject(type),
+                  html: renderOtpEmail(otp, type),
+                })
+                log.info("OTP email sent", { to: email, type })
+              } catch (err) {
+                log.error("OTP email failed", { to: email, type, err })
+                throw err
+              }
             },
           }),
         ]
