@@ -16,22 +16,28 @@ export function useUserWs(onMessage: (msg: WsMessage) => void) {
   // Keep the ref in sync with the latest callback on every render
   onMessageRef.current = onMessage
 
+  const scheduleReconnect = useCallback((connect: () => void) => {
+    const delay = Math.min(reconnectDelay.current, WS_RECONNECT_MAX)
+    reconnectDelay.current = Math.min(delay * 2, WS_RECONNECT_MAX)
+    reconnectTimerRef.current = setTimeout(connect, delay + Math.random() * 500)
+  }, [])
+
   const connect = useCallback(async () => {
-    // Unified flow for dev and prod:
-    //   1. Fetch /api/ws/token over HTTP (cookie-authenticated Next.js route).
-    //   2. Open WebSocket with ?userId= and authenticate via {type:"auth",token}.
-    // The custom OpenNext wrapper (src/web/custom-worker.ts) forwards /api/ws/*
-    // upgrade requests directly to the ws-do worker in prod; in dev we connect
-    // to the ws-do worker on localhost directly.
     let userId: string
     let authToken: string
     try {
       const res = await fetch("/api/ws/token")
-      if (!res.ok) return
+      if (!res.ok) {
+        console.warn("[ws] token fetch failed:", res.status)
+        scheduleReconnect(connect)
+        return
+      }
       const body = await res.json() as { userId: string; token: string }
       userId = body.userId
       authToken = body.token
-    } catch {
+    } catch (err) {
+      console.warn("[ws] token fetch error:", err)
+      scheduleReconnect(connect)
       return
     }
 
@@ -42,7 +48,9 @@ export function useUserWs(onMessage: (msg: WsMessage) => void) {
     let ws: WebSocket
     try {
       ws = new WebSocket(url)
-    } catch {
+    } catch (err) {
+      console.warn("[ws] WebSocket creation failed:", err)
+      scheduleReconnect(connect)
       return
     }
     wsRef.current = ws
@@ -66,12 +74,9 @@ export function useUserWs(onMessage: (msg: WsMessage) => void) {
       // Ownership check: only reconnect if this WS is still the current one.
       // If effect cleanup already replaced wsRef.current, this is an orphan — skip.
       if (ws !== wsRef.current) return
-
-      const delay = Math.min(reconnectDelay.current, WS_RECONNECT_MAX)
-      reconnectDelay.current = Math.min(delay * 2, WS_RECONNECT_MAX)
-      reconnectTimerRef.current = setTimeout(connect, delay + Math.random() * 500)
+      scheduleReconnect(connect)
     }
-  }, [])
+  }, [scheduleReconnect])
 
   useEffect(() => {
     connect()

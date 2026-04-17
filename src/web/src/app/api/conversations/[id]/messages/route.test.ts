@@ -12,19 +12,24 @@ const mockTaskToResponse = vi.fn((t: any) => ({ id: t.id, status: t.status }));
 vi.mock("@opennextjs/cloudflare", () => ({
   getCloudflareContext: vi.fn(() => ({ env: { DB: {} } })),
 }));
-vi.mock("@alook/shared", () => ({
-  createDb: vi.fn(() => ({})),
-  queries: {
-    conversation: {
-      getConversation: (...args: any[]) => mockGetConversation(...args),
-      updateConversationTitle: (...args: any[]) => mockUpdateConversationTitle(...args),
+vi.mock("@alook/shared", () => {
+  const noop = () => {};
+  const log = { debug: noop, info: noop, warn: noop, error: noop, child: () => log };
+  return {
+    createDb: vi.fn(() => ({})),
+    createLogger: () => log,
+    queries: {
+      conversation: {
+        getConversation: (...args: any[]) => mockGetConversation(...args),
+        updateConversationTitle: (...args: any[]) => mockUpdateConversationTitle(...args),
+      },
+      message: {
+        listMessages: (...args: any[]) => mockListMessages(...args),
+        createMessage: (...args: any[]) => mockCreateMessage(...args),
+      },
     },
-    message: {
-      listMessages: (...args: any[]) => mockListMessages(...args),
-      createMessage: (...args: any[]) => mockCreateMessage(...args),
-    },
-  },
-}));
+  };
+});
 vi.mock("@/lib/middleware/auth", () => ({
   withAuth: vi.fn((handler: any) => async (req: any, ctx?: any) => {
     const params = ctx?.params instanceof Promise ? await ctx.params : ctx?.params;

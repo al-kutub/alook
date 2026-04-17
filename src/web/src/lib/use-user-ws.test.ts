@@ -206,19 +206,29 @@ describe("useUserWs", () => {
     expect(MockWebSocket.instances.length).toBeGreaterThan(instancesBefore)
   })
 
-  it("failed connect (fetch rejects) does not leave orphaned timers or break future reconnects", async () => {
-    // First connect fails
+  it("failed connect (fetch rejects) retries with backoff and cleanup prevents further reconnects", async () => {
+    // All connects will fail
     mockFetch.mockRejectedValue(new Error("network error"))
 
     const onMsg = vi.fn()
-    await mountHook(onMsg)
-    await vi.runAllTimersAsync()
+    // Mount without runAllTimersAsync to avoid infinite reconnect loop
+    const mod = await import("./use-user-ws")
+    mod.useUserWs(onMsg)
+    // Let initial connect resolve (microtask) + advance past one reconnect
+    await vi.advanceTimersByTimeAsync(2000)
 
-    // No WebSocket should have been created
+    // No WebSocket should have been created (fetch keeps failing)
     expect(MockWebSocket.instances.length).toBe(0)
+    // Fetch was retried at least once via the reconnect timer
+    expect(mockFetch.mock.calls.length).toBeGreaterThan(1)
 
-    // Cleanup should not throw
+    // Cleanup should clear the pending reconnect timer and not throw
     expect(() => effectCleanup?.()).not.toThrow()
+
+    // After cleanup, no further reconnect attempts should happen
+    const callsAfterCleanup = mockFetch.mock.calls.length
+    await vi.advanceTimersByTimeAsync(60_000)
+    expect(mockFetch.mock.calls.length).toBe(callsAfterCleanup)
   })
 
   it("effect cleanup clears pending reconnect timer", async () => {

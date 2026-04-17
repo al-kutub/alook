@@ -1,6 +1,8 @@
 import { getCloudflareContext } from "@opennextjs/cloudflare"
 import type { WsMessage } from "@alook/shared"
-import { DEV_WS_DO_URL } from "@alook/shared"
+import { DEV_WS_DO_URL, createLogger } from "@alook/shared"
+
+const log = createLogger({ service: "broadcast" })
 
 export async function broadcastToUser(userId: string, message: WsMessage) {
   const body = JSON.stringify(message)
@@ -16,11 +18,14 @@ export async function broadcastToUser(userId: string, message: WsMessage) {
       body,
     })
   } catch {
-    await fetch(`${DEV_WS_DO_URL}${url}`, {
+    const res = await fetch(`${DEV_WS_DO_URL}${url}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body,
     })
+    if (!res.ok) {
+      log.warn("broadcast fallback failed", { userId, status: res.status, type: message.type })
+    }
   }
 }
 
@@ -36,10 +41,13 @@ export async function broadcastToAgent(agentId: string, message: WsMessage) {
       body,
     })
   } catch {
-    await fetch(`${DEV_WS_DO_URL}${url}`, {
+    const res = await fetch(`${DEV_WS_DO_URL}${url}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body,
     })
+    if (!res.ok) {
+      log.warn("broadcast fallback failed", { agentId, status: res.status, type: message.type })
+    }
   }
 }

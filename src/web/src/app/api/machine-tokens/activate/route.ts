@@ -1,9 +1,11 @@
 import { NextRequest } from "next/server";
 import { getCloudflareContext } from "@opennextjs/cloudflare";
-import { createDb, queries, ActivateTokenRequestSchema } from "@alook/shared";
+import { createDb, queries, ActivateTokenRequestSchema, createLogger } from "@alook/shared";
 import { writeJSON } from "@/lib/middleware/helpers";
 import { runtimeToResponse } from "@/lib/api/responses";
 import { broadcastToUser } from "@/lib/broadcast";
+
+const log = createLogger({ service: "machine-tokens/activate" });
 
 export async function POST(req: NextRequest) {
   let raw: unknown;
@@ -61,12 +63,20 @@ export async function POST(req: NextRequest) {
   await queries.machineToken.activateMachineToken(db, mt.id);
 
   // Notify the web UI
-  broadcastToUser(mt.userId, {
-    type: "runtime.registered",
-    daemonId,
-    hostname,
-    workspaceId: mt.workspaceId,
-  }).catch(() => {});
+  try {
+    await broadcastToUser(mt.userId, {
+      type: "runtime.registered",
+      daemonId,
+      hostname,
+      workspaceId: mt.workspaceId,
+    });
+  } catch (err) {
+    log.warn("broadcast after activation failed", {
+      userId: mt.userId,
+      daemonId,
+      err: err instanceof Error ? err.message : String(err),
+    });
+  }
 
   return writeJSON({
     daemon_id: daemonId,
