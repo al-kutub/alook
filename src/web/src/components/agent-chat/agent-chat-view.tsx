@@ -156,13 +156,20 @@ export function AgentChatView() {
       try {
         const conv = await getOrCreateAgentConversation(agentId, workspaceId);
         setConversation(conv);
-        const [msgs, arts] = await Promise.all([
+        const [msgs, arts] = await Promise.allSettled([
           listMessages(conv.id, workspaceId, { limit: MESSAGE_LIMIT }),
           listArtifacts(conv.id, workspaceId),
         ]);
-        setMessages(msgs);
-        setArtifacts(arts);
-        setHasMore(msgs.length >= MESSAGE_LIMIT);
+
+        if (msgs.status === "fulfilled") {
+          setMessages(msgs.value);
+          setHasMore(msgs.value.length >= MESSAGE_LIMIT);
+        } else {
+          toast.error("Failed to load messages");
+        }
+        if (arts.status === "fulfilled") {
+          setArtifacts(arts.value);
+        }
 
         // Recover active task (e.g. after page refresh)
         const task = await getActiveTask(conv.id, workspaceId);
