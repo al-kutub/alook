@@ -1,9 +1,11 @@
 "use client";
 
-import { useRef, useCallback, useState, useEffect } from "react";
+import { useRef, useCallback, useState, useEffect, useMemo } from "react";
 import gsap from "gsap";
 import { useGSAP } from "@gsap/react";
 import { SplitText } from "gsap/SplitText";
+import { useLocalStorage } from "@/hooks/use-local-storage";
+import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
 
 gsap.registerPlugin(SplitText);
 
@@ -23,7 +25,7 @@ export const EMAILS_DEFAULT: TypewriterEmail[] = [
     from: "jarvis@alook.ai",
     to: "you@email.com",
     subject: "Happy Birthday!",
-    body: "Happy birthday! I remembered \u2014 April 17th, just like last year. I also remember you love The Grand Budapest Hotel and Interstellar. Maybe tonight\u2019s a good night for a rewatch? Hope your day is wonderful.",
+    body: "Happy birthday! Of course I remembered \u2014 April 17th. I hope today feels as good as you deserve. Take it slow, enjoy the little things. I\u2019ll handle the rest.",
   },
   {
     from: "you@email.com",
@@ -81,7 +83,7 @@ export const EMAILS_PLAYFUL: TypewriterEmail[] = [
     from: "🤖@alook.ai",
     to: "🧑‍💻@company.com",
     subject: "🎂 Happy Birthday!",
-    body: "🎉 Apr 17! 🧠 remembered! 🎬 Grand Budapest Hotel 🚀 Interstellar 🍿 rewatch tonight? 💛🥳",
+    body: "🎉 Apr 17! 🧠 of course I remembered 💛 enjoy today, take it slow 🫶 I\u2019ll handle the rest 🥳",
   },
   {
     from: "🧑‍💻@company.com",
@@ -133,6 +135,65 @@ export const EMAILS_PLAYFUL: TypewriterEmail[] = [
   },
 ];
 
+const DAYS_IN_MONTH = [31, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+const MONTH_NAMES = Array.from({ length: 12 }, (_, i) =>
+  new Date(2000, i, 1).toLocaleDateString("en-US", { month: "long" }),
+);
+
+function ordinal(n: number) {
+  const s = ["th", "st", "nd", "rd"];
+  const v = n % 100;
+  return n + (s[(v - 20) % 10] || s[v] || s[0]);
+}
+
+interface Birthday {
+  month: number;
+  day: number;
+}
+
+function BirthdayPicker({
+  value,
+  onSave,
+  onClear,
+}: {
+  value: Birthday | null;
+  onSave: (v: Birthday) => void;
+  onClear: () => void;
+}) {
+  const [month, setMonth] = useState(value?.month ?? 0);
+  const [day, setDay] = useState(value?.day ?? 1);
+  const maxDay = DAYS_IN_MONTH[month];
+
+  useEffect(() => {
+    if (day > maxDay) setDay(maxDay);
+  }, [month, day, maxDay]);
+
+  return (
+    <div className="tw-birthday-picker">
+      <p className="tw-birthday-title">When&#39;s your birthday?</p>
+      <div className="tw-birthday-selects">
+        <select value={month} onChange={(e) => setMonth(Number(e.target.value))}>
+          {MONTH_NAMES.map((name, i) => (
+            <option key={i} value={i}>
+              {name}
+            </option>
+          ))}
+        </select>
+        <select value={day} onChange={(e) => setDay(Number(e.target.value))}>
+          {Array.from({ length: maxDay }, (_, i) => (
+            <option key={i + 1} value={i + 1}>
+              {i + 1}
+            </option>
+          ))}
+        </select>
+      </div>
+      <button className="tw-birthday-save" onClick={() => onSave({ month, day })}>
+        Save
+      </button>
+    </div>
+  );
+}
+
 // CSS variables the typewriter CSS needs — self-provided so
 // the component works outside the `.landing` scope too.
 const TW_VARS: React.CSSProperties = {
@@ -182,6 +243,35 @@ export function TypewriterVisual({
   const isAnimatingRef = useRef(false);
   const seenRef = useRef<Set<number>>(new Set([0]));
   const [emailIndex, setEmailIndex] = useState(0);
+
+  const [birthday, setBirthday] = useLocalStorage<Birthday | null>("alook-birthday", null);
+  const [hPopoverOpen, setHPopoverOpen] = useState(false);
+  const [paperKey, setPaperKey] = useState(0);
+
+  const effectiveEmails = useMemo(() => {
+    if (!birthday) return emails;
+    const longDate = `${MONTH_NAMES[birthday.month]} ${ordinal(birthday.day)}`;
+    const shortDate = new Date(2000, birthday.month, birthday.day).toLocaleDateString(
+      "en-US",
+      { month: "short", day: "numeric" },
+    );
+    return emails.map((e, i) => {
+      if (i !== 0) return e;
+      return {
+        ...e,
+        body: e.body.replace("April 17th", longDate).replace("Apr 17", shortDate),
+      };
+    });
+  }, [emails, birthday]);
+
+  useEffect(() => {
+    if (!birthday) return;
+    const now = new Date();
+    if (now.getMonth() === birthday.month && now.getDate() === birthday.day) {
+      setEmailIndex(0);
+    }
+  }, [birthday]);
+
 
   const handleMouseMove = useCallback(
     (e: React.MouseEvent<HTMLElement>) => {
@@ -253,6 +343,13 @@ export function TypewriterVisual({
     paperTlRef.current = tl;
   }, []);
 
+  useEffect(() => {
+    if (paperKey === 0) return;
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => playPaperFeed());
+    });
+  }, [paperKey, playPaperFeed]);
+
   const handleReturnKey = useCallback(() => {
     if (isAnimatingRef.current) return;
     isAnimatingRef.current = true;
@@ -272,12 +369,12 @@ export function TypewriterVisual({
       ease: "power2.in",
       onComplete: () => {
         setEmailIndex(() => {
-          const unseen = Array.from({ length: emails.length }, (_, i) => i)
+          const unseen = Array.from({ length: effectiveEmails.length }, (_, i) => i)
             .filter((i) => !seenRef.current.has(i));
           if (unseen.length === 0) {
             seenRef.current = new Set();
           }
-          const pool = unseen.length > 0 ? unseen : Array.from({ length: emails.length }, (_, i) => i);
+          const pool = unseen.length > 0 ? unseen : Array.from({ length: effectiveEmails.length }, (_, i) => i);
           const next = pool[Math.floor(Math.random() * pool.length)];
           seenRef.current.add(next);
           requestAnimationFrame(() => {
@@ -289,7 +386,7 @@ export function TypewriterVisual({
         });
       },
     });
-  }, [playPaperFeed, emails.length]);
+  }, [playPaperFeed, effectiveEmails.length]);
 
   // Keyboard Enter listener — only when interactive
   useEffect(() => {
@@ -345,7 +442,7 @@ export function TypewriterVisual({
     { scope: containerRef }
   );
 
-  const email = emails[emailIndex];
+  const email = effectiveEmails[emailIndex];
 
   return (
     <div
@@ -369,7 +466,7 @@ export function TypewriterVisual({
             <div className="tw-body-front">
               {/* Paper track — clips paper as it feeds out */}
               <div className="tw-paper-track">
-                <div className="tw-paper" key={paper ? "custom" : emailIndex}>
+                <div className="tw-paper" key={paper ? "custom" : `${emailIndex}-${paperKey}`}>
                   {paper ?? (
                     <>
                       <div
@@ -428,9 +525,41 @@ export function TypewriterVisual({
               <div className="tw-keys-layer">
                 {KEY_ROWS.map((count, ri) => (
                   <div key={ri} className="tw-key-row">
-                    {Array.from({ length: count }).map((_, ki) => (
-                      <div key={ki} className="tw-key" />
-                    ))}
+                    {Array.from({ length: count }).map((_, ki) => {
+                      if (ri === 2 && ki === 4 && !paper) {
+                        return (
+                          <Popover key={ki} open={hPopoverOpen} onOpenChange={setHPopoverOpen}>
+                            <PopoverTrigger
+                              className="tw-key tw-h-key"
+                              aria-label="H"
+                              render={<button />}
+                            >
+                              <span className="tw-h-label">H</span>
+                            </PopoverTrigger>
+                            <PopoverContent
+                              className="tw-birthday-popover"
+                              sideOffset={12}
+                              align="center"
+                            >
+                              <BirthdayPicker
+                                value={birthday}
+                                onSave={(v) => {
+                                  setBirthday(v);
+                                  setHPopoverOpen(false);
+                                  setEmailIndex(0);
+                                  setPaperKey((k) => k + 1);
+                                }}
+                                onClear={() => {
+                                  setBirthday(null);
+                                  setHPopoverOpen(false);
+                                }}
+                              />
+                            </PopoverContent>
+                          </Popover>
+                        );
+                      }
+                      return <div key={ki} className="tw-key" />;
+                    })}
                     {ri === 1 && !paper && (
                       <button
                         className="tw-key tw-return-key"
