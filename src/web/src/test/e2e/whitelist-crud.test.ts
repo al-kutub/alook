@@ -8,11 +8,11 @@ let seedB: TestSeed
 beforeAll(() => {
   seed = seedTestData()
   seedB = seedTestData()
-})
+}, 60_000)
 afterAll(() => {
   cleanupTestData(seed)
   cleanupTestData(seedB)
-})
+}, 60_000)
 
 describe("whitelist CRUD", () => {
   let addedEntryId: string
