@@ -9,19 +9,14 @@ export const GET = withAuth(async (req: NextRequest, ctx) => {
   const ws = await withWorkspaceMember(req, ctx);
   if (ws instanceof Response) return ws;
 
-  const conversationId = req.nextUrl.searchParams.get("conversation_id");
-  if (!conversationId) {
-    return writeError("conversation_id is required", 400);
-  }
-
+  const id = ctx.params?.id as string;
   const { env } = getCloudflareContext();
   const db = createDb((env as Env).DB);
 
-  const rows = await queries.artifact.listArtifactsByConversation(
-    db,
-    conversationId,
-    ws.workspaceId,
-  );
+  const row = await queries.artifact.getArtifact(db, id, ws.workspaceId);
+  if (!row) {
+    return writeError("artifact not found", 404);
+  }
 
-  return writeJSON(rows.map(queries.artifact.artifactToResponse));
+  return writeJSON(queries.artifact.artifactToResponse(row));
 });

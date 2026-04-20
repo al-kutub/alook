@@ -210,6 +210,7 @@ export const message = sqliteTable("message", {
   role: text("role").notNull(),
   content: text("content").notNull().default(""),
   taskId: text("task_id"),
+  attachmentIds: text("attachment_ids"),
   createdAt: text("created_at").notNull().$defaultFn(() => new Date().toISOString()),
 });
 
@@ -343,6 +344,7 @@ export const artifact = sqliteTable(
     contentType: text("content_type").notNull().default("application/octet-stream"),
     size: integer("size").notNull(),
     r2Key: text("r2_key").notNull(),
+    source: text("source").notNull().default("agent"),
     createdAt: text("created_at").notNull().$defaultFn(() => new Date().toISOString()),
   },
   (t) => [

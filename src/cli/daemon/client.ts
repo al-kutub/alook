@@ -105,6 +105,33 @@ export class DaemonClient {
     });
   }
 
+  async getArtifactMeta(
+    token: string,
+    artifactId: string,
+    workspaceId: string,
+  ): Promise<{ id: string; filename: string; content_type: string; size: number }> {
+    return this.request(
+      "GET",
+      `/api/artifacts/${artifactId}?workspace_id=${encodeURIComponent(workspaceId)}`,
+      token,
+    );
+  }
+
+  async downloadArtifact(
+    token: string,
+    artifactId: string,
+    workspaceId: string,
+  ): Promise<ArrayBuffer> {
+    const res = await fetch(
+      `${this.baseURL}/api/artifacts/${artifactId}/content?workspace_id=${encodeURIComponent(workspaceId)}`,
+      { headers: { Authorization: `Bearer ${token}` } },
+    );
+    if (!res.ok) {
+      throw new Error(`artifact download failed: HTTP ${res.status}`);
+    }
+    return res.arrayBuffer();
+  }
+
   reportMessages(
     token: string,
     taskId: string,

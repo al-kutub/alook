@@ -20,7 +20,7 @@ import { useAgentContext } from "@/contexts/agent-context";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { Skeleton } from "@/components/ui/skeleton";
-import { ArrowUp, Box, FileText, Loader2, RotateCcw } from "lucide-react";
+import { ArrowUp, Box, FileText, Loader2, Paperclip, RotateCcw, X } from "lucide-react";
 import { ArtifactSheet, formatSize } from "@/components/agent-chat/artifact-sheet";
 import { isPreviewable, getArtifactUrl } from "@/components/artifact-content-renderer";
 import {
@@ -34,6 +34,7 @@ import {
 import { Streamdown } from "streamdown";
 
 const MESSAGE_LIMIT = 20;
+const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10 MB
 
 /** Sort messages by (created_at, id) ascending — guarantees chronological order. */
 export function sortMessages(msgs: Message[]): Message[] {
@@ -88,6 +89,63 @@ function ArtifactCard({ artifact, onClick }: { artifact: Artifact; onClick: (a: 
   );
 }
 
+function AttachmentChips({
+  attachmentIds,
+  artifacts,
+  onArtifactClick,
+}: {
+  attachmentIds: string[];
+  artifacts: Artifact[];
+  onArtifactClick: (a: Artifact) => void;
+}) {
+  const matched = attachmentIds
+    .map((id) => artifacts.find((a) => a.id === id))
+    .filter((a): a is Artifact => !!a);
+
+  if (matched.length === 0) return null;
+
+  return (
+    <div className="flex flex-wrap gap-1.5 mt-1.5">
+      {matched.map((a) => (
+        <button
+          key={a.id}
+          type="button"
+          onClick={(e) => { e.stopPropagation(); onArtifactClick(a); }}
+          className="inline-flex items-center gap-1 rounded-md bg-primary-foreground/10 border border-primary-foreground/20 px-2 py-0.5 text-xs text-primary-foreground/80 hover:bg-primary-foreground/20 transition-colors cursor-pointer"
+        >
+          <FileText className="size-3 shrink-0" />
+          <span className="truncate max-w-[150px]">{a.filename}</span>
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function PendingFileChips({
+  pendingFiles,
+  messageId,
+}: {
+  pendingFiles: Map<string, File[]>;
+  messageId: string;
+}) {
+  const files = pendingFiles.get(messageId);
+  if (!files || files.length === 0) return null;
+
+  return (
+    <div className="flex flex-wrap gap-1.5 mt-1.5">
+      {files.map((f, i) => (
+        <span
+          key={i}
+          className="inline-flex items-center gap-1 rounded-md bg-primary-foreground/10 border border-primary-foreground/20 px-2 py-0.5 text-xs text-primary-foreground/80"
+        >
+          <FileText className="size-3 shrink-0" />
+          <span className="truncate max-w-[150px]">{f.name}</span>
+        </span>
+      ))}
+    </div>
+  );
+}
+
 export function AgentChatView() {
   const params = useParams();
   const { workspaceId } = useWorkspace();
@@ -110,8 +168,13 @@ export function AgentChatView() {
   const [artifacts, setArtifacts] = useState<Artifact[]>([]);
   const [artifactSheetOpen, setArtifactSheetOpen] = useState(false);
   const [selectedArtifact, setSelectedArtifact] = useState<Artifact | null>(null);
+  const [pendingFiles, setPendingFiles] = useState<File[]>([]);
 
-  const timeline = useMemo(() => buildTimeline(messages, artifacts), [messages, artifacts]);
+  const pendingFilesMapRef = useRef<Map<string, File[]>>(new Map());
+
+  const agentArtifacts = useMemo(() => artifacts.filter((a) => a.source === "agent"), [artifacts]);
+
+  const timeline = useMemo(() => buildTimeline(messages, agentArtifacts), [messages, agentArtifacts]);
 
   const handleArtifactClick = useCallback((artifact: Artifact) => {
     if (isPreviewable(artifact)) {
@@ -130,6 +193,7 @@ export function AgentChatView() {
   const loadingMoreRef = useRef(false);
   const isNearBottom = useRef(true);
   const startPollingRef = useRef<(taskId: string, conversationId: string, initialSeq?: number) => void>(null!);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     const key = `chat-draft:${agentId}`;
@@ -316,12 +380,19 @@ export function AgentChatView() {
               // Keep taskMessages so the trace stays visible under the completed assistant reply.
               const latest = await listMessages(conversationId, workspaceId);
               setMessages((prev) => mergeMessages(prev, latest));
-              requestAnimationFrame(() => {
-                scrollRef.current?.scrollTo({
-                  top: scrollRef.current.scrollHeight,
-                  behavior: "instant",
+              // Refresh artifacts to pick up any new ones from the completed task
+              try {
+                const arts = await listArtifacts(conversationId, workspaceId);
+                setArtifacts(arts);
+              } catch { /* best-effort */ }
+              if (isNearBottom.current) {
+                requestAnimationFrame(() => {
+                  scrollRef.current?.scrollTo({
+                    top: scrollRef.current.scrollHeight,
+                    behavior: "smooth",
+                  });
                 });
-              });
+              }
             } catch {
               toast.error("Failed to refresh messages");
             }
@@ -378,35 +449,132 @@ export function AgentChatView() {
     });
   }, [subscribeWs, conversation?.id]);
 
+  const handleFileSelect = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    const fileList = e.target.files;
+    if (!fileList) return;
+
+    const valid: File[] = [];
+    for (const file of Array.from(fileList)) {
+      if (file.size > MAX_FILE_SIZE) {
+        toast.error(`"${file.name}" exceeds 10 MB limit`);
+      } else {
+        valid.push(file);
+      }
+    }
+    if (valid.length > 0) {
+      setPendingFiles((prev) => [...prev, ...valid]);
+    }
+    // Reset input so re-selecting the same file works
+    e.target.value = "";
+  }, []);
+
+  const removePendingFile = useCallback((index: number) => {
+    setPendingFiles((prev) => prev.filter((_, i) => i !== index));
+  }, []);
+
+  const [dragging, setDragging] = useState(false);
+  const dragCounter = useRef(0);
+
+  const handleDragEnter = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    dragCounter.current++;
+    if (e.dataTransfer.types.includes("Files")) {
+      setDragging(true);
+    }
+  }, []);
+
+  const handleDragLeave = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    dragCounter.current--;
+    if (dragCounter.current === 0) {
+      setDragging(false);
+    }
+  }, []);
+
+  const handleDragOver = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+  }, []);
+
+  const handleDrop = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setDragging(false);
+    dragCounter.current = 0;
+
+    const droppedFiles = Array.from(e.dataTransfer.files);
+    const valid: File[] = [];
+    for (const file of droppedFiles) {
+      if (file.size > MAX_FILE_SIZE) {
+        toast.error(`"${file.name}" exceeds 10 MB limit`);
+      } else {
+        valid.push(file);
+      }
+    }
+    if (valid.length > 0) {
+      setPendingFiles((prev) => [...prev, ...valid]);
+    }
+  }, []);
+
   const handleSend = async () => {
     const content = input.trim();
-    if (!content || sending || !conversation) return;
+    if ((!content && pendingFiles.length === 0) || sending || !conversation) return;
+    if (!content) {
+      toast.error("Please type a message");
+      return;
+    }
 
+    const filesToSend = [...pendingFiles];
     setInput("");
+    setPendingFiles([]);
     setSending(true);
 
+    const optimisticId = `temp-${Date.now()}`;
     const optimistic: Message = {
-      id: `temp-${Date.now()}`,
+      id: optimisticId,
       conversation_id: conversation.id,
       role: "user",
       content,
       task_id: null,
+      attachment_ids: null,
       created_at: new Date().toISOString(),
     };
+
+    // Store pending files for the optimistic message rendering
+    if (filesToSend.length > 0) {
+      pendingFilesMapRef.current.set(optimisticId, filesToSend);
+    }
+
     setMessages((prev) => [...prev, optimistic]);
     scrollToBottom();
 
     try {
-      const { message, task } = await sendMessage(conversation.id, content, workspaceId);
+      const { message, task } = await sendMessage(
+        conversation.id,
+        content,
+        workspaceId,
+        filesToSend.length > 0 ? filesToSend : undefined,
+      );
+      // Clean up pending files ref
+      pendingFilesMapRef.current.delete(optimisticId);
       setMessages((prev) =>
         prev.map((m) => (m.id === optimistic.id ? message : m))
       );
+      if (message.attachment_ids && message.attachment_ids.length > 0) {
+        listArtifacts(conversation.id, workspaceId)
+          .then((arts) => setArtifacts(arts))
+          .catch(() => {});
+      }
       setActiveTask(task);
       setTaskMessages([]);
       startPolling(task.id, conversation.id);
     } catch (err) {
+      pendingFilesMapRef.current.delete(optimisticId);
       setMessages((prev) => prev.filter((m) => m.id !== optimistic.id));
       setInput(content);
+      setPendingFiles(filesToSend);
       toast.error(
         err instanceof Error ? err.message : "Failed to send message"
       );
@@ -436,6 +604,8 @@ export function AgentChatView() {
       setActiveTask(null);
       setTaskMessages([]);
       setArtifacts([]);
+      setPendingFiles([]);
+      pendingFilesMapRef.current.clear();
       lastSeqRef.current = 0;
       setConnectionLost(false);
       setHasMore(false);
@@ -465,6 +635,8 @@ export function AgentChatView() {
       handleSend();
     }
   };
+
+  const isTaskActive = !!activeTask && activeTask.status !== "completed" && activeTask.status !== "failed";
 
   if (loading) {
     return (
@@ -572,6 +744,12 @@ export function AgentChatView() {
                   <div className="flex justify-end">
                     <div className="max-w-[80%] rounded-lg px-4 py-2 bg-primary text-primary-foreground text-base whitespace-pre-wrap">
                       {msg.content}
+                      {msg.attachment_ids && msg.attachment_ids.length > 0 && (
+                        <AttachmentChips attachmentIds={msg.attachment_ids} artifacts={artifacts} onArtifactClick={handleArtifactClick} />
+                      )}
+                      {!msg.attachment_ids && (
+                        <PendingFileChips pendingFiles={pendingFilesMapRef.current} messageId={msg.id} />
+                      )}
                     </div>
                   </div>
                 ) : !hasTaskStream ? (
@@ -603,22 +781,56 @@ export function AgentChatView() {
             className={cn(
               "relative flex flex-col rounded-xl border bg-background/60 transition-colors duration-200",
               "focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/50",
-              (sending || (!!activeTask && activeTask.status !== "completed" && activeTask.status !== "failed")) && "opacity-50"
+              (sending || isTaskActive) && "opacity-50",
+              dragging && "border-ring ring-3 ring-ring/50"
             )}
+            onDragEnter={handleDragEnter}
+            onDragLeave={handleDragLeave}
+            onDragOver={handleDragOver}
+            onDrop={handleDrop}
           >
+            {dragging && (
+              <div className="absolute inset-0 z-10 flex items-center justify-center rounded-xl bg-background/80 border-2 border-dashed border-ring pointer-events-none">
+                <p className="text-sm text-muted-foreground font-medium">Drop files here</p>
+              </div>
+            )}
             <textarea
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={handleKeyDown}
               placeholder="Type a message..."
               rows={1}
-              disabled={sending || (!!activeTask && activeTask.status !== "completed" && activeTask.status !== "failed")}
+              disabled={sending || isTaskActive}
               className={cn(
                 "field-sizing-content w-full resize-none bg-transparent px-3.5 pt-2.5 text-base outline-none",
                 "placeholder:text-muted-foreground disabled:cursor-not-allowed",
                 "min-h-[38px] max-h-[200px] thin-scrollbar"
               )}
             />
+
+            {/* Pending file pills */}
+            {pendingFiles.length > 0 && (
+              <div className="flex flex-wrap gap-1.5 px-3.5 pb-1">
+                {pendingFiles.map((file, i) => (
+                  <span
+                    key={`${file.name}-${i}`}
+                    className="inline-flex items-center gap-1.5 rounded-md bg-muted px-2 py-1 text-xs text-muted-foreground"
+                  >
+                    <FileText className="size-3 shrink-0" />
+                    <span className="truncate max-w-[120px]">{file.name}</span>
+                    <span className="text-muted-foreground/60">{formatSize(file.size)}</span>
+                    <button
+                      type="button"
+                      onClick={() => removePendingFile(i)}
+                      className="ml-0.5 rounded-sm p-0.5 hover:bg-muted-foreground/20 transition-colors"
+                    >
+                      <X className="size-3" />
+                    </button>
+                  </span>
+                ))}
+              </div>
+            )}
+
             <div className="flex items-center justify-between px-2 pb-2 pt-0.5">
               <div className="flex items-center gap-1">
                 <Button
@@ -643,28 +855,47 @@ export function AgentChatView() {
                   title="View artifacts"
                 >
                   <Box className="size-3.5" />
-                  {artifacts.length > 0 && (
+                  {agentArtifacts.length > 0 && (
                     <span className="absolute -top-0.5 -right-0.5 flex size-3.5 items-center justify-center rounded-full bg-primary text-[9px] font-medium text-primary-foreground">
-                      {artifacts.length}
+                      {agentArtifacts.length}
                     </span>
                   )}
                 </Button>
               </div>
-              <Button
-                size="icon-sm"
-                onClick={handleSend}
-                disabled={!input.trim() || sending || (!!activeTask && activeTask.status !== "completed" && activeTask.status !== "failed")}
-                className={cn(
-                  "rounded-lg transition-opacity duration-200",
-                  !input.trim() && "opacity-40"
-                )}
-              >
-                {sending ? (
-                  <Loader2 className="size-3.5 animate-spin" />
-                ) : (
-                  <ArrowUp className="size-3.5" />
-                )}
-              </Button>
+              <div className="flex items-center gap-1">
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  multiple
+                  className="hidden"
+                  onChange={handleFileSelect}
+                />
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={sending || isTaskActive}
+                  className="rounded-lg text-muted-foreground/60 hover:text-foreground transition-colors duration-200"
+                  title="Attach files"
+                >
+                  <Paperclip className="size-3.5" />
+                </Button>
+                <Button
+                  size="icon-sm"
+                  onClick={handleSend}
+                  disabled={!input.trim() || sending || isTaskActive}
+                  className={cn(
+                    "rounded-lg transition-opacity duration-200",
+                    !input.trim() && "opacity-40"
+                  )}
+                >
+                  {sending ? (
+                    <Loader2 className="size-3.5 animate-spin" />
+                  ) : (
+                    <ArrowUp className="size-3.5" />
+                  )}
+                </Button>
+              </div>
             </div>
           </div>
         </div>
@@ -716,9 +947,9 @@ export function AgentChatView() {
         open={artifactSheetOpen}
         onOpenChange={(v) => {
           setArtifactSheetOpen(v);
-          if (!v) setSelectedArtifact(null);
+          if (!v) setTimeout(() => setSelectedArtifact(null), 300);
         }}
-        artifacts={artifacts}
+        artifacts={agentArtifacts}
         workspaceId={workspaceId}
         initialArtifact={selectedArtifact}
       />

@@ -7,6 +7,8 @@
  */
 
 import { createWriteStream } from "fs";
+import { mkdir, writeFile, rm } from "fs/promises";
+import path from "path";
 import { DaemonClient } from "./client.js";
 import { createBackend } from "./agent/index.js";
 import { prepare } from "./execenv/index.js";
@@ -19,19 +21,75 @@ import {
 } from "./execenv/timeline.js";
 import { buildPrompt } from "./prompt.js";
 import { log } from "../lib/logger.js";
-import type { SessionRunnerInput } from "./types.js";
+import type { SessionRunnerInput, Attachment } from "./types.js";
+
+const ATTACHMENTS_BASE = "/tmp/alook-attachments";
+
+function sanitizeFilename(name: string): string {
+  return path.basename(name).replace(/[/\\]/g, "_").replace(/\.\./g, "_").slice(0, 255) || "file";
+}
+
+async function cleanupAttachments(taskId: string): Promise<void> {
+  try {
+    await rm(path.join(ATTACHMENTS_BASE, taskId), { recursive: true, force: true });
+  } catch {
+    // best-effort
+  }
+}
+
+async function downloadAttachments(
+  client: DaemonClient,
+  token: string,
+  workspaceId: string,
+  taskId: string,
+  attachmentIds: string[],
+): Promise<Attachment[]> {
+  const dir = path.join(ATTACHMENTS_BASE, taskId);
+  await mkdir(dir, { recursive: true });
+
+  const attachments: Attachment[] = [];
+  for (const artId of attachmentIds) {
+    const meta = await client.getArtifactMeta(token, artId, workspaceId);
+    const content = await client.downloadArtifact(token, artId, workspaceId);
+    const filename = sanitizeFilename(meta.filename);
+    const localPath = path.join(dir, `${artId}_${filename}`);
+    await writeFile(localPath, Buffer.from(content));
+    attachments.push({
+      path: localPath,
+      content_type: meta.content_type,
+      filename: meta.filename,
+    });
+  }
+  return attachments;
+}
 
 export async function runSession(input: SessionRunnerInput): Promise<void> {
   const { task, provider, cliPath, model, serverURL, token, workspacesRoot, agentTimeout } = input;
 
   const client = new DaemonClient(serverURL);
   const backend = createBackend(provider, cliPath);
-  const prompt = buildPrompt(task);
 
   const { workDir, logFile, timelineDir, env } = prepare(
     { workspacesRoot },
     task,
   );
+
+  // Download attachments before building prompt
+  const attachmentIds = (task.context?.attachment_ids as string[]) ?? [];
+  let attachments: Attachment[] | undefined;
+  if (attachmentIds.length > 0) {
+    try {
+      attachments = await downloadAttachments(client, token, task.workspaceId, task.id, attachmentIds);
+    } catch (e) {
+      await cleanupAttachments(task.id);
+      const errMsg = `failed to download attachments: ${e}`;
+      log.error(`Task ${task.id} ${errMsg}`);
+      await client.failTask(token, task.id, errMsg);
+      return;
+    }
+  }
+
+  const prompt = buildPrompt(task, attachments);
 
   const resumeSessionId = task.contextKey
     ? findResumableSessionByContextKey(timelineDir, task.contextKey, provider) ?? undefined
@@ -117,14 +175,17 @@ export async function runSession(input: SessionRunnerInput): Promise<void> {
     try { await flushMessages(); } catch { /* best-effort */ }
     logStream?.end();
 
-    // 3. Update timeline — status "killed"
+    // 3. Cleanup attachments
+    await cleanupAttachments(task.id);
+
+    // 4. Update timeline — status "killed"
     updateEntry(timelineDir, task.id, (entry) => {
       entry.pid = null;
       entry.status = "killed";
       entry.errmsg = "killed by signal";
     });
 
-    // 4. Report to server
+    // 5. Report to server
     try {
       await client.failTask(token, task.id, "killed by signal");
     } catch { /* best-effort */ }
@@ -196,6 +257,9 @@ export async function runSession(input: SessionRunnerInput): Promise<void> {
 
   if (killed) return;
 
+  // Cleanup attachments after task completion
+  await cleanupAttachments(task.id);
+
   // Timeline — finalize entry
   if (result.status === "completed") {
     updateEntry(timelineDir, task.id, (entry) => {
@@ -250,6 +314,7 @@ async function main(): Promise<void> {
     await runSession(input);
   } catch (e) {
     log.error(`session-runner: unhandled error for task ${input.task.id}`, e);
+    await cleanupAttachments(input.task.id);
     try {
       await client.failTask(input.token, input.task.id, `session-runner crash: ${e}`);
     } catch {

@@ -82,6 +82,7 @@ export interface Message {
   role: "user" | "assistant";
   content: string;
   task_id: string | null;
+  attachment_ids: string[] | null;
   created_at: string;
 }
 
@@ -145,6 +146,7 @@ export interface Artifact {
   filename: string;
   content_type: string;
   size: number;
+  source: string;
   created_at: string;
 }
 

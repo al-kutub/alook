@@ -15,6 +15,7 @@ export async function createTask(
     type?: string;
     contextKey?: string | null;
     priority?: number;
+    context?: Record<string, unknown>;
   }
 ) {
   const rows = await db
@@ -28,6 +29,7 @@ export async function createTask(
       type: data.type ?? TASK_TYPES.USER_DM_MESSAGE,
       contextKey: data.contextKey ?? null,
       priority: data.priority ?? 0,
+      context: data.context ?? undefined,
     })
     .returning();
   return rows[0]!;

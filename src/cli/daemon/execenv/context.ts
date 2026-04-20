@@ -118,6 +118,11 @@ Upload files for your owner to review in the app.
 - Run 'npx @alook/cli sync upload-artifact --agent_id ${task.agentId} --conversation_id $ALOOK_CONVERSATION_ID --file <PATH>'
 - Use this after generating plans, reports, or any file the owner should review.
 ---
+
+### Attachments
+When your task includes attachments, their local paths are listed in the prompt JSON under "attachments".
+Use your Read tool to open them. Images and PDFs are read visually.
+---
 `;
 
   content += `\n### Calendar

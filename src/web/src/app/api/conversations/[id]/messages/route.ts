@@ -1,6 +1,7 @@
 import { NextRequest } from "next/server";
 import { getCloudflareContext } from "@opennextjs/cloudflare"
 import { createDb, queries, TASK_TYPES, buildContextKey } from "@alook/shared"
+import { nanoid } from "nanoid";
 import { withAuth } from "@/lib/middleware/auth";
 import { withWorkspaceMember } from "@/lib/middleware/workspace";
 import { writeJSON, writeError } from "@/lib/middleware/helpers";
@@ -9,6 +10,9 @@ import { TaskService } from "@/lib/services/task";
 import { log } from "@/lib/logger";
 import { broadcastToUser } from "@/lib/broadcast";
 
+const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10 MB
+const MAX_FILES = 10;
+
 function truncateTitle(text: string, maxLen = 50): string {
   const trimmed = text.replace(/\s+/g, " ").trim();
   if (trimmed.length <= maxLen) return trimmed;
@@ -16,6 +20,10 @@ function truncateTitle(text: string, maxLen = 50): string {
   const lastSpace = cut.lastIndexOf(" ");
   const title = lastSpace > 20 ? cut.slice(0, lastSpace) : cut;
   return title + "...";
+}
+
+function sanitizeFilename(name: string): string {
+  return name.replace(/[/\\]/g, "_").replace(/\.\./g, "_").slice(0, 255) || "file";
 }
 
 export const GET = withAuth(async (req, ctx) => {
@@ -51,22 +59,54 @@ export const POST = withAuth(async (req: NextRequest, ctx) => {
 
   const { env } = getCloudflareContext()
   const db = createDb((env as Env).DB)
+  const bucket = (env as Env).EMAIL_BUCKET;
 
   const id = ctx.params?.id;
   if (!id) {
     return writeError("conversation id is required", 400);
   }
 
-  let body: { content?: string };
-  try {
-    body = await req.json();
-  } catch {
-    return writeError("invalid request body", 400);
+  const contentType = req.headers.get("content-type") ?? "";
+  const isMultipart = contentType.includes("multipart/form-data");
+
+  let content: string;
+  let files: File[] = [];
+
+  if (isMultipart) {
+    let formData: FormData;
+    try {
+      formData = await req.formData();
+    } catch {
+      return writeError("invalid form data", 400);
+    }
+    content = (formData.get("content") as string) || "";
+    for (const [key, value] of formData.entries()) {
+      if (key === "file" && value instanceof File) {
+        files.push(value);
+      }
+    }
+  } else {
+    let body: { content?: string };
+    try {
+      body = await req.json();
+    } catch {
+      return writeError("invalid request body", 400);
+    }
+    content = body.content || "";
   }
 
-  const content = body.content || "";
   if (!content) {
     return writeError("content is required", 400);
+  }
+
+  // Validate files before any uploads
+  if (files.length > MAX_FILES) {
+    return writeError(`too many files (max ${MAX_FILES})`, 400);
+  }
+  for (const file of files) {
+    if (file.size > MAX_FILE_SIZE) {
+      return writeError(`file "${file.name}" exceeds 10 MB limit`, 413);
+    }
   }
 
   const conversation = await queries.conversation.getConversation(db, id, ws.workspaceId);
@@ -74,10 +114,38 @@ export const POST = withAuth(async (req: NextRequest, ctx) => {
     return writeError("conversation not found", 404);
   }
 
+  // Upload files to R2 and create artifact rows
+  const artifactIds: string[] = [];
+  for (const file of files) {
+    const filename = sanitizeFilename(file.name);
+    const fileContentType = file.type || "application/octet-stream";
+    const artifactId = "art_" + nanoid();
+    const r2Key = `artifacts/${ws.workspaceId}/${conversation.agentId}/${id}/${artifactId}/${filename}`;
+
+    await bucket.put(r2Key, await file.arrayBuffer(), {
+      httpMetadata: { contentType: fileContentType },
+    });
+
+    await queries.artifact.createArtifact(db, {
+      id: artifactId,
+      conversationId: id,
+      agentId: conversation.agentId,
+      workspaceId: ws.workspaceId,
+      filename,
+      contentType: fileContentType,
+      size: file.size,
+      r2Key,
+      source: "attachment",
+    });
+
+    artifactIds.push(artifactId);
+  }
+
   const message = await queries.message.createMessage(db, {
     conversationId: id,
     role: "user",
     content,
+    attachmentIds: artifactIds.length > 0 ? JSON.stringify(artifactIds) : null,
   });
 
   // Auto-title: conditional WHERE title = '' ensures only the first message sets it
@@ -92,7 +160,10 @@ export const POST = withAuth(async (req: NextRequest, ctx) => {
       ws.workspaceId,
       content,
       TASK_TYPES.USER_DM_MESSAGE,
-      { contextKey },
+      {
+        contextKey,
+        context: artifactIds.length > 0 ? { attachment_ids: artifactIds } : undefined,
+      },
     );
     broadcastToUser(ctx.userId, { type: "task.updated", taskId: task.id, status: "queued" }).catch(() => {});
     return writeJSON(

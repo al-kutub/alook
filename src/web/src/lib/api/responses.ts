@@ -76,6 +76,7 @@ export function taskToResponse(t: {
   prompt: string;
   type?: string;
   contextKey?: string | null;
+  context?: unknown;
   status: string;
   priority: number;
   dispatchedAt: Date | string | null;
@@ -94,6 +95,7 @@ export function taskToResponse(t: {
     prompt: t.prompt,
     type: t.type ?? TASK_TYPES.USER_DM_MESSAGE,
     context_key: t.contextKey ?? null,
+    context: t.context ?? null,
     status: t.status,
     priority: t.priority,
     dispatched_at: formatTimestampNullable(t.dispatchedAt),
@@ -126,6 +128,7 @@ export function messageToResponse(m: any) {
     role: m.role,
     content: m.content,
     task_id: m.taskId || null,
+    attachment_ids: m.attachmentIds ? JSON.parse(m.attachmentIds) : null,
     created_at: formatTimestamp(m.createdAt),
   };
 }

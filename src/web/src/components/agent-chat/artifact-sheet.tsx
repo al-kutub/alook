@@ -44,10 +44,11 @@ export function ArtifactSheet({ open, onOpenChange, artifacts, workspaceId, init
   }, [open, initialArtifact]);
 
   const handleOpenChange = (v: boolean) => {
-    if (!v) {
-      setSelectedArtifact(null);
-    }
     onOpenChange(v);
+    if (!v) {
+      // Defer clearing selected artifact until sheet closing animation completes
+      setTimeout(() => setSelectedArtifact(null), 300);
+    }
   };
 
   const onPointerDown = useCallback((e: React.PointerEvent) => {

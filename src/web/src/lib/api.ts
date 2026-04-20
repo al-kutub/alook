@@ -178,14 +178,63 @@ export const listMessages = (
   );
 };
 
-export const sendMessage = (conversationId: string, content: string, workspaceId: string) =>
-  apiFetch<{ message: Message; task: TaskApi }>(
-    `/api/conversations/${conversationId}/messages${wsQuery(workspaceId)}`,
-    {
-      method: "POST",
-      body: JSON.stringify({ content }),
+export const sendMessage = async (
+  conversationId: string,
+  content: string,
+  workspaceId: string,
+  files?: File[],
+): Promise<{ message: Message; task: TaskApi }> => {
+  if (!files || files.length === 0) {
+    return apiFetch<{ message: Message; task: TaskApi }>(
+      `/api/conversations/${conversationId}/messages${wsQuery(workspaceId)}`,
+      {
+        method: "POST",
+        body: JSON.stringify({ content }),
+      },
+    );
+  }
+
+  const fd = new FormData();
+  fd.append("content", content);
+  for (const file of files) {
+    fd.append("file", file);
+  }
+
+  let res: Response;
+  try {
+    res = await fetch(
+      `/api/conversations/${conversationId}/messages${wsQuery(workspaceId)}`,
+      { method: "POST", credentials: "include", body: fd },
+    );
+  } catch (err) {
+    if (err instanceof TypeError) {
+      throw new ApiError("Unable to connect — check your network", 0);
     }
-  );
+    throw err;
+  }
+
+  if (res.status === 401) {
+    if (typeof window !== "undefined") window.location.href = "/sign-in";
+    throw new ApiError("Unauthorized", 401);
+  }
+
+  if (!res.ok) {
+    let serverError: string | undefined;
+    let details: string[] | undefined;
+    try {
+      const body = (await res.json()) as { error?: string; details?: string[] };
+      serverError = body.error;
+      details = body.details;
+    } catch {
+      // non-JSON body
+    }
+    if (res.status === 429) throw new ApiError("Please wait a moment before trying again", 429);
+    if (res.status >= 500) throw new ApiError(serverError || "Something went wrong — please try again", res.status, details);
+    throw new ApiError(serverError || "Something went wrong", res.status, details);
+  }
+
+  return res.json() as Promise<{ message: Message; task: TaskApi }>;
+};
 
 // Active task for conversation (recovery on page refresh)
 export const getActiveTask = (conversationId: string, workspaceId: string) =>

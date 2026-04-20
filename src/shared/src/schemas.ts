@@ -74,6 +74,7 @@ export const TaskApiBaseSchema = z.object({
   created_at: z.string(),
   type: z.string(),
   context_key: z.string().nullable().optional(),
+  context: z.unknown().nullable().optional(),
 });
 export type TaskApiBase = z.infer<typeof TaskApiBaseSchema>;
 

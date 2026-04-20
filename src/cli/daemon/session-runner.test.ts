@@ -176,6 +176,7 @@ describe("session-runner runSession", () => {
 
     expect(buildPrompt).toHaveBeenCalledWith(
       expect.objectContaining({ id: "t1", prompt: "do the thing" }),
+      undefined,
     );
   });
 

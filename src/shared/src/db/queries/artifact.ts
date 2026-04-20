@@ -14,6 +14,7 @@ export async function createArtifact(
     contentType: string;
     size: number;
     r2Key: string;
+    source?: string;
   }
 ) {
   const rows = await db.insert(artifact).values(data).returning();
@@ -23,17 +24,20 @@ export async function createArtifact(
 export async function listArtifactsByConversation(
   db: Database,
   conversationId: string,
-  workspaceId: string
+  workspaceId: string,
+  opts?: { source?: string },
 ) {
+  const conditions = [
+    eq(artifact.conversationId, conversationId),
+    eq(artifact.workspaceId, workspaceId),
+  ];
+  if (opts?.source) {
+    conditions.push(eq(artifact.source, opts.source));
+  }
   return db
     .select()
     .from(artifact)
-    .where(
-      and(
-        eq(artifact.conversationId, conversationId),
-        eq(artifact.workspaceId, workspaceId)
-      )
-    )
+    .where(and(...conditions))
     .orderBy(desc(artifact.createdAt));
 }
 
@@ -53,6 +57,7 @@ export function artifactToResponse(row: typeof artifact.$inferSelect): Artifact 
     filename: row.filename,
     content_type: row.contentType,
     size: row.size,
+    source: row.source,
     created_at: row.createdAt,
   };
 }

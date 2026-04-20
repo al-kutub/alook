@@ -254,10 +254,10 @@ describe("taskToResponse Zod validation", () => {
     ).toThrow();
   });
 
-  it("strips context field from output", () => {
-    const withContext = { ...validTask, context: { secret: true } };
+  it("preserves context field in output", () => {
+    const withContext = { ...validTask, context: { attachment_ids: ["art_1"] } };
     const res = taskToResponse(withContext as any);
-    expect("context" in res).toBe(false);
+    expect(res.context).toEqual({ attachment_ids: ["art_1"] });
   });
 
   it("produces snake_case keys in output", () => {
@@ -360,7 +360,7 @@ describe("MessageResponse shape", () => {
   it("has expected keys: id, conversation_id, role, content, task_id, created_at", () => {
     const res = messageToResponse({ id: "m1", conversationId: "c1", role: "user", content: "hi", taskId: "t1", createdAt: ts });
     expect(Object.keys(res).sort()).toEqual(
-      ["content", "conversation_id", "created_at", "id", "role", "task_id"]
+      ["attachment_ids", "content", "conversation_id", "created_at", "id", "role", "task_id"]
     );
   });
 });
