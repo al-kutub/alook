@@ -889,7 +889,7 @@ describe("spawnSessionRunner", () => {
     expect(child.unref).toHaveBeenCalled();
   });
 
-  it("opens a log file fd and passes it as stdio [ignore, fd, fd]", () => {
+  it("opens a log file fd with taskId.log and passes it as stdio [ignore, fd, fd]", () => {
     spawnSessionRunner(makeSpawnInput() as any);
 
     expect(mockMkdirSync).toHaveBeenCalledWith(
@@ -910,13 +910,14 @@ describe("spawnSessionRunner", () => {
     expect(mockCloseSync).toHaveBeenCalledWith(42);
   });
 
-  it("renames the temp log file to PID.log after spawn", () => {
-    spawnSessionRunner(makeSpawnInput() as any);
+  it("sets logFilePath in the serialized input", () => {
+    const input = makeSpawnInput() as any;
+    spawnSessionRunner(input);
 
-    expect(mockRenameSync).toHaveBeenCalledWith(
-      "/tmp/alook/daemon/session-runners/t1.log",
-      "/tmp/alook/daemon/session-runners/50000.log",
-    );
+    const call = vi.mocked(spawn).mock.calls[0];
+    const encoded = call[1]![1] as string;
+    const decoded = JSON.parse(Buffer.from(encoded, "base64").toString("utf-8"));
+    expect(decoded.logFilePath).toBe("/tmp/alook/daemon/session-runners/t1.log");
   });
 });
 

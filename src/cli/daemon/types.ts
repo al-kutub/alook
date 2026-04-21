@@ -95,6 +95,7 @@ export interface SessionRunnerInput {
   token: string;
   workspacesRoot: string;
   agentTimeout: number;
+  logFilePath?: string;
 }
 
 /** Convert a validated TaskApi (snake_case wire format) to the internal Task type. */

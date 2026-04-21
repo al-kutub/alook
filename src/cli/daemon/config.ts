@@ -104,7 +104,7 @@ export function loadDaemonConfig(profile?: string): DaemonConfig {
     pollInterval: parseDuration(
       process.env.ALOOK_DAEMON_POLL_INTERVAL || "3s",
     ),
-    agentTimeout: parseDuration(process.env.ALOOK_AGENT_TIMEOUT || "2h"),
+    agentTimeout: parseDuration(process.env.ALOOK_AGENT_TIMEOUT || "12h"),
     maxConcurrentTasks: parseInt(
       process.env.ALOOK_DAEMON_MAX_CONCURRENT_TASKS || "20",
     ),
