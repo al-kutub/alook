@@ -1,7 +1,9 @@
 import { nanoid } from "nanoid"
 import { createDb, queries, parseEmailHandle, DEV_WEB_URL, createLogger } from "@alook/shared"
 import { decrypt } from "@alook/shared/crypto"
-import { WorkerMailer } from "worker-mailer"
+import { WorkerMailer, type AuthType } from "worker-mailer"
+
+const SMTP_AUTH_TYPES: AuthType[] = ["plain", "login", "cram-md5"]
 import type { EmailEnv } from "./types"
 
 export { ImapPollerDO } from "./imap-poller-do"
@@ -159,6 +161,7 @@ export default {
             port: customAccount.smtpPort,
             secure: smtpTls === 2,
             startTls: smtpTls === 1,
+            authType: SMTP_AUTH_TYPES,
             credentials: { username: smtpUsername, password: smtpPassword },
           },
           {
@@ -336,6 +339,7 @@ export default {
         port: account.smtpPort,
         secure: smtpTls === 2,
         startTls: smtpTls === 1,
+        authType: SMTP_AUTH_TYPES,
         credentials: { username: smtpUsername, password: smtpPassword },
       })
       await mailer.close()
