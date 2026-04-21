@@ -9,6 +9,7 @@ import { Monitor, SunMoon, Plus, LayoutGrid, CalendarDays } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useTheme } from "next-themes";
 import { NavUser } from "@/components/nav-user";
+import { AvatarRenderer, parseAvatarUrl } from "@/components/avatar";
 
 export function AppSidebar({ onNavigate }: { onNavigate?: () => void } = {}) {
   const router = useRouter();
@@ -51,6 +52,7 @@ export function AppSidebar({ onNavigate }: { onNavigate?: () => void } = {}) {
         ) : (
           sorted.map((agent) => {
             const isActive = activeAgentId === agent.id;
+            const avatarConfig = parseAvatarUrl(agent.avatar_url);
             return (
               <button
                 key={agent.id}
@@ -58,13 +60,22 @@ export function AppSidebar({ onNavigate }: { onNavigate?: () => void } = {}) {
                 title={agent.name}
                 onClick={() => handleAgentClick(agent.id)}
                 className={cn(
-                  "relative flex shrink-0 items-center justify-center size-10 rounded-xl text-sm font-medium transition-colors duration-200 cursor-pointer",
+                  "relative flex shrink-0 items-center justify-center size-10 rounded-xl text-sm font-medium transition-all duration-200 cursor-pointer overflow-hidden",
                   isActive
-                    ? "bg-primary text-primary-foreground shadow-sm"
-                    : "bg-secondary text-secondary-foreground hover:bg-accent"
+                    ? "ring-2 ring-primary ring-offset-1 ring-offset-background shadow-sm"
+                    : "hover:brightness-95"
                 )}
               >
-                {agent.name.charAt(0).toUpperCase()}
+                {avatarConfig ? (
+                  <AvatarRenderer config={avatarConfig} size={40} rounded={false} />
+                ) : (
+                  <span className={cn(
+                    "flex items-center justify-center size-full",
+                    "bg-secondary text-secondary-foreground"
+                  )}>
+                    {agent.name.charAt(0).toUpperCase()}
+                  </span>
+                )}
               </button>
             );
           })

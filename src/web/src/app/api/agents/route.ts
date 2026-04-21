@@ -33,6 +33,7 @@ export const POST = withAuth(async (req: NextRequest, ctx) => {
     name?: string;
     description?: string;
     instructions?: string;
+    avatar_url?: string | null;
     runtime_id?: string;
     runtime_config?: unknown;
     max_concurrent_tasks?: number;
@@ -86,11 +87,20 @@ export const POST = withAuth(async (req: NextRequest, ctx) => {
     }
   }
 
+  let avatarUrl: string | null = null;
+  if (typeof body.avatar_url === "string") {
+    if (body.avatar_url.length > 2000) {
+      return writeError("avatar_url too long", 400);
+    }
+    avatarUrl = body.avatar_url;
+  }
+
   const newAgent = await queries.agent.createAgent(db, {
     workspaceId: ws.workspaceId,
     name,
     description: body.description || "",
     instructions: body.instructions || "",
+    avatarUrl,
     runtimeId,
     runtimeMode: runtime.runtimeMode,
     runtimeConfig: sanitizedRc,

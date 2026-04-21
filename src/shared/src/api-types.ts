@@ -88,6 +88,7 @@ export interface UpdateAgentRequest {
   name?: string;
   description?: string;
   instructions?: string;
+  avatar_url?: string | null;
   runtime_id?: string;
   runtime_config?: Record<string, unknown>;
   max_concurrent_tasks?: number;

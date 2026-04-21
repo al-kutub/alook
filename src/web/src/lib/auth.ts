@@ -27,6 +27,7 @@ export function createAuth(env: Env) {
 
   return betterAuth({
     baseURL: env.BETTER_AUTH_URL,
+    trustedOrigins: isProd ? [] : ["https://*.trycloudflare.com"],
     database: env.DB,
     secret: env.BETTER_AUTH_SECRET,
     // Signed session-data cookie lets getSession() validate without hitting D1.

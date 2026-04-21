@@ -82,6 +82,7 @@ export async function updateAgent(
     name?: string;
     description?: string;
     instructions?: string;
+    avatarUrl?: string | null;
     runtimeId?: string | null;
     runtimeConfig?: unknown;
   }

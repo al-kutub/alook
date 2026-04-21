@@ -12,13 +12,26 @@ import {
   SheetTitle,
   SheetBody,
 } from "@/components/ui/sheet";
+import {
+  Dialog,
+  DialogContent,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { RuntimeSelect } from "@/components/runtime-select";
 import type { Agent } from "@alook/shared";
 import { isValidHandle } from "@alook/shared";
 import type { AgentRuntime as Runtime } from "@alook/shared";
 import { cn } from "@/lib/utils";
-import { LockIcon, XIcon, ChevronRightIcon } from "lucide-react";
+import { LockIcon, XIcon, ChevronRightIcon, PencilIcon } from "lucide-react";
 import { useWorkspace } from "@/contexts/workspace-context";
+import {
+  AvatarRenderer,
+  AvatarGenerator,
+  parseAvatarUrl,
+  serializeAvatarConfig,
+  randomConfig,
+  type AvatarConfig,
+} from "@/components/avatar";
 import {
   listWhitelist,
   addWhitelistEmail,
@@ -44,6 +57,7 @@ interface AgentEditFormProps {
     description: string;
     instructions: string;
     runtime_id: string;
+    avatar_url?: string | null;
     email_handle?: string;
     runtime_config?: Record<string, unknown>;
   }) => Promise<boolean>;
@@ -77,6 +91,10 @@ export function AgentEditForm({
       return typeof rc?.model === "string" ? rc.model : "";
     }
   );
+  const [avatarConfig, setAvatarConfig] = useState<AvatarConfig>(
+    () => parseAvatarUrl(agent?.avatar_url) ?? randomConfig()
+  );
+  const [showAvatarEditor, setShowAvatarEditor] = useState(false);
 
   const selectedRuntime = runtimes.find((r) => r.id === runtimeId);
   const providerModels = selectedRuntime && modelOptions
@@ -97,6 +115,7 @@ export function AgentEditForm({
       description,
       instructions,
       runtime_id: runtimeId,
+      avatar_url: serializeAvatarConfig(avatarConfig),
       email_handle: emailHandle || derivedHandle || undefined,
       runtime_config: model ? { model } : {},
     });
@@ -105,6 +124,34 @@ export function AgentEditForm({
   return (
     <div className="flex-1 overflow-y-auto px-5 py-6">
       <form onSubmit={handleSubmit} className="mx-auto max-w-md space-y-4">
+        {/* Avatar */}
+        <div className="flex flex-col items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setShowAvatarEditor(true)}
+            className="group relative"
+          >
+            <AvatarRenderer config={avatarConfig} size={80} />
+            <div className="absolute inset-0 flex items-center justify-center rounded-full bg-black/0 transition-colors group-hover:bg-black/20">
+              <PencilIcon className="size-4 text-white opacity-0 transition-opacity group-hover:opacity-100" />
+            </div>
+          </button>
+          <button
+            type="button"
+            onClick={() => setShowAvatarEditor(true)}
+            className="text-xs text-muted-foreground hover:text-foreground transition-colors"
+          >
+            Edit avatar
+          </button>
+        </div>
+
+        <Dialog open={showAvatarEditor} onOpenChange={setShowAvatarEditor}>
+          <DialogContent className="sm:max-w-4xl gap-0 p-0 overflow-hidden" showCloseButton={false}>
+            <DialogTitle className="sr-only">Edit Avatar</DialogTitle>
+            <AvatarGenerator config={avatarConfig} onChange={setAvatarConfig} />
+          </DialogContent>
+        </Dialog>
+
         <div className="space-y-1.5">
           <Label htmlFor="agent-name">Name</Label>
           <Input

@@ -48,6 +48,14 @@ export const PATCH = withAuth(async (req, ctx) => {
   if (typeof body.name === "string") data.name = body.name;
   if (typeof body.description === "string") data.description = body.description;
   if (typeof body.instructions === "string") data.instructions = body.instructions;
+  if (body.avatar_url === null) {
+    data.avatarUrl = null;
+  } else if (typeof body.avatar_url === "string") {
+    if (body.avatar_url.length > 2000) {
+      return writeError("avatar_url too long", 400);
+    }
+    data.avatarUrl = body.avatar_url;
+  }
   if (typeof body.runtime_id === "string") {
     const runtime = await queries.runtime.getAgentRuntimeForWorkspace(db, body.runtime_id, ws.workspaceId);
     if (!runtime) {
@@ -70,7 +78,7 @@ export const PATCH = withAuth(async (req, ctx) => {
     return writeError("no fields to update", 400);
   }
 
-  const updated = await queries.agent.updateAgent(db, id, ws.workspaceId, data as { name?: string; description?: string; instructions?: string; runtimeId?: string; runtimeConfig?: unknown });
+  const updated = await queries.agent.updateAgent(db, id, ws.workspaceId, data as { name?: string; description?: string; instructions?: string; avatarUrl?: string | null; runtimeId?: string; runtimeConfig?: unknown });
   if (!updated) {
     return writeError("agent not found", 404);
   }

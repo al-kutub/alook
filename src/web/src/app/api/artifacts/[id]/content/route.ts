@@ -10,7 +10,7 @@ export const GET = withAuth(async (req: NextRequest, ctx) => {
   if (ws instanceof Response) return ws;
 
   const id = ctx.params?.id as string;
-  const { env } = getCloudflareContext();
+  const { env } = await getCloudflareContext({ async: true });
   const db = createDb((env as Env).DB);
   const bucket = (env as Env).EMAIL_BUCKET;
 
@@ -19,21 +19,26 @@ export const GET = withAuth(async (req: NextRequest, ctx) => {
     return writeError("artifact not found", 404);
   }
 
-  const object = await bucket.get(row.r2Key);
-  if (!object) {
-    return writeError("artifact content not found", 404);
-  }
+  try {
+    const object = await bucket.get(row.r2Key);
+    if (!object) {
+      return writeError("artifact content not found", 404);
+    }
 
-  const download = req.nextUrl.searchParams.get("download");
-  const headers: Record<string, string> = {
-    "Content-Type": row.contentType,
-    "Content-Length": String(row.size),
-  };
-  if (download !== null) {
-    headers["Content-Disposition"] = `attachment; filename="${row.filename.replace(/"/g, '\\"')}"`;
-  } else {
-    headers["Content-Disposition"] = `inline; filename="${row.filename.replace(/"/g, '\\"')}"`;
-  }
+    const download = req.nextUrl.searchParams.get("download");
+    const headers: Record<string, string> = {
+      "Content-Type": row.contentType,
+      "Content-Length": String(row.size),
+    };
+    if (download !== null) {
+      headers["Content-Disposition"] = `attachment; filename="${row.filename.replace(/"/g, '\\"')}"`;
+    } else {
+      headers["Content-Disposition"] = `inline; filename="${row.filename.replace(/"/g, '\\"')}"`;
+    }
 
-  return new Response(object.body, { headers });
+    return new Response(object.body, { headers });
+  } catch (err) {
+    console.error("R2 fetch failed for artifact", id, err);
+    return writeError("failed to read artifact content", 500);
+  }
 });

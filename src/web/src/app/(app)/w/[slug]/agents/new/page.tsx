@@ -46,6 +46,7 @@ export default function CreateAgentPage() {
               name: data.name,
               description: data.description || undefined,
               instructions: data.instructions || undefined,
+              avatar_url: data.avatar_url ?? undefined,
               runtime_id: data.runtime_id,
               email_handle: data.email_handle || undefined,
               runtime_config: data.runtime_config,

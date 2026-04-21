@@ -37,6 +37,7 @@ export function agentToResponse(a: any) {
     name: a.name,
     description: a.description,
     instructions: a.instructions,
+    avatar_url: a.avatarUrl ?? null,
     runtime_mode: a.runtimeMode,
     runtime_config: rc,
     status: a.status,
