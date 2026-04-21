@@ -1,3 +1,5 @@
+import type { TaskApi } from "./schemas";
+
 export interface User {
   id: string;
   name: string;
@@ -83,6 +85,7 @@ export interface Message {
   content: string;
   task_id: string | null;
   attachment_ids: string[] | null;
+  status?: "active" | "buffered";
   created_at: string;
 }
 
@@ -194,3 +197,7 @@ export type WsMessage =
   | { type: "task.messages"; taskId: string; messages: TaskMessage[] }
   | { type: "email.received"; agentId: string }
   | { type: "artifact.uploaded"; conversationId: string; artifact: Artifact }
+  | { type: "followup.dispatched"; conversationId: string; message: Message; task: TaskApi }
+  | { type: "followup.created"; conversationId: string; message: Message }
+  | { type: "followup.deleted"; conversationId: string; messageId: string }
+  | { type: "followup.dispatch_failed"; conversationId: string; messageId: string; error: string }

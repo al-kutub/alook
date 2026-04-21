@@ -25,8 +25,8 @@ describe("buildInstructionContent email tool injection", () => {
     });
     const content = buildInstructionContent(task);
 
-    expect(content).toContain("npx @alook/cli pull --agent_id agent-123 --status unread");
-    expect(content).toContain("npx @alook/cli set --agent_id agent-123 --email_id <EMAIL_ID> --status read");
+    expect(content).toContain("npx @alook/cli email pull --agent_id agent-123 --status unread");
+    expect(content).toContain("npx @alook/cli email set --agent_id agent-123 --email_id <EMAIL_ID> --status read");
     expect(content).toContain("/tmp/alook-emails/");
     expect(content).toContain("metadata.json");
     expect(content).toContain("'myagent@alook.ai' (default, Alook platform address)");

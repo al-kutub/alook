@@ -202,17 +202,24 @@ export const conversation = sqliteTable(
   ]
 );
 
-export const message = sqliteTable("message", {
-  id: text("id").primaryKey().$defaultFn(() => nanoid()),
-  conversationId: text("conversation_id")
-    .notNull()
-    .references(() => conversation.id, { onDelete: "cascade" }),
-  role: text("role").notNull(),
-  content: text("content").notNull().default(""),
-  taskId: text("task_id"),
-  attachmentIds: text("attachment_ids"),
-  createdAt: text("created_at").notNull().$defaultFn(() => new Date().toISOString()),
-});
+export const message = sqliteTable(
+  "message",
+  {
+    id: text("id").primaryKey().$defaultFn(() => nanoid()),
+    conversationId: text("conversation_id")
+      .notNull()
+      .references(() => conversation.id, { onDelete: "cascade" }),
+    role: text("role").notNull(),
+    content: text("content").notNull().default(""),
+    taskId: text("task_id"),
+    attachmentIds: text("attachment_ids"),
+    status: text("status").notNull().default("active"),
+    createdAt: text("created_at").notNull().$defaultFn(() => new Date().toISOString()),
+  },
+  (t) => [
+    index("idx_message_conversation_status").on(t.conversationId, t.status),
+  ]
+);
 
 export const agentTaskQueue = sqliteTable(
   "agent_task_queue",

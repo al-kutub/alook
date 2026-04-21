@@ -366,6 +366,11 @@ export const CreateMessageRequestSchema = z.object({
 });
 export type CreateMessageRequest = z.infer<typeof CreateMessageRequestSchema>;
 
+export const CreateBufferedMessageRequestSchema = z.object({
+  content: z.string().min(1, "content is required"),
+});
+export type CreateBufferedMessageRequest = z.infer<typeof CreateBufferedMessageRequestSchema>;
+
 // ---------------------------------------------------------------------------
 // Email request schemas
 // ---------------------------------------------------------------------------

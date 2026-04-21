@@ -225,7 +225,7 @@ export async function failStaleDispatchedTasks(db: Database, workspaceId: string
         lt(agentTaskQueue.dispatchedAt, threshold)
       )
     )
-    .returning({ agentId: agentTaskQueue.agentId, workspaceId: agentTaskQueue.workspaceId });
+    .returning({ agentId: agentTaskQueue.agentId, workspaceId: agentTaskQueue.workspaceId, conversationId: agentTaskQueue.conversationId });
   return rows;
 }
 

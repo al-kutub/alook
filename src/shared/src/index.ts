@@ -103,6 +103,7 @@ export {
   UpdateAgentRequestSchema,
   CreateConversationRequestSchema,
   CreateMessageRequestSchema,
+  CreateBufferedMessageRequestSchema,
   EmailAttachmentSchema,
   SendEmailRequestSchema,
   UpdateEmailStatusRequestSchema,
