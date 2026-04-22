@@ -4,6 +4,8 @@ import { NextRequest } from "next/server";
 const mockStartTask = vi.fn();
 const mockTaskToResponse = vi.fn();
 
+let mockAuthCtx: Record<string, unknown> = { userId: "u1", email: "u@t.com", workspaceId: "w1" };
+
 vi.mock("@opennextjs/cloudflare", () => ({
   getCloudflareContext: vi.fn(() => ({ env: { DB: {} } })),
 }));
@@ -16,7 +18,7 @@ vi.mock("@/lib/middleware/auth", () => ({
   withAuth: vi.fn((handler: any) => async (req: any, ctx?: any) => {
     const params =
       ctx?.params instanceof Promise ? await ctx.params : ctx?.params;
-    return handler(req, { userId: "u1", email: "u@t.com", workspaceId: "w1", params });
+    return handler(req, { ...mockAuthCtx, params });
   }),
 }));
 vi.mock("@/lib/middleware/helpers", async () => {
@@ -41,7 +43,10 @@ const withParams = (taskId: string) => ({
 });
 
 describe("POST /api/daemon/tasks/[taskId]/start", () => {
-  beforeEach(() => vi.clearAllMocks());
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockAuthCtx = { userId: "u1", email: "u@t.com", workspaceId: "w1" };
+  });
 
   it("returns started task", async () => {
     const fakeTask = {
@@ -62,7 +67,7 @@ describe("POST /api/daemon/tasks/[taskId]/start", () => {
 
     expect(res.status).toBe(200);
     expect(body).toEqual({ id: "t1", status: "running" });
-    expect(mockStartTask).toHaveBeenCalledWith("t1");
+    expect(mockStartTask).toHaveBeenCalledWith("t1", "w1");
   });
 
   it("returns 400 when task not in dispatched status", async () => {
@@ -78,5 +83,37 @@ describe("POST /api/daemon/tasks/[taskId]/start", () => {
 
     expect(res.status).toBe(400);
     expect(body.error).toBe("task not in dispatched status");
+  });
+
+  it("returns 403 when workspaceId is missing (session auth)", async () => {
+    mockAuthCtx = { userId: "u1", email: "u@t.com" };
+
+    const res = await POST(
+      new NextRequest("http://localhost/api/daemon/tasks/t1/start", {
+        method: "POST",
+      }),
+      withParams("t1")
+    );
+    const body = await res.json();
+
+    expect(res.status).toBe(403);
+    expect(body.error).toBe("Forbidden: machine token required");
+    expect(mockStartTask).not.toHaveBeenCalled();
+  });
+
+  it("rejects cross-workspace task start (task not found for workspace)", async () => {
+    mockStartTask.mockRejectedValue(new Error("task not in dispatched status"));
+
+    const res = await POST(
+      new NextRequest("http://localhost/api/daemon/tasks/t-other/start", {
+        method: "POST",
+      }),
+      withParams("t-other")
+    );
+    const body = await res.json();
+
+    expect(res.status).toBe(400);
+    expect(body.error).toBe("task not in dispatched status");
+    expect(mockStartTask).toHaveBeenCalledWith("t-other", "w1");
   });
 });

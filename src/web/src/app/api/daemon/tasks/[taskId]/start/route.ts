@@ -6,6 +6,10 @@ import { taskToResponse } from "@/lib/api/responses";
 import { TaskService } from "@/lib/services/task";
 
 export const POST = withAuth(async (_req, ctx) => {
+  if (!ctx.workspaceId) {
+    return writeError("Forbidden: machine token required", 403);
+  }
+
   const { env } = getCloudflareContext()
   const db = getDb((env as Env).DB)
 
@@ -16,7 +20,7 @@ export const POST = withAuth(async (_req, ctx) => {
 
   const taskService = new TaskService(db);
   try {
-    const task = await taskService.startTask(taskId);
+    const task = await taskService.startTask(taskId, ctx.workspaceId);
     return writeJSON(taskToResponse(task));
   } catch (err: unknown) {
     return writeError(err instanceof Error ? err.message : "Unknown error", 400);

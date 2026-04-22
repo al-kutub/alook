@@ -14,7 +14,7 @@ export const GET = withAuth(async (_req, ctx) => {
     return writeError("workspace id is required", 400);
   }
 
-  const workspace = await queries.workspace.getWorkspace(db, id);
+  const workspace = await queries.workspace.getWorkspace(db, id, ctx.userId);
   if (!workspace) {
     return writeError("workspace not found", 404);
   }

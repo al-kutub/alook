@@ -513,6 +513,9 @@ describe("daemon route body validation", () => {
           ...real,
           createDb: vi.fn(() => ({})),
           queries: {
+            task: {
+              getTask: vi.fn().mockResolvedValue({ id: "t1", workspaceId: "w1" }),
+            },
             taskMessage: {
               createTaskMessage: vi.fn().mockResolvedValue(undefined),
             },
@@ -556,6 +559,9 @@ describe("daemon route body validation", () => {
           ...real,
           createDb: vi.fn(() => ({})),
           queries: {
+            task: {
+              getTask: vi.fn().mockResolvedValue({ id: "t1", workspaceId: "w1" }),
+            },
             taskMessage: { createTaskMessage: createMock },
           },
         };
@@ -606,6 +612,9 @@ describe("daemon route body validation", () => {
           ...real,
           createDb: vi.fn(() => ({})),
           queries: {
+            task: {
+              getTask: vi.fn().mockResolvedValue({ id: "t1", workspaceId: "w1" }),
+            },
             taskMessage: { createTaskMessage: vi.fn().mockResolvedValue(undefined) },
           },
         };

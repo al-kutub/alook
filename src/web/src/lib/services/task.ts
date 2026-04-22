@@ -87,8 +87,8 @@ export class TaskService {
     return claimed;
   }
 
-  async startTask(taskId: string) {
-    const task = await taskQueries.startTask(this.db, taskId);
+  async startTask(taskId: string, workspaceId: string) {
+    const task = await taskQueries.startTask(this.db, taskId, workspaceId);
     if (!task) {
       throw new Error("task not in dispatched status");
     }
@@ -97,6 +97,7 @@ export class TaskService {
 
   async completeTask(
     taskId: string,
+    workspaceId: string,
     result: string,
     sessionId: string
   ) {
@@ -107,7 +108,7 @@ export class TaskService {
       parsed = { raw: result };
     }
 
-    const task = await taskQueries.completeTask(this.db, taskId, {
+    const task = await taskQueries.completeTask(this.db, taskId, workspaceId, {
       result: parsed,
       sessionId: sessionId || null,
     });
@@ -137,8 +138,8 @@ export class TaskService {
     return task;
   }
 
-  async failTask(taskId: string, error: string) {
-    const task = await taskQueries.failTask(this.db, taskId, error);
+  async failTask(taskId: string, workspaceId: string, error: string) {
+    const task = await taskQueries.failTask(this.db, taskId, workspaceId, error);
 
     if (!task) {
       const existing = await taskQueries.getTask(this.db, taskId);

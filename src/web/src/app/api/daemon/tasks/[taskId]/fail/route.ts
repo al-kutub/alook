@@ -9,6 +9,10 @@ import { FailTaskRequestSchema } from "@alook/shared";
 import { broadcastToUser } from "@/lib/broadcast";
 
 export const POST = withAuth(async (req: NextRequest, ctx) => {
+  if (!ctx.workspaceId) {
+    return writeError("Forbidden: machine token required", 403);
+  }
+
   const { env } = getCloudflareContext()
   const db = getDb((env as Env).DB)
 
@@ -22,7 +26,7 @@ export const POST = withAuth(async (req: NextRequest, ctx) => {
 
   const taskService = new TaskService(db);
   try {
-    const task = await taskService.failTask(taskId, body.error);
+    const task = await taskService.failTask(taskId, ctx.workspaceId, body.error);
     broadcastToUser(ctx.userId, { type: "task.updated", taskId, status: "failed" }).catch(() => {});
     return writeJSON(taskToResponse(task));
   } catch (e: unknown) {

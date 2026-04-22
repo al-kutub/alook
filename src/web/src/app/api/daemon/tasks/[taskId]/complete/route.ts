@@ -9,6 +9,10 @@ import { CompleteTaskRequestSchema } from "@alook/shared";
 import { broadcastToUser } from "@/lib/broadcast";
 
 export const POST = withAuth(async (req: NextRequest, ctx) => {
+  if (!ctx.workspaceId) {
+    return writeError("Forbidden: machine token required", 403);
+  }
+
   const { env } = getCloudflareContext()
   const db = getDb((env as Env).DB)
 
@@ -27,6 +31,7 @@ export const POST = withAuth(async (req: NextRequest, ctx) => {
   try {
     const task = await taskService.completeTask(
       taskId,
+      ctx.workspaceId,
       result,
       sessionId
     );

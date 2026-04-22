@@ -218,6 +218,20 @@ describe("WebSocketDurableObject", () => {
       expect(ws.close).toHaveBeenCalledWith(1008, "Not authenticated")
     })
 
+    it("closes with 1008 when session token is expired (getValidSession returns null)", async () => {
+      const { durable } = createDO()
+      mockGetValidSession.mockResolvedValue(null)
+
+      const ws = createMockWebSocket()
+      ws.serializeAttachment({ userId: "", authenticated: false })
+
+      await durable.webSocketMessage(ws as any, JSON.stringify({ type: "auth", token: "expired-token" }))
+
+      expect(ws.close).toHaveBeenCalledWith(1008, "Unauthorized")
+      expect(ws.send).not.toHaveBeenCalled()
+      expect(ws.deserializeAttachment()).toEqual({ userId: "", authenticated: false })
+    })
+
     it("closes on invalid JSON", async () => {
       const { durable } = createDO()
 

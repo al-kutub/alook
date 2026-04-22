@@ -1,5 +1,5 @@
 import { eq, and, gt, asc } from "drizzle-orm";
-import { taskMessage } from "../schema";
+import { taskMessage, agentTaskQueue } from "../schema";
 import type { Database } from "../index";
 
 export async function createTaskMessage(
@@ -31,7 +31,26 @@ export async function createTaskMessage(
   return rows[0]!;
 }
 
-export async function listTaskMessages(db: Database, taskId: string) {
+export async function listTaskMessages(db: Database, taskId: string, workspaceId?: string) {
+  if (workspaceId) {
+    return db
+      .select({
+        id: taskMessage.id,
+        taskId: taskMessage.taskId,
+        seq: taskMessage.seq,
+        type: taskMessage.type,
+        tool: taskMessage.tool,
+        content: taskMessage.content,
+        callId: taskMessage.callId,
+        input: taskMessage.input,
+        output: taskMessage.output,
+        createdAt: taskMessage.createdAt,
+      })
+      .from(taskMessage)
+      .innerJoin(agentTaskQueue, eq(taskMessage.taskId, agentTaskQueue.id))
+      .where(and(eq(taskMessage.taskId, taskId), eq(agentTaskQueue.workspaceId, workspaceId)))
+      .orderBy(asc(taskMessage.seq));
+  }
   return db
     .select()
     .from(taskMessage)

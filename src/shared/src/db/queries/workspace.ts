@@ -1,9 +1,19 @@
-import { eq, asc } from "drizzle-orm";
+import { eq, and, asc } from "drizzle-orm";
 import { workspace, member } from "../schema";
 import type { Database } from "../index";
 
-export async function getWorkspace(db: Database, id: string) {
-  const rows = await db.select().from(workspace).where(eq(workspace.id, id));
+export async function getWorkspace(db: Database, id: string, userId: string) {
+  const rows = await db
+    .select({
+      id: workspace.id,
+      name: workspace.name,
+      slug: workspace.slug,
+      createdAt: workspace.createdAt,
+      updatedAt: workspace.updatedAt,
+    })
+    .from(workspace)
+    .innerJoin(member, eq(member.workspaceId, workspace.id))
+    .where(and(eq(workspace.id, id), eq(member.userId, userId)));
   return rows[0] ?? null;
 }
 

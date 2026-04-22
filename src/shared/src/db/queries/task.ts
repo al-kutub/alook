@@ -107,12 +107,12 @@ export async function claimTask(db: Database, agentId: string, workspaceId: stri
   return ClaimedTaskRowSchema.parse(row);
 }
 
-export async function startTask(db: Database, id: string) {
+export async function startTask(db: Database, id: string, workspaceId: string) {
   const rows = await db
     .update(agentTaskQueue)
     .set({ status: "running", startedAt: new Date().toISOString() })
     .where(
-      and(eq(agentTaskQueue.id, id), eq(agentTaskQueue.status, "dispatched"))
+      and(eq(agentTaskQueue.id, id), eq(agentTaskQueue.workspaceId, workspaceId), eq(agentTaskQueue.status, "dispatched"))
     )
     .returning();
   return rows[0] ?? null;
@@ -121,6 +121,7 @@ export async function startTask(db: Database, id: string) {
 export async function completeTask(
   db: Database,
   id: string,
+  workspaceId: string,
   data: { result: unknown; sessionId: string | null }
 ) {
   const rows = await db
@@ -132,7 +133,7 @@ export async function completeTask(
       sessionId: data.sessionId,
     })
     .where(
-      and(eq(agentTaskQueue.id, id), eq(agentTaskQueue.status, "running"))
+      and(eq(agentTaskQueue.id, id), eq(agentTaskQueue.workspaceId, workspaceId), eq(agentTaskQueue.status, "running"))
     )
     .returning();
   return rows[0] ?? null;
@@ -141,6 +142,7 @@ export async function completeTask(
 export async function failTask(
   db: Database,
   id: string,
+  workspaceId: string,
   error: string
 ) {
   const rows = await db
@@ -149,6 +151,7 @@ export async function failTask(
     .where(
       and(
         eq(agentTaskQueue.id, id),
+        eq(agentTaskQueue.workspaceId, workspaceId),
         inArray(agentTaskQueue.status, ["dispatched", "running"])
       )
     )

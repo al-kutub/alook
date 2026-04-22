@@ -11,6 +11,10 @@ import { broadcastToUser } from "@/lib/broadcast";
 import { log } from "@/lib/logger";
 
 export const GET = withAuth(async (_req, ctx) => {
+  if (!ctx.workspaceId) {
+    return writeError("Forbidden: machine token required", 403);
+  }
+
   const { env } = getCloudflareContext()
   const db = getDb((env as Env).DB)
 
@@ -19,17 +23,26 @@ export const GET = withAuth(async (_req, ctx) => {
     return writeError("task_id is required", 400);
   }
 
-  const messages = await queries.taskMessage.listTaskMessages(db, taskId);
+  const messages = await queries.taskMessage.listTaskMessages(db, taskId, ctx.workspaceId);
   return writeJSON(messages.map(taskMessageToResponse));
 });
 
 export const POST = withAuth(async (req: NextRequest, ctx) => {
+  if (!ctx.workspaceId) {
+    return writeError("Forbidden: machine token required", 403);
+  }
+
   const { env } = getCloudflareContext()
   const db = getDb((env as Env).DB)
 
   const taskId = ctx.params?.taskId;
   if (!taskId) {
     return writeError("task_id is required", 400);
+  }
+
+  const task = await queries.task.getTask(db, taskId, ctx.workspaceId);
+  if (!task) {
+    return writeError("task not found", 404);
   }
 
   const [body, err] = await parseBody(req, ReportMessagesRequestSchema);

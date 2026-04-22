@@ -259,7 +259,7 @@ describe("TaskService", () => {
     it("throws when not in dispatched status", async () => {
       taskQ.startTask.mockResolvedValue(null);
 
-      await expect(service.startTask("t1")).rejects.toThrow(
+      await expect(service.startTask("t1", "w1")).rejects.toThrow(
         "task not in dispatched status"
       );
     });
@@ -268,8 +268,9 @@ describe("TaskService", () => {
       const task = { id: "t1", status: "running" };
       taskQ.startTask.mockResolvedValue(task);
 
-      const result = await service.startTask("t1");
+      const result = await service.startTask("t1", "w1");
       expect(result).toEqual(task);
+      expect(taskQ.startTask).toHaveBeenCalledWith({}, "t1", "w1");
     });
   });
 
@@ -290,6 +291,7 @@ describe("TaskService", () => {
 
       await service.completeTask(
         "t1",
+        "w1",
         JSON.stringify({ output: "Here is the answer" }),
         "sess-1"
       );
@@ -314,7 +316,7 @@ describe("TaskService", () => {
       taskQ.countRunningTasks.mockResolvedValue(0);
       agentQ.updateAgentStatus.mockResolvedValue(undefined);
 
-      await service.completeTask("t1", JSON.stringify({}), "sess-1");
+      await service.completeTask("t1", "w1", JSON.stringify({}), "sess-1");
 
       expect(messageQ.createMessage).not.toHaveBeenCalled();
     });
@@ -331,7 +333,7 @@ describe("TaskService", () => {
       taskQ.countRunningTasks.mockResolvedValue(1);
       agentQ.updateAgentStatus.mockResolvedValue(undefined);
 
-      await service.completeTask("t1", JSON.stringify({}), "sess-1");
+      await service.completeTask("t1", "w1", JSON.stringify({}), "sess-1");
 
       expect(agentQ.updateAgentStatus).toHaveBeenCalledWith(
         {},
@@ -357,7 +359,7 @@ describe("TaskService", () => {
       taskQ.countRunningTasks.mockResolvedValue(0);
       agentQ.updateAgentStatus.mockResolvedValue(undefined);
 
-      await service.failTask("t1", "something went wrong");
+      await service.failTask("t1", "w1", "something went wrong");
 
       expect(messageQ.createMessage).toHaveBeenCalledWith({}, {
         conversationId: "c1",
@@ -379,7 +381,7 @@ describe("TaskService", () => {
       taskQ.countRunningTasks.mockResolvedValue(0);
       agentQ.updateAgentStatus.mockResolvedValue(undefined);
 
-      await service.failTask("t1", "");
+      await service.failTask("t1", "w1", "");
 
       expect(messageQ.createMessage).not.toHaveBeenCalled();
     });
@@ -396,7 +398,7 @@ describe("TaskService", () => {
       taskQ.countRunningTasks.mockResolvedValue(2);
       agentQ.updateAgentStatus.mockResolvedValue(undefined);
 
-      await service.failTask("t1", "err");
+      await service.failTask("t1", "w1", "err");
 
       expect(agentQ.updateAgentStatus).toHaveBeenCalledWith(
         {},
@@ -605,7 +607,7 @@ describe("TaskService", () => {
       taskQ.countRunningTasks.mockResolvedValue(0);
       agentQ.updateAgentStatus.mockResolvedValue(undefined);
 
-      await service.completeTask("t1", JSON.stringify({}), "sess-1");
+      await service.completeTask("t1", "w1", JSON.stringify({}), "sess-1");
 
       expect(messageQ.activateNextBufferedMessage).toHaveBeenCalledWith({}, "c1");
     });
@@ -626,7 +628,7 @@ describe("TaskService", () => {
       taskQ.countRunningTasks.mockResolvedValue(0);
       agentQ.updateAgentStatus.mockResolvedValue(undefined);
 
-      await service.failTask("t1", "err");
+      await service.failTask("t1", "w1", "err");
 
       expect(messageQ.activateNextBufferedMessage).toHaveBeenCalledWith({}, "c1");
     });
