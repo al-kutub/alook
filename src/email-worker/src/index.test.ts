@@ -676,6 +676,44 @@ describe("POST /send/agent with custom SMTP", () => {
     expect(res.status).toBe(404)
   })
 
+  it("sends attachments as base64 strings via worker-mailer", async () => {
+    mockGetAgent.mockResolvedValue({ id: "agent-1", workspaceId: "ws-1", emailHandle: "jarvis" })
+    mockGetEmailAccount.mockResolvedValue(CUSTOM_ACCOUNT)
+    const { env, send, put } = customSmtpEnv()
+
+    const fileContent = new TextEncoder().encode("hello attachment")
+    ;((env.EMAIL_BUCKET as any).get as ReturnType<typeof vi.fn>) = vi.fn().mockResolvedValue({
+      arrayBuffer: () => Promise.resolve(fileContent.buffer),
+    })
+
+    const res = await handler.fetch(
+      makeRequest({
+        agentId: "agent-1",
+        workspaceId: "ws-1",
+        to: "recipient@example.com",
+        subject: "SMTP with attachment",
+        htmlBody: "<p>See file</p>",
+        customAccountId: "aea_1",
+        attachmentKeys: [
+          { key: "emails/drafts/x/report.pdf", filename: "report.pdf", contentType: "application/pdf" },
+        ],
+      }),
+      env,
+    )
+
+    expect(res.status).toBe(200)
+    expect(send).not.toHaveBeenCalled()
+    expect(mockWorkerMailerSend).toHaveBeenCalledOnce()
+
+    const [, emailOpts] = mockWorkerMailerSend.mock.calls[0]
+    expect(emailOpts.attachments).toHaveLength(1)
+    expect(emailOpts.attachments[0].filename).toBe("report.pdf")
+    expect(emailOpts.attachments[0].mimeType).toBe("application/pdf")
+    // WorkerMailer expects base64 string, NOT ArrayBuffer
+    expect(typeof emailOpts.attachments[0].content).toBe("string")
+    expect(emailOpts.attachments[0].content).toBe(btoa("hello attachment"))
+  })
+
   it("returns 500 when SMTP send fails", async () => {
     mockGetAgent.mockResolvedValue({ id: "agent-1", workspaceId: "ws-1", emailHandle: "jarvis" })
     mockGetEmailAccount.mockResolvedValue(CUSTOM_ACCOUNT)
