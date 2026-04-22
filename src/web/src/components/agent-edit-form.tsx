@@ -55,6 +55,13 @@ interface AgentEditFormProps {
   savingLabel?: string;
 }
 
+const TABS = [
+  { id: "general", label: "General" },
+  { id: "email", label: "Email" },
+] as const;
+
+type TabId = (typeof TABS)[number]["id"];
+
 export function AgentEditForm({
   agent,
   runtimes,
@@ -67,6 +74,7 @@ export function AgentEditForm({
   savingLabel = "Saving...",
 }: AgentEditFormProps) {
   const { workspaceId } = useWorkspace();
+  const [activeTab, setActiveTab] = useState<TabId>("general");
   const [name, setName] = useState(agent?.name ?? "");
   const [description, setDescription] = useState(agent?.description ?? "");
   const [instructions, setInstructions] = useState(agent?.instructions ?? "");
@@ -109,158 +117,209 @@ export function AgentEditForm({
   };
 
   return (
-    <div className="flex-1 overflow-y-auto px-5 py-6">
-      <form onSubmit={handleSubmit} className="mx-auto max-w-md space-y-4">
-        <div className="space-y-1.5">
-          <Label htmlFor="agent-name">Name</Label>
-          <Input
-            id="agent-name"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            placeholder="My Agent"
-            required
-          />
-        </div>
-
-        <div className="space-y-1.5">
-          <Label htmlFor="agent-description">Description</Label>
-          <Input
-            id="agent-description"
-            value={description}
-            onChange={(e) => setDescription(e.target.value)}
-            placeholder="What does this agent do?"
-          />
-        </div>
-
-        {!agent && (
-          <div className="space-y-1.5">
-            <Label htmlFor="agent-handle">Email Handle</Label>
-            <div className="flex items-center gap-0">
-              <Input
-                id="agent-handle"
-                value={emailHandle}
-                onChange={(e) => setEmailHandle(e.target.value.toLowerCase())}
-                placeholder={derivedHandle || "my-agent"}
-                className="rounded-r-none"
-              />
-              <span className="inline-flex h-8 items-center rounded-r-lg border border-l-0 border-input bg-muted px-2.5 text-sm text-muted-foreground">
-                @alook.ai
-              </span>
-            </div>
-            {effectiveHandle && (
-              <p className={cn(
-                "text-xs",
-                handleError ? "text-destructive" : "text-muted-foreground"
-              )}>
-                {handleError || `${effectiveHandle}@alook.ai`}
-              </p>
-            )}
-            <p className="text-xs text-muted-foreground/70">
-              This cannot be changed after creation.
-            </p>
-          </div>
-        )}
-
-        {!agent && (
-          <CustomEmailForm
-            workspaceId={workspaceId}
-            onDataChange={setCustomEmailData}
-            getDataRef={customEmailGetDataRef}
-          />
-        )}
-
-        <div className="space-y-1.5">
-          <Label htmlFor="agent-instructions">Instructions</Label>
-          <Textarea
-            id="agent-instructions"
-            value={instructions}
-            onChange={(e) => setInstructions(e.target.value)}
-            placeholder="System prompt or instructions..."
-            rows={6}
-          />
-        </div>
-
-        <div className="space-y-1.5">
-          <Label htmlFor="agent-model">Model</Label>
-          <Input
-            id="agent-model"
-            value={model}
-            onChange={(e) => setModel(e.target.value)}
-            placeholder="Default (runtime model)"
-            list="agent-model-options"
-          />
-          {providerModels.length > 0 && (
-            <datalist id="agent-model-options">
-              {providerModels.map((m) => (
-                <option key={m} value={m} />
-              ))}
-            </datalist>
-          )}
-          <p className="text-xs text-muted-foreground/70">
-            Optional. Leave blank to use the runtime&apos;s default model.
-          </p>
-        </div>
-
-        <div className="space-y-1.5">
-          <Label htmlFor="agent-runtime">Runtime</Label>
-          <RuntimeSelect
-            value={runtimeId}
-            onValueChange={(newId) => {
-              const oldProvider = runtimes.find((r) => r.id === runtimeId)?.provider;
-              const newProvider = runtimes.find((r) => r.id === newId)?.provider;
-              setRuntimeId(newId);
-              if (oldProvider && oldProvider !== newProvider) {
-                setModel("");
-              }
-            }}
-            runtimes={runtimes}
-          />
-        </div>
-
-        {agent && agent.email_handle && (
-          <WhitelistTrigger agentId={agent.id} />
-        )}
-
-        {agent && (
-          <div className="rounded-lg border border-border/50 bg-muted/30 px-4 py-3">
-            <div className="mb-2.5 flex items-center gap-1.5">
-              <LockIcon className="size-3 text-muted-foreground/60" />
-              <span className="text-xs font-medium text-muted-foreground/60">Set at creation</span>
-            </div>
-            <div className="flex items-center justify-between">
-              <span className="text-xs text-muted-foreground">Email</span>
-              <span className="text-xs text-muted-foreground">
-                {agent.email_handle ? `${agent.email_handle}@alook.ai` : "Not configured"}
-              </span>
-            </div>
-          </div>
-        )}
-
-        {agent && (
-          <CustomEmailForm
-            agentId={agent.id}
-            workspaceId={workspaceId}
-          />
-        )}
-
-        <div className="flex items-center gap-2 pt-2">
-          <Button
+    <div className="flex flex-1 min-h-0">
+      <nav className="w-48 shrink-0 border-r border-border/50 py-3 px-2 hidden md:block">
+        {TABS.map((tab) => (
+          <button
+            key={tab.id}
             type="button"
-            variant="ghost"
-            size="sm"
-            onClick={onCancel}
+            onClick={() => setActiveTab(tab.id)}
+            className={cn(
+              "w-full rounded-md px-2.5 py-1.5 text-left text-sm transition-colors",
+              activeTab === tab.id
+                ? "bg-accent text-foreground font-medium"
+                : "text-muted-foreground hover:bg-accent/50 hover:text-foreground"
+            )}
           >
-            Cancel
-          </Button>
-          <Button
-            type="submit"
-            size="sm"
-            disabled={saving || !name || !!handleError}
-          >
-            {saving ? savingLabel : submitLabel}
-          </Button>
+            {tab.label}
+          </button>
+        ))}
+      </nav>
+
+      <div className="flex-1 min-w-0 flex flex-col">
+        <div className="flex items-center gap-1 border-b border-border/50 px-4 md:hidden">
+          {TABS.map((tab) => (
+            <button
+              key={tab.id}
+              type="button"
+              onClick={() => setActiveTab(tab.id)}
+              className={cn(
+                "relative px-3 py-2.5 text-sm transition-colors",
+                activeTab === tab.id
+                  ? "text-foreground font-medium"
+                  : "text-muted-foreground hover:text-foreground"
+              )}
+            >
+              {tab.label}
+              {activeTab === tab.id && (
+                <span className="absolute inset-x-3 -bottom-px h-px bg-foreground" />
+              )}
+            </button>
+          ))}
         </div>
-      </form>
+
+        <div className="flex-1 overflow-y-auto thin-scrollbar px-5 py-6">
+          <form onSubmit={handleSubmit} className="mx-auto max-w-md space-y-4">
+            {activeTab === "general" && (
+              <>
+                <div className="space-y-1.5">
+                  <Label htmlFor="agent-name">Name</Label>
+                  <Input
+                    id="agent-name"
+                    value={name}
+                    onChange={(e) => setName(e.target.value)}
+                    placeholder="My Agent"
+                    required
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <Label htmlFor="agent-description">Description</Label>
+                  <Input
+                    id="agent-description"
+                    value={description}
+                    onChange={(e) => setDescription(e.target.value)}
+                    placeholder="What does this agent do?"
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <Label htmlFor="agent-instructions">Instructions</Label>
+                  <Textarea
+                    id="agent-instructions"
+                    value={instructions}
+                    onChange={(e) => setInstructions(e.target.value)}
+                    placeholder="System prompt or instructions..."
+                    rows={6}
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <Label htmlFor="agent-model">Model</Label>
+                  <Input
+                    id="agent-model"
+                    value={model}
+                    onChange={(e) => setModel(e.target.value)}
+                    placeholder="Default (runtime model)"
+                    list="agent-model-options"
+                  />
+                  {providerModels.length > 0 && (
+                    <datalist id="agent-model-options">
+                      {providerModels.map((m) => (
+                        <option key={m} value={m} />
+                      ))}
+                    </datalist>
+                  )}
+                  <p className="text-xs text-muted-foreground/70">
+                    Optional. Leave blank to use the runtime&apos;s default model.
+                  </p>
+                </div>
+
+                <div className="space-y-1.5">
+                  <Label htmlFor="agent-runtime">Runtime</Label>
+                  <RuntimeSelect
+                    value={runtimeId}
+                    onValueChange={(newId) => {
+                      const oldProvider = runtimes.find((r) => r.id === runtimeId)?.provider;
+                      const newProvider = runtimes.find((r) => r.id === newId)?.provider;
+                      setRuntimeId(newId);
+                      if (oldProvider && oldProvider !== newProvider) {
+                        setModel("");
+                      }
+                    }}
+                    runtimes={runtimes}
+                  />
+                </div>
+              </>
+            )}
+
+            {activeTab === "email" && (
+              <>
+                {!agent && (
+                  <div className="space-y-1.5">
+                    <Label htmlFor="agent-handle">Email Handle</Label>
+                    <div className="flex items-center gap-0">
+                      <Input
+                        id="agent-handle"
+                        value={emailHandle}
+                        onChange={(e) => setEmailHandle(e.target.value.toLowerCase())}
+                        placeholder={derivedHandle || "my-agent"}
+                        className="rounded-r-none"
+                      />
+                      <span className="inline-flex h-8 items-center rounded-r-lg border border-l-0 border-input bg-muted px-2.5 text-sm text-muted-foreground">
+                        @alook.ai
+                      </span>
+                    </div>
+                    {effectiveHandle && (
+                      <p className={cn(
+                        "text-xs",
+                        handleError ? "text-destructive" : "text-muted-foreground"
+                      )}>
+                        {handleError || `${effectiveHandle}@alook.ai`}
+                      </p>
+                    )}
+                    <p className="text-xs text-muted-foreground/70">
+                      This cannot be changed after creation.
+                    </p>
+                  </div>
+                )}
+
+                {!agent && (
+                  <CustomEmailForm
+                    workspaceId={workspaceId}
+                    onDataChange={setCustomEmailData}
+                    getDataRef={customEmailGetDataRef}
+                  />
+                )}
+
+                {agent && (
+                  <div className="rounded-lg border border-border/50 bg-muted/30 px-4 py-3">
+                    <div className="mb-2.5 flex items-center gap-1.5">
+                      <LockIcon className="size-3 text-muted-foreground/60" />
+                      <span className="text-xs font-medium text-muted-foreground/60">Set at creation</span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs text-muted-foreground">Email</span>
+                      <span className="text-xs text-muted-foreground">
+                        {agent.email_handle ? `${agent.email_handle}@alook.ai` : "Not configured"}
+                      </span>
+                    </div>
+                  </div>
+                )}
+
+                {agent && agent.email_handle && (
+                  <WhitelistTrigger agentId={agent.id} />
+                )}
+
+                {agent && (
+                  <CustomEmailForm
+                    agentId={agent.id}
+                    workspaceId={workspaceId}
+                  />
+                )}
+              </>
+            )}
+
+            <div className="flex items-center gap-2 pt-2">
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={onCancel}
+              >
+                Cancel
+              </Button>
+              <Button
+                type="submit"
+                size="sm"
+                disabled={saving || !name || !!handleError}
+              >
+                {saving ? savingLabel : submitLabel}
+              </Button>
+            </div>
+          </form>
+        </div>
+      </div>
     </div>
   );
 }
