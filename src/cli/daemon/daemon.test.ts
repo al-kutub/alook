@@ -30,6 +30,7 @@ vi.mock("./config.js", () => ({
     opencodeModel: "",
     pollInterval: 3000,
     agentTimeout: 7200000,
+    messageInactivityTimeout: 300000,
     maxConcurrentTasks: 20,
     daemonId: "d1",
     deviceName: "test-host",
@@ -296,6 +297,7 @@ describe("daemon session runner dispatch", () => {
     expect(input.token).toBe("al_test_token");
     expect(input.workspacesRoot).toBe("/tmp/ws");
     expect(input.agentTimeout).toBe(7200000);
+    expect(input.messageInactivityTimeout).toBe(300000);
   });
 
   it("uses runtime_config.model when set on agent", async () => {

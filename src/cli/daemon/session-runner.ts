@@ -112,7 +112,7 @@ async function downloadAttachments(
 }
 
 export async function runSession(input: SessionRunnerInput): Promise<void> {
-  const { task, provider, cliPath, model, serverURL, token, workspacesRoot, agentTimeout } = input;
+  const { task, provider, cliPath, model, serverURL, token, workspacesRoot, agentTimeout, messageInactivityTimeout } = input;
 
   log.info(`starting (task=${task.id}, type=${task.type}, agent=${task.agentId}, provider=${provider}, model=${model || "default"})`);
 
@@ -263,9 +263,38 @@ export async function runSession(input: SessionRunnerInput): Promise<void> {
   process.on("SIGTERM", onKill);
   process.on("SIGINT", onKill);
 
+  // Message inactivity timeout — kill hung agent if no messages arrive within the window
+  const INACTIVITY_TIMEOUT_MS = messageInactivityTimeout ?? 5 * 60 * 1000;
+  let inactivityTimedOut = false;
+
   try {
-    for await (const msg of session.messages) {
-      if (killed) break;
+    const iter = session.messages[Symbol.asyncIterator]();
+    while (!killed) {
+      const next = iter.next();
+      const raceResult = await (INACTIVITY_TIMEOUT_MS > 0
+        ? Promise.race([
+            next,
+            new Promise<"timeout">((resolve) => {
+              const timer = setTimeout(() => resolve("timeout"), INACTIVITY_TIMEOUT_MS);
+              next.then(() => clearTimeout(timer), () => clearTimeout(timer));
+            }),
+          ])
+        : next);
+
+      if (raceResult === "timeout") {
+        inactivityTimedOut = true;
+        log.warn(`message inactivity timeout (${INACTIVITY_TIMEOUT_MS / 1000}s) — killing agent`);
+        if (session.pid) {
+          try { process.kill(session.pid, "SIGTERM"); } catch { /* already dead */ }
+        }
+        iter.return?.(undefined as any);
+        break;
+      }
+
+      const iterResult = raceResult as IteratorResult<import("./types.js").AgentMessage>;
+      if (iterResult.done) break;
+
+      const msg = iterResult.value;
       seq++;
       pendingMessages.push({
         seq,
@@ -312,6 +341,12 @@ export async function runSession(input: SessionRunnerInput): Promise<void> {
   process.removeListener("SIGINT", onKill);
 
   if (killed) return;
+
+  // Override result on inactivity timeout
+  if (inactivityTimedOut) {
+    result.status = "failed";
+    result.error = `message inactivity timeout (no messages for ${INACTIVITY_TIMEOUT_MS / 1000}s)`;
+  }
 
   // Cleanup attachments after task completion
   await cleanupAttachments(task.id);

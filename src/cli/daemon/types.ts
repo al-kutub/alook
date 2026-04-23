@@ -96,6 +96,7 @@ export interface SessionRunnerInput {
   token: string;
   workspacesRoot: string;
   agentTimeout: number;
+  messageInactivityTimeout: number;
   logFilePath?: string;
 }
 

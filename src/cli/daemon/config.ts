@@ -70,6 +70,7 @@ export interface DaemonConfig {
   opencodeModel: string;
   pollInterval: number;
   agentTimeout: number;
+  messageInactivityTimeout: number;
   maxConcurrentTasks: number;
   daemonId: string;
   deviceName: string;
@@ -105,6 +106,7 @@ export function loadDaemonConfig(profile?: string): DaemonConfig {
       process.env.ALOOK_DAEMON_POLL_INTERVAL || "3s",
     ),
     agentTimeout: parseDuration(process.env.ALOOK_AGENT_TIMEOUT || "12h"),
+    messageInactivityTimeout: parseDuration(process.env.ALOOK_MESSAGE_INACTIVITY_TIMEOUT || "5m"),
     maxConcurrentTasks: parseInt(
       process.env.ALOOK_DAEMON_MAX_CONCURRENT_TASKS || "20",
     ),

@@ -129,6 +129,7 @@ function makeInput(overrides?: Partial<SessionRunnerInput>): SessionRunnerInput 
     token: "test_token",
     workspacesRoot: "/tmp/ws",
     agentTimeout: 7200000,
+    messageInactivityTimeout: 300000,
     ...overrides,
   };
 }
@@ -1171,5 +1172,128 @@ describe("session-runner marker integration", () => {
 
     killSpy.mockRestore();
     exitSpy.mockRestore();
+  });
+});
+
+describe("message inactivity timeout", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("kills agent and fails task when no messages arrive within timeout", async () => {
+    const killSpy = vi.spyOn(process, "kill").mockImplementation(() => true);
+
+    const agentPid = 88888;
+    mockBackendExecute.mockReturnValue({
+      pid: agentPid,
+      messages: (async function* () {
+        yield { type: "text", content: "first message" };
+        // Hang forever — simulating a stuck agent
+        await new Promise<void>(() => {});
+      })(),
+      sessionId: Promise.resolve("sess-hang"),
+      result: new Promise<any>((resolve) => {
+        // Resolve when process.kill is called (simulating proc close after SIGTERM)
+        const interval = setInterval(() => {
+          if (killSpy.mock.calls.some((c) => c[0] === agentPid)) {
+            clearInterval(interval);
+            resolve({
+              status: "timeout",
+              output: "",
+              error: "",
+              durationMs: 5000,
+              sessionId: "sess-hang",
+            });
+          }
+        }, 10);
+      }),
+    });
+
+    // Use a very short inactivity timeout (100ms) for the test
+    await runSession(makeInput({ messageInactivityTimeout: 100 }));
+
+    // Should have killed the hung agent process
+    expect(killSpy).toHaveBeenCalledWith(agentPid, "SIGTERM");
+
+    // Should have failed the task with inactivity timeout error
+    expect(mockClientInstance.failTask).toHaveBeenCalledWith(
+      "test_token",
+      "t1",
+      "message inactivity timeout (no messages for 0.1s)",
+    );
+    expect(mockClientInstance.completeTask).not.toHaveBeenCalled();
+
+    // Timeline should show failure
+    const failCalls = mockUpdateEntry.mock.calls.filter((call: any[]) => {
+      const updater = call[2];
+      const entry = { pid: 1, status: "running" as string, errmsg: null as string | null, agent_responses: [] as string[] };
+      updater(entry);
+      return entry.status === "failed" && entry.errmsg?.includes("inactivity");
+    });
+    expect(failCalls.length).toBe(1);
+
+    killSpy.mockRestore();
+  });
+
+  it("kills agent when it hangs immediately with zero messages", async () => {
+    const killSpy = vi.spyOn(process, "kill").mockImplementation(() => true);
+
+    const agentPid = 77777;
+    mockBackendExecute.mockReturnValue({
+      pid: agentPid,
+      messages: (async function* () {
+        // Hang forever from the start — no messages at all
+        await new Promise<void>(() => {});
+      })(),
+      sessionId: Promise.resolve("sess-zero"),
+      result: new Promise<any>((resolve) => {
+        const interval = setInterval(() => {
+          if (killSpy.mock.calls.some((c) => c[0] === agentPid)) {
+            clearInterval(interval);
+            resolve({
+              status: "timeout",
+              output: "",
+              error: "",
+              durationMs: 100,
+              sessionId: "sess-zero",
+            });
+          }
+        }, 10);
+      }),
+    });
+
+    await runSession(makeInput({ messageInactivityTimeout: 100 }));
+
+    expect(killSpy).toHaveBeenCalledWith(agentPid, "SIGTERM");
+    expect(mockClientInstance.failTask).toHaveBeenCalledWith(
+      "test_token",
+      "t1",
+      "message inactivity timeout (no messages for 0.1s)",
+    );
+
+    killSpy.mockRestore();
+  });
+
+  it("does not timeout when messages keep flowing", async () => {
+    setupBackend(
+      [
+        { type: "text", content: "msg 1" },
+        { type: "text", content: "msg 2" },
+        { type: "text", content: "msg 3" },
+      ],
+      {
+        status: "completed",
+        output: "Done",
+        error: "",
+        durationMs: 100,
+        sessionId: "sess-1",
+      },
+    );
+
+    // Short timeout — but messages arrive instantly so no timeout
+    await runSession(makeInput({ messageInactivityTimeout: 100 }));
+
+    expect(mockClientInstance.completeTask).toHaveBeenCalled();
+    expect(mockClientInstance.failTask).not.toHaveBeenCalled();
   });
 });

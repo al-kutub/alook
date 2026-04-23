@@ -2,14 +2,26 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { NextRequest } from "next/server";
 
 const mockGetAgent = vi.fn();
+const mockGetAgentByHandle = vi.fn();
 const mockCreateEmail = vi.fn();
+const mockIsWhitelisted = vi.fn();
+const mockGetEmailAccountsByAgent = vi.fn();
+const mockGetEmailAccountScoped = vi.fn();
 const mockEmailWorkerFetch = vi.fn();
+const mockEmailBucketGet = vi.fn();
+const mockEmailBucketPut = vi.fn();
+const mockWorkerSelfRefFetch = vi.fn();
 
 vi.mock("@opennextjs/cloudflare", () => ({
   getCloudflareContext: vi.fn(() => ({
     env: {
       DB: {},
       EMAIL_WORKER: { fetch: (...args: unknown[]) => mockEmailWorkerFetch(...args) },
+      EMAIL_BUCKET: {
+        get: (...args: unknown[]) => mockEmailBucketGet(...args),
+        put: (...args: unknown[]) => mockEmailBucketPut(...args),
+      },
+      WORKER_SELF_REFERENCE: { fetch: (...args: unknown[]) => mockWorkerSelfRefFetch(...args) },
     },
   })),
 }));
@@ -27,6 +39,14 @@ vi.mock("@alook/shared", async () => {
       },
       agent: {
         getAgent: (...args: unknown[]) => mockGetAgent(...args),
+        getAgentByHandle: (...args: unknown[]) => mockGetAgentByHandle(...args),
+      },
+      whitelist: {
+        isWhitelisted: (...args: unknown[]) => mockIsWhitelisted(...args),
+      },
+      emailAccount: {
+        getEmailAccountsByAgent: (...args: unknown[]) => mockGetEmailAccountsByAgent(...args),
+        getEmailAccountScoped: (...args: unknown[]) => mockGetEmailAccountScoped(...args),
       },
     },
   };
@@ -59,6 +79,13 @@ vi.mock("@/lib/api/responses", () => ({
 
 import { POST } from "./route";
 
+function makeReq(body: Record<string, unknown>) {
+  return new NextRequest("http://localhost/api/email/send?workspace_id=ws1", {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}
+
 describe("POST /api/email/send", () => {
   beforeEach(() => vi.clearAllMocks());
 
@@ -72,14 +99,11 @@ describe("POST /api/email/send", () => {
       toEmail: "user@example.com", subject: "Hello",
     });
 
-    const req = new NextRequest("http://localhost/api/email/send?workspace_id=ws1", {
-      method: "POST",
-      body: JSON.stringify({
-        agentId: "a1",
-        to: "user@example.com",
-        subject: "Hello",
-        htmlBody: "<p>Hi there</p>",
-      }),
+    const req = makeReq({
+      agentId: "a1",
+      to: "user@example.com",
+      subject: "Hello",
+      htmlBody: "<p>Hi there</p>",
     });
 
     const res = await POST(req, {} as any);
@@ -114,15 +138,12 @@ describe("POST /api/email/send", () => {
       { key: "emails/drafts/x/doc.txt", filename: "doc.txt", size: 12, contentType: "text/plain" },
     ];
 
-    const req = new NextRequest("http://localhost/api/email/send?workspace_id=ws1", {
-      method: "POST",
-      body: JSON.stringify({
-        agentId: "a1",
-        to: "user@example.com",
-        subject: "With attachment",
-        htmlBody: "<p>See attached</p>",
-        attachments,
-      }),
+    const req = makeReq({
+      agentId: "a1",
+      to: "user@example.com",
+      subject: "With attachment",
+      htmlBody: "<p>See attached</p>",
+      attachments,
     });
 
     const res = await POST(req, {} as any);
@@ -145,14 +166,11 @@ describe("POST /api/email/send", () => {
       new Response(JSON.stringify({ error: "agent not found" }), { status: 404 }),
     );
 
-    const req = new NextRequest("http://localhost/api/email/send?workspace_id=ws1", {
-      method: "POST",
-      body: JSON.stringify({
-        agentId: "a1",
-        to: "user@example.com",
-        subject: "Hello",
-        htmlBody: "<p>Hi</p>",
-      }),
+    const req = makeReq({
+      agentId: "a1",
+      to: "user@example.com",
+      subject: "Hello",
+      htmlBody: "<p>Hi</p>",
     });
 
     const res = await POST(req, {} as any);
@@ -162,14 +180,11 @@ describe("POST /api/email/send", () => {
   it("returns 400 when agent has no emailHandle", async () => {
     mockGetAgent.mockResolvedValue({ id: "a1", emailHandle: null });
 
-    const req = new NextRequest("http://localhost/api/email/send?workspace_id=ws1", {
-      method: "POST",
-      body: JSON.stringify({
-        agentId: "a1",
-        to: "user@example.com",
-        subject: "Hello",
-        htmlBody: "<p>Hi</p>",
-      }),
+    const req = makeReq({
+      agentId: "a1",
+      to: "user@example.com",
+      subject: "Hello",
+      htmlBody: "<p>Hi</p>",
     });
 
     const res = await POST(req, {} as any);
@@ -179,14 +194,11 @@ describe("POST /api/email/send", () => {
   it("returns 404 when agent not in workspace", async () => {
     mockGetAgent.mockResolvedValue(null);
 
-    const req = new NextRequest("http://localhost/api/email/send?workspace_id=ws1", {
-      method: "POST",
-      body: JSON.stringify({
-        agentId: "a1",
-        to: "user@example.com",
-        subject: "Hello",
-        htmlBody: "<p>Hi</p>",
-      }),
+    const req = makeReq({
+      agentId: "a1",
+      to: "user@example.com",
+      subject: "Hello",
+      htmlBody: "<p>Hi</p>",
     });
 
     const res = await POST(req, {} as any);
@@ -194,12 +206,292 @@ describe("POST /api/email/send", () => {
   });
 
   it("returns 400 when required fields are missing", async () => {
-    const req = new NextRequest("http://localhost/api/email/send?workspace_id=ws1", {
-      method: "POST",
-      body: JSON.stringify({ agentId: "a1" }),
-    });
+    const req = makeReq({ agentId: "a1" });
 
     const res = await POST(req, {} as any);
     expect(res.status).toBe(400);
+  });
+
+  // --- Local delivery tests ---
+
+  describe("local delivery shortcut", () => {
+    it("delivers locally when recipient is same-workspace @alook.ai agent", async () => {
+      mockGetAgent.mockResolvedValue({ id: "a1", emailHandle: "sender-agent", workspaceId: "ws1" });
+      mockGetAgentByHandle.mockResolvedValue({ id: "a2", emailHandle: "agent-b", workspaceId: "ws1" });
+      mockIsWhitelisted.mockResolvedValue(true);
+      mockWorkerSelfRefFetch.mockResolvedValue(Response.json({ ok: true }));
+      mockCreateEmail.mockResolvedValue({ id: "e1", direction: "outbound" });
+
+      const req = makeReq({
+        agentId: "a1",
+        to: "agent-b@alook.ai",
+        subject: "Hello local",
+        htmlBody: "<p>Internal</p>",
+      });
+
+      const res = await POST(req, {} as any);
+      expect(res.status).toBe(200);
+
+      expect(mockEmailWorkerFetch).not.toHaveBeenCalled();
+      expect(mockWorkerSelfRefFetch).toHaveBeenCalledOnce();
+
+      const [url, init] = mockWorkerSelfRefFetch.mock.calls[0];
+      expect(url).toBe("http://internal/api/email/notify");
+      const payload = JSON.parse(init.body);
+      expect(payload.agentId).toBe("a2");
+      expect(payload.workspaceId).toBe("ws1");
+      expect(payload.from).toBe("sender-agent@alook.ai");
+      expect(payload.to).toBe("agent-b@alook.ai");
+      expect(payload.subject).toBe("Hello local");
+      expect(payload.forwarded).toBe(false);
+      expect(payload.r2Key).toMatch(/^emails\/.+\/raw$/);
+
+      expect(mockCreateEmail).toHaveBeenCalledOnce();
+      const createArgs = mockCreateEmail.mock.calls[0]![1] as any;
+      expect(createArgs.direction).toBe("outbound");
+      expect(createArgs.toEmail).toBe("agent-b@alook.ai");
+    });
+
+    it("falls through to EMAIL_WORKER when recipient is in different workspace", async () => {
+      mockGetAgent.mockResolvedValue({ id: "a1", emailHandle: "sender-agent", workspaceId: "ws1" });
+      mockGetAgentByHandle.mockResolvedValue({ id: "a2", emailHandle: "agent-b", workspaceId: "ws-other" });
+      mockEmailWorkerFetch.mockResolvedValue(Response.json({ ok: true, r2Key: "emails/x/raw" }));
+      mockCreateEmail.mockResolvedValue({ id: "e1" });
+
+      const req = makeReq({
+        agentId: "a1",
+        to: "agent-b@alook.ai",
+        subject: "Cross workspace",
+        htmlBody: "<p>Hi</p>",
+      });
+
+      const res = await POST(req, {} as any);
+      expect(res.status).toBe(200);
+
+      expect(mockWorkerSelfRefFetch).not.toHaveBeenCalled();
+      expect(mockEmailWorkerFetch).toHaveBeenCalledOnce();
+    });
+
+    it("falls through to EMAIL_WORKER when handle doesn't resolve to any agent", async () => {
+      mockGetAgent.mockResolvedValue({ id: "a1", emailHandle: "sender-agent", workspaceId: "ws1" });
+      mockGetAgentByHandle.mockResolvedValue(null);
+      mockEmailWorkerFetch.mockResolvedValue(Response.json({ ok: true, r2Key: "emails/x/raw" }));
+      mockCreateEmail.mockResolvedValue({ id: "e1" });
+
+      const req = makeReq({
+        agentId: "a1",
+        to: "nonexistent@alook.ai",
+        subject: "No agent",
+        htmlBody: "<p>Hi</p>",
+      });
+
+      const res = await POST(req, {} as any);
+      expect(res.status).toBe(200);
+
+      expect(mockWorkerSelfRefFetch).not.toHaveBeenCalled();
+      expect(mockEmailWorkerFetch).toHaveBeenCalledOnce();
+    });
+
+    it("falls through to EMAIL_WORKER when recipient is not @alook.ai", async () => {
+      mockGetAgent.mockResolvedValue({ id: "a1", emailHandle: "sender-agent", workspaceId: "ws1" });
+      mockEmailWorkerFetch.mockResolvedValue(Response.json({ ok: true, r2Key: "emails/x/raw" }));
+      mockCreateEmail.mockResolvedValue({ id: "e1" });
+
+      const req = makeReq({
+        agentId: "a1",
+        to: "user@gmail.com",
+        subject: "External",
+        htmlBody: "<p>Hi</p>",
+      });
+
+      const res = await POST(req, {} as any);
+      expect(res.status).toBe(200);
+
+      expect(mockGetAgentByHandle).not.toHaveBeenCalled();
+      expect(mockWorkerSelfRefFetch).not.toHaveBeenCalled();
+      expect(mockEmailWorkerFetch).toHaveBeenCalledOnce();
+    });
+
+    it("allows self-send via local delivery", async () => {
+      mockGetAgent.mockResolvedValue({ id: "a1", emailHandle: "sender-agent", workspaceId: "ws1" });
+      mockGetAgentByHandle.mockResolvedValue({ id: "a1", emailHandle: "sender-agent", workspaceId: "ws1" });
+      mockIsWhitelisted.mockResolvedValue(false);
+      mockWorkerSelfRefFetch.mockResolvedValue(Response.json({ ok: true }));
+      mockCreateEmail.mockResolvedValue({ id: "e1" });
+
+      const req = makeReq({
+        agentId: "a1",
+        to: "sender-agent@alook.ai",
+        subject: "Self",
+        htmlBody: "<p>Self</p>",
+      });
+
+      const res = await POST(req, {} as any);
+      expect(res.status).toBe(200);
+
+      expect(mockEmailWorkerFetch).not.toHaveBeenCalled();
+      expect(mockWorkerSelfRefFetch).toHaveBeenCalledOnce();
+    });
+
+    it("fetches attachments from R2 and includes them in MIME for local delivery", async () => {
+      mockGetAgent.mockResolvedValue({ id: "a1", emailHandle: "sender-agent", workspaceId: "ws1" });
+      mockGetAgentByHandle.mockResolvedValue({ id: "a2", emailHandle: "agent-b", workspaceId: "ws1" });
+      mockIsWhitelisted.mockResolvedValue(false);
+      mockWorkerSelfRefFetch.mockResolvedValue(Response.json({ ok: true }));
+      mockCreateEmail.mockResolvedValue({ id: "e1" });
+
+      const fileContent = new TextEncoder().encode("hello file");
+      mockEmailBucketGet.mockResolvedValue({
+        arrayBuffer: () => Promise.resolve(fileContent.buffer),
+      });
+      mockEmailBucketPut.mockResolvedValue(undefined);
+
+      const attachments = [
+        { key: "emails/drafts/x/doc.txt", filename: "doc.txt", size: 10, contentType: "text/plain" },
+      ];
+
+      const req = makeReq({
+        agentId: "a1",
+        to: "agent-b@alook.ai",
+        subject: "With file",
+        htmlBody: "<p>See attached</p>",
+        attachments,
+      });
+
+      const res = await POST(req, {} as any);
+      expect(res.status).toBe(200);
+
+      expect(mockEmailBucketGet).toHaveBeenCalledWith("emails/drafts/x/doc.txt");
+      expect(mockEmailBucketPut).toHaveBeenCalledOnce();
+      const [putKey, putBody, putOpts] = mockEmailBucketPut.mock.calls[0];
+      expect(putKey).toMatch(/^emails\/.+\/raw$/);
+      expect(putBody).toContain("multipart/mixed");
+      expect(putBody).toContain('filename="doc.txt"');
+      expect(putOpts.httpMetadata.contentType).toBe("message/rfc822");
+    });
+
+    it("checks whitelist and passes result in notify payload", async () => {
+      mockGetAgent.mockResolvedValue({ id: "a1", emailHandle: "sender-agent", workspaceId: "ws1" });
+      mockGetAgentByHandle.mockResolvedValue({ id: "a2", emailHandle: "agent-b", workspaceId: "ws1" });
+      mockIsWhitelisted.mockResolvedValue(true);
+      mockWorkerSelfRefFetch.mockResolvedValue(Response.json({ ok: true }));
+      mockCreateEmail.mockResolvedValue({ id: "e1" });
+
+      const req = makeReq({
+        agentId: "a1",
+        to: "agent-b@alook.ai",
+        subject: "Whitelist test",
+        htmlBody: "<p>Check</p>",
+      });
+
+      await POST(req, {} as any);
+
+      expect(mockIsWhitelisted).toHaveBeenCalledWith(
+        expect.anything(), "a2", "ws1", "sender-agent@alook.ai"
+      );
+      const payload = JSON.parse(mockWorkerSelfRefFetch.mock.calls[0][1].body);
+      expect(payload.isWhitelisted).toBe(true);
+    });
+
+    it("notify payload matches expected schema shape", async () => {
+      mockGetAgent.mockResolvedValue({ id: "a1", emailHandle: "sender-agent", workspaceId: "ws1" });
+      mockGetAgentByHandle.mockResolvedValue({ id: "a2", emailHandle: "agent-b", workspaceId: "ws1" });
+      mockIsWhitelisted.mockResolvedValue(false);
+      mockWorkerSelfRefFetch.mockResolvedValue(Response.json({ ok: true }));
+      mockCreateEmail.mockResolvedValue({ id: "e1" });
+
+      const req = makeReq({
+        agentId: "a1",
+        to: "agent-b@alook.ai",
+        subject: "Schema test",
+        htmlBody: "<p>Schema</p>",
+        inReplyTo: "<orig@alook.ai>",
+        references: "<ref1@alook.ai> <ref2@alook.ai>",
+      });
+
+      await POST(req, {} as any);
+
+      const payload = JSON.parse(mockWorkerSelfRefFetch.mock.calls[0][1].body);
+      expect(payload.agentId).toBe("a2");
+      expect(payload.workspaceId).toBe("ws1");
+      expect(payload.from).toBe("sender-agent@alook.ai");
+      expect(payload.to).toBe("agent-b@alook.ai");
+      expect(payload.subject).toBe("Schema test");
+      expect(payload.forwarded).toBe(false);
+      expect(payload.isWhitelisted).toBe(false);
+      expect(payload.r2Key).toMatch(/^emails\/.+\/raw$/);
+      expect(payload.messageId).toMatch(/^<.+@alook\.ai>$/);
+      expect(payload.inReplyTo).toBe("<orig@alook.ai>");
+      expect(payload.references).toBe("<ref1@alook.ai> <ref2@alook.ai>");
+    });
+
+    it("generates correct messageId and r2Key in outbound record", async () => {
+      mockGetAgent.mockResolvedValue({ id: "a1", emailHandle: "sender-agent", workspaceId: "ws1" });
+      mockGetAgentByHandle.mockResolvedValue({ id: "a2", emailHandle: "agent-b", workspaceId: "ws1" });
+      mockIsWhitelisted.mockResolvedValue(false);
+      mockWorkerSelfRefFetch.mockResolvedValue(Response.json({ ok: true }));
+      mockCreateEmail.mockResolvedValue({ id: "e1" });
+
+      const req = makeReq({
+        agentId: "a1",
+        to: "agent-b@alook.ai",
+        subject: "IDs test",
+        htmlBody: "<p>IDs</p>",
+      });
+
+      await POST(req, {} as any);
+
+      const createArgs = mockCreateEmail.mock.calls[0]![1] as any;
+      expect(createArgs.messageId).toMatch(/^<.+@alook\.ai>$/);
+      expect(createArgs.r2Key).toMatch(/^emails\/.+\/raw$/);
+    });
+
+    it("skips local delivery when sender uses custom SMTP account", async () => {
+      mockGetAgent.mockResolvedValue({ id: "a1", emailHandle: "sender-agent", workspaceId: "ws1" });
+      mockGetEmailAccountsByAgent.mockResolvedValue([
+        { id: "acct1", emailAddress: "agent@company.com" },
+      ]);
+      mockEmailWorkerFetch.mockResolvedValue(Response.json({ ok: true, r2Key: "emails/x/raw" }));
+      mockCreateEmail.mockResolvedValue({ id: "e1" });
+
+      const req = makeReq({
+        agentId: "a1",
+        from: "agent@company.com",
+        to: "agent-b@alook.ai",
+        subject: "Custom SMTP",
+        htmlBody: "<p>Custom</p>",
+      });
+
+      const res = await POST(req, {} as any);
+      expect(res.status).toBe(200);
+
+      expect(mockGetAgentByHandle).not.toHaveBeenCalled();
+      expect(mockWorkerSelfRefFetch).not.toHaveBeenCalled();
+      expect(mockEmailWorkerFetch).toHaveBeenCalledOnce();
+    });
+
+    it("returns error when notify endpoint fails and does NOT create outbound record", async () => {
+      mockGetAgent.mockResolvedValue({ id: "a1", emailHandle: "sender-agent", workspaceId: "ws1" });
+      mockGetAgentByHandle.mockResolvedValue({ id: "a2", emailHandle: "agent-b", workspaceId: "ws1" });
+      mockIsWhitelisted.mockResolvedValue(false);
+      mockEmailBucketPut.mockResolvedValue(undefined);
+      mockWorkerSelfRefFetch.mockResolvedValue(
+        new Response("notify validation error", { status: 400 }),
+      );
+
+      const req = makeReq({
+        agentId: "a1",
+        to: "agent-b@alook.ai",
+        subject: "Fail notify",
+        htmlBody: "<p>Fail</p>",
+      });
+
+      const res = await POST(req, {} as any);
+      expect(res.status).toBe(400);
+
+      const body = await res.json();
+      expect(body.error).toContain("local delivery failed");
+      expect(mockCreateEmail).not.toHaveBeenCalled();
+    });
   });
 });

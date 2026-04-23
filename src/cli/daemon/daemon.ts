@@ -682,6 +682,7 @@ async function handleTask(
     token,
     workspacesRoot: config.workspacesRoot,
     agentTimeout: config.agentTimeout,
+    messageInactivityTimeout: config.messageInactivityTimeout,
   };
 
   const child = spawnSessionRunner(input);

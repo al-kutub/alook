@@ -1,6 +1,7 @@
 import { NextRequest } from "next/server";
 import { getCloudflareContext } from "@opennextjs/cloudflare";
-import { queries, DEV_EMAIL_WORKER_URL, SendEmailRequestSchema } from "@alook/shared";
+import { queries, DEV_EMAIL_WORKER_URL, DEV_WEB_URL, SendEmailRequestSchema, parseEmailHandle } from "@alook/shared";
+import { nanoid } from "nanoid";
 import { getDb } from "@/lib/db"
 import { withAuth } from "@/lib/middleware/auth";
 import { withWorkspaceMember } from "@/lib/middleware/workspace";
@@ -51,6 +52,129 @@ export const POST = withAuth(async (req: NextRequest, ctx) => {
   }
 
   const attachments = body.attachments ?? [];
+
+  // Local delivery shortcut: same-workspace @alook.ai → @alook.ai
+  const senderHandle = parseEmailHandle(fromAddress);
+  const recipientHandle = parseEmailHandle(body.to);
+  if (senderHandle && recipientHandle) {
+    const recipientAgent = await queries.agent.getAgentByHandle(db, recipientHandle);
+    if (recipientAgent && recipientAgent.workspaceId === ws.workspaceId) {
+      const messageId = `<${nanoid()}@alook.ai>`;
+      const htmlBody = body.htmlBody || "";
+
+      const fetchedAttachments: { filename: string; type: string; base64: string }[] = [];
+      for (const att of attachments) {
+        const obj = await cfEnv.EMAIL_BUCKET.get(att.key);
+        if (!obj) continue;
+        const raw = await obj.arrayBuffer();
+        const base64 = btoa(String.fromCharCode(...new Uint8Array(raw)));
+        fetchedAttachments.push({ filename: att.filename, type: att.contentType, base64 });
+      }
+
+      const threadingHeaders: string[] = [];
+      threadingHeaders.push(`Message-ID: ${messageId}`);
+      if (body.inReplyTo) threadingHeaders.push(`In-Reply-To: ${body.inReplyTo}`);
+      if (body.references) threadingHeaders.push(`References: ${body.references}`);
+
+      let rawMime: string;
+      if (fetchedAttachments.length === 0) {
+        rawMime = [
+          `From: ${fromAddress}`,
+          `To: ${body.to}`,
+          `Subject: ${body.subject}`,
+          `Date: ${new Date().toUTCString()}`,
+          ...threadingHeaders,
+          `MIME-Version: 1.0`,
+          `Content-Type: text/html; charset=utf-8`,
+          "",
+          htmlBody,
+        ].join("\r\n");
+      } else {
+        const boundary = `----=_Part_${nanoid(16)}`;
+        const parts = [
+          `From: ${fromAddress}`,
+          `To: ${body.to}`,
+          `Subject: ${body.subject}`,
+          `Date: ${new Date().toUTCString()}`,
+          ...threadingHeaders,
+          `MIME-Version: 1.0`,
+          `Content-Type: multipart/mixed; boundary="${boundary}"`,
+          "",
+          `--${boundary}`,
+          `Content-Type: text/html; charset=utf-8`,
+          `Content-Transfer-Encoding: 7bit`,
+          "",
+          htmlBody,
+        ];
+        for (const att of fetchedAttachments) {
+          parts.push(
+            [
+              `--${boundary}`,
+              `Content-Type: ${att.type}; name="${att.filename}"`,
+              `Content-Disposition: attachment; filename="${att.filename}"`,
+              `Content-Transfer-Encoding: base64`,
+              "",
+              att.base64.match(/.{1,76}/g)?.join("\r\n") ?? att.base64,
+            ].join("\r\n")
+          );
+        }
+        parts.push(`--${boundary}--`);
+        rawMime = parts.join("\r\n");
+      }
+
+      const r2Id = nanoid();
+      const r2Key = `emails/${r2Id}/raw`;
+      await cfEnv.EMAIL_BUCKET.put(r2Key, rawMime, {
+        httpMetadata: { contentType: "message/rfc822" },
+      });
+
+      const isWhitelisted = await queries.whitelist.isWhitelisted(db, recipientAgent.id, recipientAgent.workspaceId, fromAddress);
+
+      const notifyPayload = JSON.stringify({
+        agentId: recipientAgent.id,
+        workspaceId: recipientAgent.workspaceId,
+        r2Key,
+        from: fromAddress,
+        to: body.to,
+        subject: body.subject,
+        isWhitelisted,
+        forwarded: false,
+        messageId,
+        inReplyTo: body.inReplyTo ?? "",
+        references: body.references ?? "",
+      });
+      const notifyInit = { method: "POST", headers: { "Content-Type": "application/json" }, body: notifyPayload };
+      let notifyRes: Response;
+      try {
+        notifyRes = await cfEnv.WORKER_SELF_REFERENCE!.fetch("http://internal/api/email/notify", notifyInit);
+      } catch {
+        notifyRes = await fetch(`${DEV_WEB_URL}/api/email/notify`, notifyInit);
+      }
+      if (!notifyRes.ok) {
+        const errBody = await notifyRes.text();
+        return writeError(`local delivery failed: ${errBody}`, notifyRes.status);
+      }
+
+      const email = await queries.email.createEmail(db, {
+        agentId: body.agentId,
+        workspaceId: ws.workspaceId,
+        fromEmail: fromAddress,
+        toEmail: body.to,
+        subject: body.subject,
+        r2Key,
+        isWhitelisted: false,
+        forwarded: false,
+        messageId,
+        inReplyTo: body.inReplyTo ?? "",
+        references: body.references ?? "",
+        htmlBody,
+        attachments: JSON.stringify(attachments),
+        direction: "outbound",
+      });
+
+      return writeJSON(emailToResponse(email));
+    }
+  }
 
   // Delegate sending + R2 archival to the email worker
   const emailPayload = JSON.stringify({

@@ -21,6 +21,7 @@ const DAEMON_ENV_KEYS = [
   "ALOOK_CLAUDE_MODEL",
   "ALOOK_CODEX_MODEL",
   "ALOOK_OPENCODE_MODEL",
+  "ALOOK_MESSAGE_INACTIVITY_TIMEOUT",
 ];
 
 afterEach(() => {
@@ -39,6 +40,7 @@ describe("loadDaemonConfig defaults", () => {
     expect(cfg.maxConcurrentTasks).toBe(20);
     expect(cfg.claudePath).toBe("claude");
     expect(cfg.runtimeName).toBe("Local Agent");
+    expect(cfg.messageInactivityTimeout).toBe(300000);
   });
 });
 
@@ -56,6 +58,11 @@ describe("loadDaemonConfig env overrides", () => {
   it("ALOOK_DAEMON_MAX_CONCURRENT_TASKS='10' → 10", () => {
     process.env.ALOOK_DAEMON_MAX_CONCURRENT_TASKS = "10";
     expect(loadDaemonConfig().maxConcurrentTasks).toBe(10);
+  });
+
+  it("ALOOK_MESSAGE_INACTIVITY_TIMEOUT='10m' → 600000", () => {
+    process.env.ALOOK_MESSAGE_INACTIVITY_TIMEOUT = "10m";
+    expect(loadDaemonConfig().messageInactivityTimeout).toBe(600000);
   });
 });
 
