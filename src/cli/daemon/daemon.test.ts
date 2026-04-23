@@ -1208,6 +1208,75 @@ describe("daemon workspace eviction", () => {
   });
 });
 
+describe("daemon 401 handling (no config removal)", () => {
+  beforeEach(() => {
+    signalHandlers.clear();
+    intervalTimers.length = 0;
+    clearedTimers.length = 0;
+    spawnedChildren.length = 0;
+    nextPid = 50000;
+    vi.clearAllMocks();
+    mockProcessExit.mockImplementation((() => {}) as any);
+  });
+
+  afterEach(() => {
+    for (const t of intervalTimers) realClearInterval(t);
+  });
+
+  it("does not remove workspace from config on startup 401", async () => {
+    vi.mocked(loadCLIConfigForProfile).mockReturnValue({
+      server_url: "",
+      watched_workspaces: [
+        { id: "ws1", name: "Good", token: "al_tok_ws1" },
+        { id: "ws2", name: "Bad Token", token: "al_tok_ws2" },
+      ],
+    });
+
+    mockClientInstance.register.mockImplementation(async (token: string) => {
+      if (token === "al_tok_ws2") throw new Error("HTTP 401 Unauthorized");
+      return { runtimes: [{ id: "rt1" }] };
+    });
+    mockClientInstance.poll.mockResolvedValue({ tasks: [], evicted: false });
+
+    await startDaemon();
+    await new Promise((r) => setTimeout(r, 50));
+
+    // Config should NOT have been saved to remove ws2
+    expect(saveCLIConfigForProfile).not.toHaveBeenCalled();
+    // Daemon should still be running (ws1 registered successfully)
+    expect(mockProcessExit).not.toHaveBeenCalled();
+  });
+
+  it("does not evict workspace on poll 401, continues polling", async () => {
+    vi.mocked(loadCLIConfigForProfile).mockReturnValue({
+      server_url: "",
+      watched_workspaces: [
+        { id: "ws1", name: "Personal", token: "al_tok_ws1" },
+        { id: "ws2", name: "Team", token: "al_tok_ws2" },
+      ],
+    });
+
+    let registerCall = 0;
+    mockClientInstance.register.mockImplementation(async () => {
+      registerCall++;
+      return { runtimes: [{ id: `rt${registerCall}` }] };
+    });
+
+    mockClientInstance.poll.mockImplementation(async (token: string) => {
+      if (token === "al_tok_ws2") throw new Error("HTTP 401 Unauthorized");
+      return { tasks: [], evicted: false };
+    });
+
+    await startDaemon();
+    await new Promise((r) => setTimeout(r, 50));
+
+    // Config should NOT have been saved (no eviction)
+    expect(saveCLIConfigForProfile).not.toHaveBeenCalled();
+    // Daemon should NOT shut down — ws1 still active, ws2 just had a transient 401
+    expect(mockProcessExit).not.toHaveBeenCalled();
+  });
+});
+
 describe("daemon restart via update", () => {
   it("handleCliUpdate is called when pending_update is in poll response", async () => {
     vi.clearAllMocks();

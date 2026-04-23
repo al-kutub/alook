@@ -185,16 +185,7 @@ export async function startDaemon(
       });
     } catch (e) {
       if (e instanceof Error && e.message.startsWith("HTTP 401")) {
-        log.warn(`Workspace ${ws.id} token invalid — removing from config`);
-        try {
-          const cfg = loadCLIConfigForProfile(profile);
-          cfg.watched_workspaces = (cfg.watched_workspaces || []).filter(
-            (w) => w.id !== ws.id,
-          );
-          saveCLIConfigForProfile(profile, cfg);
-        } catch {
-          // best-effort
-        }
+        log.warn(`Workspace ${ws.id} token invalid — skipping (run '${cmdPrefix()} register --token <token>' to fix)`);
       } else {
         log.error(`Failed to register workspace ${ws.id}, skipping`, e);
       }
@@ -274,7 +265,7 @@ export async function startDaemon(
       // Best-effort — config write failure must not block eviction
     }
 
-    log.info(`Workspace ${workspaceId} evicted — runtimes removed server-side`);
+    log.info(`Workspace ${workspaceId} deleted server-side — removed from config`);
   }
 
   // Staggered per-workspace polling
@@ -324,7 +315,7 @@ export async function startDaemon(
         }
       } catch (e) {
         if (e instanceof Error && e.message.startsWith("HTTP 401")) {
-          evictedIds.push(ws.workspaceId);
+          log.warn(`Workspace ${ws.workspaceId} poll returned 401 — will retry next cycle`);
         } else {
           log.debug("Poll error", e);
         }
