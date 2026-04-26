@@ -53,4 +53,26 @@ describe("buildPrompt", () => {
     const parsed = JSON.parse(buildPrompt(task));
     expect(parsed.notice).toBeUndefined();
   });
+
+  it("includes sender for DM tasks when sender is present", () => {
+    const task: Task = {
+      ...makeTask("Fix the login bug"),
+      sender: { name: "Gus", email: "gus@ex.com", isOwner: true },
+    };
+    const parsed = JSON.parse(buildPrompt(task));
+    expect(parsed.sender).toEqual({ name: "Gus", email: "gus@ex.com", is_owner: true });
+  });
+
+  it("omits sender when sender is undefined", () => {
+    const task = makeTask("Fix the bug");
+    const parsed = JSON.parse(buildPrompt(task));
+    expect(parsed.sender).toBeUndefined();
+  });
+
+  it("omits sender for email tasks (sender is not set)", () => {
+    const task = makeTask("New email from a@b.com: Hi", "email_notification");
+    const parsed = JSON.parse(buildPrompt(task));
+    expect(parsed.notice).toBeDefined();
+    expect(parsed.sender).toBeUndefined();
+  });
 });

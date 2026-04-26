@@ -84,8 +84,16 @@ export type TaskApiBase = z.infer<typeof TaskApiBaseSchema>;
 // API wire format — full task (claim response includes agent + prior session)
 // ---------------------------------------------------------------------------
 
+export const TaskSenderApiSchema = z.object({
+  name: z.string(),
+  email: z.string(),
+  is_owner: z.boolean(),
+});
+export type TaskSenderApi = z.infer<typeof TaskSenderApiSchema>;
+
 export const TaskApiSchema = TaskApiBaseSchema.extend({
   agent: TaskAgentDataApiSchema.nullable().optional(),
+  sender: TaskSenderApiSchema.nullable().optional(),
 });
 export type TaskApi = z.infer<typeof TaskApiSchema>;
 

@@ -7,6 +7,8 @@ const mockGetMachineByDaemon = vi.fn();
 const mockClearPendingUpdateVersion = vi.fn();
 const mockGetAgent = vi.fn();
 const mockGetMemberByUserAndWorkspace = vi.fn();
+const mockGetConversation = vi.fn();
+const mockGetUser = vi.fn();
 const mockClaimTasksForRuntimes = vi.fn();
 const mockSweepStaleState = vi.fn();
 const mockBroadcastToUser = vi.fn();
@@ -36,6 +38,12 @@ vi.mock("@alook/shared", async () => {
       },
       member: {
         getMemberByUserAndWorkspace: (...args: unknown[]) => mockGetMemberByUserAndWorkspace(...args),
+      },
+      conversation: {
+        getConversation: (...args: unknown[]) => mockGetConversation(...args),
+      },
+      user: {
+        getUser: (...args: unknown[]) => mockGetUser(...args),
       },
       emailAccount: {
         getEmailAccountsByAgent: vi.fn().mockResolvedValue([]),
@@ -468,5 +476,129 @@ describe("POST /api/daemon/tasks/poll", () => {
     const body = await res.json();
 
     expect(body.tasks[0].agent.instructions).toBe("global only");
+  });
+
+  it("resolves sender for DM tasks (owner)", async () => {
+    mockUpsertMachine.mockResolvedValue({});
+    mockGetRuntimeIdsByDaemon.mockResolvedValue(["r1"]);
+    mockSweepStaleState.mockResolvedValue(undefined);
+    mockBroadcastToUser.mockResolvedValue(undefined);
+    mockClaimTasksForRuntimes.mockResolvedValue([
+      { id: "t1", agentId: "a1", runtimeId: "r1", workspaceId: "w1", conversationId: "c1", prompt: "hi", status: "dispatched", type: "user_dm_message" },
+    ]);
+    mockGetAgent.mockResolvedValue({ id: "a1", ownerId: "u1", instructions: "", name: "Bot", runtimeConfig: {} });
+    mockGetConversation.mockResolvedValue({ userId: "u1" });
+    mockGetUser.mockResolvedValue({ name: "Gus", email: "gus@ex.com" });
+
+    const res = await POST(postReq({ daemon_id: "d1" }));
+    const body = await res.json();
+
+    expect(body.tasks[0].sender).toEqual({ name: "Gus", email: "gus@ex.com", is_owner: true });
+  });
+
+  it("sets is_owner=false for non-owner DM", async () => {
+    mockUpsertMachine.mockResolvedValue({});
+    mockGetRuntimeIdsByDaemon.mockResolvedValue(["r1"]);
+    mockSweepStaleState.mockResolvedValue(undefined);
+    mockBroadcastToUser.mockResolvedValue(undefined);
+    mockClaimTasksForRuntimes.mockResolvedValue([
+      { id: "t1", agentId: "a1", runtimeId: "r1", workspaceId: "w1", conversationId: "c1", prompt: "hi", status: "dispatched", type: "user_dm_message" },
+    ]);
+    mockGetAgent.mockResolvedValue({ id: "a1", ownerId: "owner1", instructions: "", name: "Bot", runtimeConfig: {} });
+    mockGetConversation.mockResolvedValue({ userId: "u2" });
+    mockGetUser.mockResolvedValue({ name: "Alice", email: "alice@ex.com" });
+
+    const res = await POST(postReq({ daemon_id: "d1" }));
+    const body = await res.json();
+
+    expect(body.tasks[0].sender).toEqual({ name: "Alice", email: "alice@ex.com", is_owner: false });
+  });
+
+  it("returns null sender for calendar tasks", async () => {
+    mockUpsertMachine.mockResolvedValue({});
+    mockGetRuntimeIdsByDaemon.mockResolvedValue(["r1"]);
+    mockSweepStaleState.mockResolvedValue(undefined);
+    mockBroadcastToUser.mockResolvedValue(undefined);
+    mockClaimTasksForRuntimes.mockResolvedValue([
+      { id: "t1", agentId: "a1", runtimeId: "r1", workspaceId: "w1", conversationId: "c1", prompt: "standup", status: "dispatched", type: "calendar_event" },
+    ]);
+    mockGetAgent.mockResolvedValue({ id: "a1", ownerId: "u1", instructions: "", name: "Bot", runtimeConfig: {} });
+
+    const res = await POST(postReq({ daemon_id: "d1" }));
+    const body = await res.json();
+
+    expect(body.tasks[0].sender).toBeNull();
+  });
+
+  it("returns null sender for email tasks", async () => {
+    mockUpsertMachine.mockResolvedValue({});
+    mockGetRuntimeIdsByDaemon.mockResolvedValue(["r1"]);
+    mockSweepStaleState.mockResolvedValue(undefined);
+    mockBroadcastToUser.mockResolvedValue(undefined);
+    mockClaimTasksForRuntimes.mockResolvedValue([
+      { id: "t1", agentId: "a1", runtimeId: "r1", workspaceId: "w1", conversationId: "c1", prompt: "new email", status: "dispatched", type: "email_notification" },
+    ]);
+    mockGetAgent.mockResolvedValue({ id: "a1", ownerId: "u1", instructions: "", name: "Bot", runtimeConfig: {} });
+
+    const res = await POST(postReq({ daemon_id: "d1" }));
+    const body = await res.json();
+
+    expect(body.tasks[0].sender).toBeNull();
+  });
+
+  it("returns null sender when conversation not found", async () => {
+    mockUpsertMachine.mockResolvedValue({});
+    mockGetRuntimeIdsByDaemon.mockResolvedValue(["r1"]);
+    mockSweepStaleState.mockResolvedValue(undefined);
+    mockBroadcastToUser.mockResolvedValue(undefined);
+    mockClaimTasksForRuntimes.mockResolvedValue([
+      { id: "t1", agentId: "a1", runtimeId: "r1", workspaceId: "w1", conversationId: "c1", prompt: "hi", status: "dispatched", type: "user_dm_message" },
+    ]);
+    mockGetAgent.mockResolvedValue({ id: "a1", ownerId: "u1", instructions: "", name: "Bot", runtimeConfig: {} });
+    mockGetConversation.mockResolvedValue(null);
+
+    const res = await POST(postReq({ daemon_id: "d1" }));
+    const body = await res.json();
+
+    expect(body.tasks[0].sender).toBeNull();
+  });
+
+  it("returns null sender when user not found", async () => {
+    mockUpsertMachine.mockResolvedValue({});
+    mockGetRuntimeIdsByDaemon.mockResolvedValue(["r1"]);
+    mockSweepStaleState.mockResolvedValue(undefined);
+    mockBroadcastToUser.mockResolvedValue(undefined);
+    mockClaimTasksForRuntimes.mockResolvedValue([
+      { id: "t1", agentId: "a1", runtimeId: "r1", workspaceId: "w1", conversationId: "c1", prompt: "hi", status: "dispatched", type: "user_dm_message" },
+    ]);
+    mockGetAgent.mockResolvedValue({ id: "a1", ownerId: "u1", instructions: "", name: "Bot", runtimeConfig: {} });
+    mockGetConversation.mockResolvedValue({ userId: "u1" });
+    mockGetUser.mockResolvedValue(null);
+
+    const res = await POST(postReq({ daemon_id: "d1" }));
+    const body = await res.json();
+
+    expect(body.tasks[0].sender).toBeNull();
+  });
+
+  it("caches user lookups across multiple DM tasks from the same user", async () => {
+    mockUpsertMachine.mockResolvedValue({});
+    mockGetRuntimeIdsByDaemon.mockResolvedValue(["r1"]);
+    mockSweepStaleState.mockResolvedValue(undefined);
+    mockBroadcastToUser.mockResolvedValue(undefined);
+    mockClaimTasksForRuntimes.mockResolvedValue([
+      { id: "t1", agentId: "a1", runtimeId: "r1", workspaceId: "w1", conversationId: "c1", prompt: "hi", status: "dispatched", type: "user_dm_message" },
+      { id: "t2", agentId: "a1", runtimeId: "r1", workspaceId: "w1", conversationId: "c2", prompt: "yo", status: "dispatched", type: "user_dm_message" },
+    ]);
+    mockGetAgent.mockResolvedValue({ id: "a1", ownerId: "owner1", instructions: "", name: "Bot", runtimeConfig: {} });
+    mockGetConversation.mockResolvedValue({ userId: "u1" });
+    mockGetUser.mockResolvedValue({ name: "Gus", email: "gus@ex.com" });
+
+    const res = await POST(postReq({ daemon_id: "d1" }));
+    const body = await res.json();
+
+    expect(body.tasks[0].sender).toEqual({ name: "Gus", email: "gus@ex.com", is_owner: false });
+    expect(body.tasks[1].sender).toEqual({ name: "Gus", email: "gus@ex.com", is_owner: false });
+    expect(mockGetUser).toHaveBeenCalledTimes(1);
   });
 });

@@ -54,4 +54,24 @@ describe("fromApiTask", () => {
     const result = fromApiTask(baseTask);
     expect(result.agent).toBeUndefined();
   });
+
+  it("maps sender snake_case is_owner to camelCase isOwner", () => {
+    const task: TaskApi = {
+      ...baseTask,
+      sender: { name: "Gus", email: "gus@ex.com", is_owner: true },
+    };
+    const result = fromApiTask(task);
+    expect(result.sender).toEqual({ name: "Gus", email: "gus@ex.com", isOwner: true });
+  });
+
+  it("maps null sender to undefined", () => {
+    const task: TaskApi = { ...baseTask, sender: null };
+    const result = fromApiTask(task);
+    expect(result.sender).toBeUndefined();
+  });
+
+  it("maps undefined sender to undefined", () => {
+    const result = fromApiTask(baseTask);
+    expect(result.sender).toBeUndefined();
+  });
 });

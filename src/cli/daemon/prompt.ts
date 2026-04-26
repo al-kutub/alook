@@ -11,6 +11,13 @@ export function buildPrompt(task: Task, attachments?: Attachment[]): string {
   if (task.type === "email_notification") {
     obj.notice = EMAIL_NOTICE;
   }
+  if (task.sender) {
+    obj.sender = {
+      name: task.sender.name,
+      email: task.sender.email,
+      is_owner: task.sender.isOwner,
+    };
+  }
   if (attachments && attachments.length > 0) {
     obj.attachments = attachments.map((a) => ({
       path: a.path,

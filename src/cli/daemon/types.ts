@@ -1,3 +1,9 @@
+export interface TaskSender {
+  name: string;
+  email: string;
+  isOwner: boolean;
+}
+
 export interface Task {
   id: string;
   agentId: string;
@@ -11,6 +17,7 @@ export interface Task {
   contextKey?: string | null;
   context?: Record<string, unknown>;
   agent?: TaskAgentData;
+  sender?: TaskSender;
   repos?: RepoData[];
   createdAt: string;
 }
@@ -116,6 +123,9 @@ export function fromApiTask(api: import("@alook/shared").TaskApi): Task {
     context: (api.context as Record<string, unknown>) ?? undefined,
     agent: api.agent
       ? { name: api.agent.name, instructions: api.agent.instructions, emailHandle: api.agent.email_handle ?? undefined, emailAddresses: api.agent.email_addresses ?? [], userEmail: api.agent.user_email ?? undefined, runtimeConfig: api.agent.runtime_config ?? undefined }
+      : undefined,
+    sender: api.sender
+      ? { name: api.sender.name, email: api.sender.email, isOwner: api.sender.is_owner }
       : undefined,
     repos: undefined,
     createdAt: api.created_at,

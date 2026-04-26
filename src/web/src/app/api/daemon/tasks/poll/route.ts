@@ -76,11 +76,12 @@ export const POST = withAuth(async (req: NextRequest, ctx) => {
   );
 
   const tasks = [];
-  // Per-request cache: avoids duplicate DB reads when multiple agents share the same owner
+  // Per-request caches: avoid duplicate DB reads when multiple tasks share the same owner/user
   const memberCache = new Map<string, { globalInstruction: string } | null>();
+  const userCache = new Map<string, { name: string; email: string } | null>();
   for (const task of claimed) {
     if (task.type === "kill_task") {
-      tasks.push({ ...taskToResponse(task), agent: null });
+      tasks.push({ ...taskToResponse(task), agent: null, sender: null });
       continue;
     }
 
@@ -110,8 +111,29 @@ export const POST = withAuth(async (req: NextRequest, ctx) => {
       }
     }
 
+    // Resolve sender identity for DM tasks only
+    let sender: { name: string; email: string; is_owner: boolean } | null = null;
+    if (task.type === "user_dm_message" && task.conversationId) {
+      const convo = await queries.conversation.getConversation(db, task.conversationId, task.workspaceId);
+      if (convo?.userId) {
+        if (!userCache.has(convo.userId)) {
+          const u = await queries.user.getUser(db, convo.userId);
+          userCache.set(convo.userId, u ? { name: u.name, email: u.email } : null);
+        }
+        const cachedUser = userCache.get(convo.userId);
+        if (cachedUser) {
+          sender = {
+            name: cachedUser.name,
+            email: cachedUser.email,
+            is_owner: convo.userId === agent?.ownerId,
+          };
+        }
+      }
+    }
+
     tasks.push({
       ...taskToResponse(task),
+      sender,
       agent: agent
         ? {
             instructions,
