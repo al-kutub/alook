@@ -59,17 +59,17 @@ export function CalendarOverview({ overview, agents }: CalendarOverviewProps) {
       </CardHeader>
       <CardContent className="space-y-3">
         <div className="grid grid-cols-3 gap-3">
-          <div>
+          <div className="rounded-lg border border-border/50 px-3 py-2 text-center">
             <p className="text-xl font-semibold">{todayEvents.length}</p>
-            <p className="text-xs text-muted-foreground">Today</p>
+            <p className="text-[10px] text-muted-foreground">Today</p>
           </div>
-          <div>
+          <div className="rounded-lg border border-border/50 px-3 py-2 text-center">
             <p className="text-xl font-semibold">{recurring.length}</p>
-            <p className="text-xs text-muted-foreground">Recurring</p>
+            <p className="text-[10px] text-muted-foreground">Recurring</p>
           </div>
-          <div>
+          <div className="rounded-lg border border-border/50 px-3 py-2 text-center">
             <p className="text-xl font-semibold">{oneOff.length}</p>
-            <p className="text-xs text-muted-foreground">One-off</p>
+            <p className="text-[10px] text-muted-foreground">One-off</p>
           </div>
         </div>
 
@@ -98,7 +98,10 @@ export function CalendarOverview({ overview, agents }: CalendarOverviewProps) {
         )}
 
         {calendar_events.length === 0 && (
-          <p className="text-sm text-muted-foreground">No events this week.</p>
+          <div className="flex flex-col items-center py-4 text-muted-foreground">
+            <CalendarDays className="size-8 opacity-20 mb-2" />
+            <p className="text-sm">No events this week</p>
+          </div>
         )}
       </CardContent>
     </Card>

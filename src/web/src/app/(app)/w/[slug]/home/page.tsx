@@ -103,16 +103,18 @@ export default function HomePage() {
 
   return (
     <div className="flex-1 overflow-y-auto">
-      <div className="p-4 lg:p-6 space-y-4">
-        <AgentOverview
-          agents={agents}
-          runtimes={runtimes}
-          activeTaskCounts={activeTaskCounts}
-          overview={overview}
-        />
-        <div className="grid gap-4 lg:grid-cols-2">
-          <RecentActivity overview={overview} agents={agents} />
-          <CalendarOverview overview={overview} agents={agents} />
+      <div className="flex min-h-full flex-col justify-between p-4 lg:p-6">
+        <div className="flex-1 flex flex-col gap-4">
+          <AgentOverview
+            agents={agents}
+            runtimes={runtimes}
+            activeTaskCounts={activeTaskCounts}
+            overview={overview}
+          />
+          <div className="grid gap-4 lg:grid-cols-2 lg:flex-1 lg:[&>*]:h-full">
+            <RecentActivity overview={overview} agents={agents} />
+            <CalendarOverview overview={overview} agents={agents} />
+          </div>
         </div>
         <DailyQuote />
       </div>

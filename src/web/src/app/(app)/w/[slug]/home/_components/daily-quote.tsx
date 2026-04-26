@@ -19,11 +19,11 @@ export function DailyQuote() {
 
   useEffect(() => {
     let cancelled = false;
-    fetch("https://zenquotes.io/api/today")
-      .then((r) => r.json() as Promise<DailyQuote[]>)
+    fetch("/api/daily-quote")
+      .then((r) => r.json() as Promise<DailyQuote>)
       .then((data) => {
-        if (!cancelled && data?.[0]?.q) {
-          setQuote(data[0]);
+        if (!cancelled && data?.q) {
+          setQuote(data);
         }
       })
       .catch(() => {
@@ -40,7 +40,7 @@ export function DailyQuote() {
   return (
     <div className="text-center py-2">
       <p className="text-xs text-muted-foreground/50 italic">— {quote.q} —</p>
-      {quote.a && <p className="text-[10px] text-muted-foreground/40 mt-0.5">{quote.a}</p>}
+      {quote.a && <p className="text-[10px] text-muted-foreground/40 -mt-0.5">{quote.a}</p>}
     </div>
   );
 }

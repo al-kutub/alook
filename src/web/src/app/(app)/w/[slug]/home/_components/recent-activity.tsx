@@ -41,7 +41,10 @@ export function RecentActivity({ overview, agents }: RecentActivityProps) {
           <CardTitle>Recent Activity</CardTitle>
         </CardHeader>
         <CardContent>
-          <p className="text-sm text-muted-foreground">No recent activity.</p>
+          <div className="flex flex-col items-center py-4 text-muted-foreground">
+            <MessageSquare className="size-8 opacity-20 mb-2" />
+            <p className="text-sm">No recent activity</p>
+          </div>
         </CardContent>
       </Card>
     );
