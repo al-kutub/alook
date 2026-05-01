@@ -211,13 +211,13 @@ export const agent = sqliteTable(
     description: text("description").notNull().default(""),
     instructions: text("instructions").notNull().default(""),
     avatarUrl: text("avatar_url"),
-    runtimeId: text("runtime_id").references(() => agentRuntime.id, { onDelete: "set null" }),
+    runtimeId: text("runtime_id").references(() => agentRuntime.id),
     runtimeMode: text("runtime_mode").notNull().default("local"),
     runtimeConfig: text("runtime_config", { mode: "json" }),
     visibility: text("visibility").notNull().default("private"),
     status: text("status").notNull().default("idle"),
     maxConcurrentTasks: integer("max_concurrent_tasks").notNull().default(6),
-    ownerId: text("owner_id").references(() => user.id, { onDelete: "cascade" }),
+    ownerId: text("owner_id").references(() => user.id),
     tools: text("tools", { mode: "json" }),
     triggers: text("triggers", { mode: "json" }),
     emailHandle: text("email_handle").unique(),
@@ -582,9 +582,5 @@ export const workspaceFileRequest = sqliteTable(
   },
   (t) => [
     index("idx_wfr_workspace_status").on(t.workspaceId, t.status),
-    foreignKey({
-      columns: [t.agentId, t.workspaceId],
-      foreignColumns: [agent.id, agent.workspaceId],
-    }).onDelete("cascade"),
   ]
 );
