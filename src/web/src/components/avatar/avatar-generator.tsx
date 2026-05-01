@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useEffect, useMemo } from "react";
+import { useState, useCallback, useEffect, useMemo, useRef } from "react";
 import {
   type AvatarConfig,
   AvatarRenderer,
@@ -125,6 +125,23 @@ export function AvatarGenerator({ config, onChange, layout = "vertical" }: Avata
     [config, onChange]
   );
 
+  // Shake animation on config change
+  const [shaking, setShaking] = useState(false);
+  const prevConfigRef = useRef(config);
+  useEffect(() => {
+    if (
+      prevConfigRef.current.shape !== config.shape ||
+      prevConfigRef.current.eye !== config.eye ||
+      prevConfigRef.current.nose !== config.nose ||
+      prevConfigRef.current.bg !== config.bg
+    ) {
+      setShaking(true);
+      const timer = setTimeout(() => setShaking(false), 450);
+      prevConfigRef.current = config;
+      return () => clearTimeout(timer);
+    }
+  }, [config]);
+
   // Find matched preset name
   const matchedPresetName = useMemo(() => {
     const match = PRESETS.find(
@@ -171,10 +188,10 @@ export function AvatarGenerator({ config, onChange, layout = "vertical" }: Avata
   const preview = (
     <div className={cn(
       "flex flex-col items-center gap-3 rounded-2xl bg-muted/30 p-4",
-      isHorizontal ? "w-[240px] shrink-0 justify-center" : ""
+      isHorizontal ? "w-[280px] shrink-0 justify-center" : ""
     )}>
-      <div className="rounded-2xl">
-        <AvatarRenderer config={config} size={isHorizontal ? 200 : 160} />
+      <div className={cn("rounded-2xl", shaking && "animate-[shake_0.45s_cubic-bezier(.36,.07,.19,.97)]")}>
+        <AvatarRenderer config={config} size={isHorizontal ? 220 : 160} />
       </div>
       <button
         type="button"
