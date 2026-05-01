@@ -837,6 +837,37 @@ export function AgentChatView() {
     }
   }, []);
 
+  const handlePaste = useCallback((e: React.ClipboardEvent) => {
+    const items = e.clipboardData?.items;
+    if (!items) return;
+
+    const files: File[] = [];
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i];
+      if (item.kind === "file") {
+        const file = item.getAsFile();
+        if (file) files.push(file);
+      }
+    }
+
+    if (files.length === 0) return;
+
+    // Prevent default only when we have files to handle
+    e.preventDefault();
+
+    const valid: File[] = [];
+    for (const file of files) {
+      if (file.size > MAX_FILE_SIZE) {
+        toast.error(`"${file.name}" exceeds 10 MB limit`);
+      } else {
+        valid.push(file);
+      }
+    }
+    if (valid.length > 0) {
+      setPendingFiles((prev) => [...prev, ...valid]);
+    }
+  }, []);
+
   const handleStop = async () => {
     if (!conversation || cancelling) return;
     setCancelling(true);
@@ -1291,6 +1322,7 @@ export function AgentChatView() {
                 value={input}
                 onChange={(e) => { setInput(e.target.value); setCaretIndex(e.target.selectionStart); }}
                 onKeyDown={handleKeyDown}
+                onPaste={handlePaste}
                 onKeyUp={(e) => setCaretIndex((e.target as HTMLTextAreaElement).selectionStart)}
                 onClick={(e) => setCaretIndex((e.target as HTMLTextAreaElement).selectionStart)}
                 onSelect={(e) => setCaretIndex((e.target as HTMLTextAreaElement).selectionStart)}
