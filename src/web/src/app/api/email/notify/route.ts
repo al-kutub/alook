@@ -5,6 +5,7 @@ import { getDb } from "@/lib/db"
 import { writeJSON, parseBody } from "@/lib/middleware/helpers"
 import { TaskService } from "@/lib/services/task"
 import { broadcastToUser } from "@/lib/broadcast"
+import { taskToResponse } from "@/lib/api/responses"
 
 export async function POST(req: NextRequest) {
   const { env } = getCloudflareContext()
@@ -111,7 +112,15 @@ export async function POST(req: NextRequest) {
     const taskService = new TaskService(db)
     const context: Record<string, unknown> = { conversationType };
     if (dmUser) context.dmUser = dmUser;
-    await taskService.enqueueTask(agent.id, conversationId, agent.workspaceId, prompt, TASK_TYPES.EMAIL_NOTIFICATION, { contextKey: conversationId, context })
+    const task = await taskService.enqueueTask(agent.id, conversationId, agent.workspaceId, prompt, TASK_TYPES.EMAIL_NOTIFICATION, { contextKey: conversationId, context })
+
+    if (conversationType === TASK_TYPES.USER_DM_MESSAGE) {
+      broadcastToUser(agent.ownerId, {
+        type: "task.created",
+        conversationId,
+        task: taskToResponse(task),
+      }).catch(() => {});
+    }
   }
 
   if (agent?.ownerId) {

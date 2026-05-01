@@ -47,6 +47,7 @@ export default function CreateAgentPage() {
               runtime_id: data.runtime_id,
               email_handle: data.email_handle || undefined,
               runtime_config: data.runtime_config,
+              avatar_url: data.avatar_url,
             });
             if (agent) {
               if (data.custom_email) {

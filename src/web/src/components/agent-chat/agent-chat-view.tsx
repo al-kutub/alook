@@ -722,6 +722,17 @@ export function AgentChatView() {
           lastSeqRef.current = Math.max(...incoming.map((m) => m.seq), lastSeqRef.current);
         }
       }
+      if (msg.type === "task.created" && msg.conversationId === conversation?.id) {
+        listMessages(msg.conversationId, workspaceId)
+          .then((latest) => setMessages((prev) => mergeMessages(prev, latest)))
+          .catch(() => {});
+        const task = msg.task as Task;
+        activeTaskIdRef.current = task.id;
+        setActiveTask(task);
+        setTaskMessages([]);
+        lastSeqRef.current = 0;
+        startPollingRef.current(task.id, msg.conversationId);
+      }
       if (msg.type === "conversation.message" && msg.conversationId === conversation?.id) {
         setMessages((prev) => mergeMessages(prev, [msg.message]));
       }
@@ -733,11 +744,11 @@ export function AgentChatView() {
       }
       if (msg.type === "followup.dispatched" && msg.conversationId === conversation?.id) {
         setBufferedMessages((prev) => prev.filter((m) => m.id !== msg.message.id));
-        // Fetch all messages so the completed task's agent response is included
         listMessages(msg.conversationId, workspaceId)
           .then((latest) => setMessages((prev) => mergeMessages(prev, latest)))
           .catch(() => { });
         const task = msg.task as Task;
+        activeTaskIdRef.current = task.id;
         setActiveTask(task);
         setTaskMessages([]);
         startPollingRef.current(task.id, msg.conversationId);
