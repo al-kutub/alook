@@ -1,7 +1,7 @@
 import { DurableObject } from "cloudflare:workers"
 import PostalMime from "postal-mime"
 import { nanoid } from "nanoid"
-import { createDb, queries, createLogger, parseIcs } from "@alook/shared"
+import { createDb, queries, createLogger, parseIcs, extractAttachmentMeta } from "@alook/shared"
 import type { MeetingInfo } from "@alook/shared"
 import { decrypt } from "@alook/shared/crypto"
 import { ImapClient, ImapAuthError } from "./lib/imap-client"
@@ -165,14 +165,7 @@ export class ImapPollerDO extends DurableObject<EmailEnv> {
           }
         }
 
-        const attachmentsMeta = (parsed.attachments || [])
-          .filter(att => att.disposition === "attachment" || att.filename)
-          .map((att, i) => ({
-            key: `inline:${i}`,
-            filename: att.filename || `attachment-${i}`,
-            size: att.content instanceof ArrayBuffer ? att.content.byteLength : typeof att.content === "string" ? att.content.length : 0,
-            contentType: att.mimeType || "application/octet-stream",
-          }))
+        const attachmentsMeta = extractAttachmentMeta(parsed.attachments || [])
 
         await this.notifyWeb({
           agentId: account.agentId,

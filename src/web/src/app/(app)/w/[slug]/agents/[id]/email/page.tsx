@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useMemo } from "react";
 import { useParams } from "next/navigation";
 import { useWorkspace } from "@/contexts/workspace-context";
 import { useAgentContext } from "@/contexts/agent-context";
@@ -44,6 +44,7 @@ export default function AgentEmailPage() {
 
   const [folder, setFolder] = useState<Folder>("inbox");
   const [emails, setEmails] = useState<Email[]>([]);
+  const unreadCount = useMemo(() => emails.filter(e => e.status === "unread").length, [emails]);
   const [loading, setLoading] = useState(true);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [body, setBody] = useState<{ content: string; isHtml: boolean } | null>(null);
@@ -133,7 +134,11 @@ export default function AgentEmailPage() {
               e.id === emailId ? { ...e, status: "read" } : e
             ));
           })
-          .catch(() => {});
+          .catch(() => {
+            setEmails(prev => prev.map(e =>
+              e.id === emailId ? { ...e, status: "unread" } : e
+            ));
+          });
       }
     } catch {
       setBody({ content: "(body not available)", isHtml: false });
@@ -341,9 +346,9 @@ export default function AgentEmailPage() {
         >
           <Inbox className="size-4 shrink-0" />
           Inbox
-          {folder === "inbox" && emails.filter(e => e.status === "unread").length > 0 && (
+          {folder === "inbox" && unreadCount > 0 && (
             <span className="ml-auto text-xs bg-blue-500 text-white rounded-full px-1.5 py-0.5 leading-none min-w-[1.25rem] text-center">
-              {emails.filter(e => e.status === "unread").length}
+              {unreadCount}
             </span>
           )}
         </button>
@@ -718,9 +723,9 @@ export default function AgentEmailPage() {
                 )}
               >
                 {f.label}
-                {f.id === "inbox" && folder === "inbox" && emails.filter(e => e.status === "unread").length > 0 && (
+                {f.id === "inbox" && folder === "inbox" && unreadCount > 0 && (
                   <span className="ml-0.5 text-[10px] bg-blue-500 text-white rounded-full px-1 leading-none min-w-[1rem] text-center">
-                    {emails.filter(e => e.status === "unread").length}
+                    {unreadCount}
                   </span>
                 )}
               </button>

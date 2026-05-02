@@ -1,5 +1,34 @@
 import { nanoid } from "nanoid";
 
+export interface InboundAttachmentMeta {
+  key: string;
+  filename: string;
+  size: number;
+  contentType: string;
+}
+
+interface ParsedAttachment {
+  disposition: string | null;
+  filename: string | null;
+  mimeType: string;
+  content: string | ArrayBuffer | Uint8Array;
+}
+
+export function extractAttachmentMeta(attachments: ParsedAttachment[]): InboundAttachmentMeta[] {
+  return attachments
+    .filter(att => att.disposition === "attachment" || att.filename)
+    .map((att, i) => ({
+      key: `inline:${i}`,
+      filename: att.filename || `attachment-${i}`,
+      size: att.content instanceof ArrayBuffer ? att.content.byteLength : typeof att.content === "string" ? att.content.length : 0,
+      contentType: att.mimeType || "application/octet-stream",
+    }));
+}
+
+export function filterDownloadableAttachments<T extends { disposition: string | null; filename: string | null }>(attachments: T[]): T[] {
+  return attachments.filter(att => att.disposition === "attachment" || att.filename);
+}
+
 export interface MimeAttachment {
   filename: string;
   contentType: string;

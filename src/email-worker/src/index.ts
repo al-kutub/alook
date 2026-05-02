@@ -1,6 +1,6 @@
 import { nanoid } from "nanoid"
 import PostalMime from "postal-mime"
-import { createDb, queries, parseEmailHandle, DEV_WEB_URL, createLogger, buildMimeMessage } from "@alook/shared"
+import { createDb, queries, parseEmailHandle, DEV_WEB_URL, createLogger, buildMimeMessage, extractAttachmentMeta } from "@alook/shared"
 import { decrypt } from "@alook/shared/crypto"
 import { WorkerMailer, type AuthType } from "worker-mailer"
 
@@ -346,14 +346,7 @@ export default {
     })
 
     const parsed = await PostalMime.parse(rawBytes)
-    const attachmentsMeta = (parsed.attachments || [])
-      .filter(att => att.disposition === "attachment" || att.filename)
-      .map((att, i) => ({
-        key: `inline:${i}`,
-        filename: att.filename || `attachment-${i}`,
-        size: att.content instanceof ArrayBuffer ? att.content.byteLength : typeof att.content === "string" ? att.content.length : 0,
-        contentType: att.mimeType || "application/octet-stream",
-      }))
+    const attachmentsMeta = extractAttachmentMeta(parsed.attachments || [])
 
     const subject = message.headers.get("subject") ?? ""
     const messageId = message.headers.get("message-id") ?? ""

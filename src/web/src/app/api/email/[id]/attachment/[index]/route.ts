@@ -1,6 +1,6 @@
 import PostalMime from "postal-mime";
 import { getCloudflareContext } from "@opennextjs/cloudflare";
-import { queries } from "@alook/shared";
+import { queries, filterDownloadableAttachments } from "@alook/shared";
 import { getDb } from "@/lib/db"
 import { withAuth } from "@/lib/middleware/auth";
 import { withWorkspaceMember } from "@/lib/middleware/workspace";
@@ -28,8 +28,7 @@ export const GET = withAuth(async (req, ctx) => {
   const raw = await object.arrayBuffer();
   const parsed = await PostalMime.parse(raw);
 
-  const attachments = (parsed.attachments || [])
-    .filter(att => att.disposition === "attachment" || att.filename);
+  const attachments = filterDownloadableAttachments(parsed.attachments || []);
 
   if (index >= attachments.length) return writeError("attachment not found", 404);
 
@@ -41,7 +40,7 @@ export const GET = withAuth(async (req, ctx) => {
   return new Response(body as BodyInit, {
     headers: {
       "Content-Type": contentType,
-      "Content-Disposition": `attachment; filename="${filename.replace(/"/g, '\\"')}"`,
+      "Content-Disposition": `attachment; filename="${filename.replace(/"/g, '\\"')}"; filename*=UTF-8''${encodeURIComponent(filename)}`,
       "Cache-Control": "private, max-age=3600",
     },
   });
