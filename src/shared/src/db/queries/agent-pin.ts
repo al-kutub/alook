@@ -44,18 +44,18 @@ export async function reorderPins(
   userId: string,
   orderedAgentIds: string[],
 ) {
-  await db.transaction(async (tx) => {
-    for (let i = 0; i < orderedAgentIds.length; i++) {
-      await tx
+  await (db as any).batch(
+    orderedAgentIds.map((id, i) =>
+      db
         .update(agentPin)
         .set({ position: i })
         .where(
           and(
-            eq(agentPin.agentId, orderedAgentIds[i]),
+            eq(agentPin.agentId, id),
             eq(agentPin.workspaceId, workspaceId),
             eq(agentPin.userId, userId),
           )
-        );
-    }
-  });
+        )
+    )
+  );
 }

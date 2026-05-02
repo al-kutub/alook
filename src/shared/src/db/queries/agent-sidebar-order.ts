@@ -16,24 +16,22 @@ export async function reorder(
   userId: string,
   orderedAgentIds: string[],
 ) {
-  await db.transaction(async (tx) => {
-    await tx
+  await (db as any).batch([
+    db
       .delete(agentSidebarOrder)
       .where(
         and(
           eq(agentSidebarOrder.workspaceId, workspaceId),
           eq(agentSidebarOrder.userId, userId),
         )
-      );
-    if (orderedAgentIds.length > 0) {
-      await tx.insert(agentSidebarOrder).values(
-        orderedAgentIds.map((agentId, i) => ({
-          agentId,
-          workspaceId,
-          userId,
-          position: i,
-        }))
-      );
-    }
-  });
+      ),
+    ...orderedAgentIds.map((agentId, i) =>
+      db.insert(agentSidebarOrder).values({
+        agentId,
+        workspaceId,
+        userId,
+        position: i,
+      })
+    ),
+  ]);
 }
