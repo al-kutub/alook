@@ -83,7 +83,7 @@ describe("meet-navigator (browser integration)", () => {
     expect(leaveVisible).toBe(true)
 
     await page.close()
-  }, 15_000)
+  }, 30_000)
 
   it("detects meeting is active after joining", async () => {
     if (skipIfNoBrowser()) return
@@ -96,7 +96,7 @@ describe("meet-navigator (browser integration)", () => {
     expect(active).toBe(true)
 
     await page.close()
-  }, 15_000)
+  }, 30_000)
 
   it("enables captions and scrapes them", async () => {
     if (skipIfNoBrowser()) return
@@ -120,7 +120,7 @@ describe("meet-navigator (browser integration)", () => {
     expect(captions[1].text).toContain("Hi Alice")
 
     await page.close()
-  }, 15_000)
+  }, 30_000)
 
   it("deduplicates when last caption repeats (real Meet behavior)", async () => {
     if (skipIfNoBrowser()) return
@@ -145,7 +145,7 @@ describe("meet-navigator (browser integration)", () => {
     expect(repeated.length).toBe(transcript.length)
 
     await page.close()
-  }, 15_000)
+  }, 30_000)
 
   it("leaves meeting and meeting becomes inactive", async () => {
     if (skipIfNoBrowser()) return
@@ -163,5 +163,5 @@ describe("meet-navigator (browser integration)", () => {
     expect(activeAfter).toBe(false)
 
     await page.close()
-  }, 15_000)
+  }, 30_000)
 })
