@@ -186,24 +186,21 @@ export default function AgentDetailLayout({ children }: { children: ReactNode })
                     <CalendarDays className="size-3 shrink-0" />
                     <span className="max-w-0 opacity-0 group-hover:max-w-20 group-hover:opacity-100 group-hover:ml-1 group-hover:delay-300 overflow-hidden transition-all duration-500 ease-out">Calendar</span>
                   </Link>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="group text-xs text-muted-foreground h-7 px-2"
+                  <div className="w-px h-4 bg-border mx-1" />
+                  <button
+                    className="group inline-flex items-center rounded-lg text-xs text-muted-foreground h-7 px-2 hover:bg-muted hover:text-foreground transition-all"
                     onClick={() => setEditing(true)}
                   >
                     <Pencil className="size-3 shrink-0" />
                     <span className="max-w-0 opacity-0 group-hover:max-w-12 group-hover:opacity-100 group-hover:ml-1 group-hover:delay-300 overflow-hidden transition-all duration-500 ease-out">Edit</span>
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="group text-xs text-muted-foreground h-7 px-2 hover:text-destructive"
+                  </button>
+                  <button
+                    className="group inline-flex items-center rounded-lg text-xs text-muted-foreground h-7 px-2 hover:bg-muted hover:text-destructive transition-all"
                     onClick={() => setAgentConfirmOpen(true)}
                   >
                     <Trash2 className="size-3 shrink-0" />
                     <span className="max-w-0 opacity-0 group-hover:max-w-16 group-hover:opacity-100 group-hover:ml-1 group-hover:delay-300 overflow-hidden transition-all duration-500 ease-out">Remove</span>
-                  </Button>
+                  </button>
                 </div>
 
                 {/* Mobile: collapsed dropdown */}
