@@ -1052,7 +1052,7 @@ export function AgentChatView() {
   if (loading) {
     return (
       <>
-        <div className="flex-1 overflow-y-auto px-5">
+        <div className="flex-1 overflow-y-auto px-3 md:px-5">
           <div className="mx-auto max-w-2xl py-6 space-y-4">
             {/* Skeleton user message */}
             <div className="flex justify-end">
@@ -1079,7 +1079,7 @@ export function AgentChatView() {
           </div>
         </div>
         {/* Skeleton input area */}
-        <div className="px-5 py-3">
+        <div className="px-3 md:px-5 py-3">
           <div className="mx-auto max-w-2xl">
             <Skeleton className="h-[72px] w-full rounded-xl" />
           </div>
@@ -1100,7 +1100,7 @@ export function AgentChatView() {
     <>
       {/* Messages */}
       <div
-        className="flex-1 overflow-y-auto overflow-x-hidden px-5 thin-scrollbar"
+        className="flex-1 overflow-y-auto overflow-x-hidden px-3 md:px-5 thin-scrollbar"
         ref={scrollRef}
         onScroll={handleScroll}
         onClick={(e) => {
@@ -1264,7 +1264,7 @@ export function AgentChatView() {
       />}
 
       {/* Input — hidden when viewing a specific conversation from activity */}
-      {!targetConvId && <div className="px-5 py-3">
+      {!targetConvId && <div className="px-3 md:px-5 py-3">
         <div className="mx-auto max-w-2xl relative">
           <div
             className={cn(
