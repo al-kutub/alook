@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import type { Message, Artifact } from "@alook/shared";
-import { sortMessages, mergeMessages, buildTimeline } from "./agent-chat-view";
+import { sortMessages, mergeMessages, buildTimeline, addBufferedIfNew, replaceOptimisticBuffered } from "./agent-chat-view";
 import type { NapMarker } from "./agent-chat-view";
 
 function msg(id: string, created_at: string, role: "user" | "assistant" | "event" = "user", content = ""): Message {
@@ -298,5 +298,109 @@ describe("buildTimeline", () => {
     expect(result).toHaveLength(3);
     expect(result.map((i) => i.data.id)).toEqual(["m1", "m2", "m3"]);
     expect(result.every((i) => i.kind === "message")).toBe(true);
+  });
+});
+
+describe("addBufferedIfNew", () => {
+  it("adds a new message when id is not present", () => {
+    const prev = [msg("m1", "2024-01-01T00:00:00Z")];
+    const incoming = msg("m2", "2024-01-02T00:00:00Z");
+    const result = addBufferedIfNew(prev, incoming);
+    expect(result).toHaveLength(2);
+    expect(result[1].id).toBe("m2");
+  });
+
+  it("returns the same array when id already exists", () => {
+    const prev = [msg("m1", "2024-01-01T00:00:00Z")];
+    const incoming = msg("m1", "2024-01-01T00:00:00Z");
+    const result = addBufferedIfNew(prev, incoming);
+    expect(result).toBe(prev);
+    expect(result).toHaveLength(1);
+  });
+
+  it("adds to empty array", () => {
+    const result = addBufferedIfNew([], msg("m1", "2024-01-01T00:00:00Z"));
+    expect(result).toHaveLength(1);
+  });
+});
+
+describe("replaceOptimisticBuffered", () => {
+  it("replaces optimistic message with real message (HTTP first)", () => {
+    const prev = [
+      msg("m1", "2024-01-01T00:00:00Z"),
+      msg("temp-123", "2024-01-02T00:00:00Z", "user", "hello"),
+    ];
+    const real = msg("real-abc", "2024-01-02T00:00:00Z", "user", "hello");
+    const result = replaceOptimisticBuffered(prev, "temp-123", real);
+    expect(result).toHaveLength(2);
+    expect(result[1].id).toBe("real-abc");
+    expect(result.find((m) => m.id === "temp-123")).toBeUndefined();
+  });
+
+  it("removes optimistic when WebSocket already delivered the real message (WS first — the race condition fix)", () => {
+    const real = msg("real-abc", "2024-01-02T00:00:00Z", "user", "hello");
+    const prev = [
+      msg("m1", "2024-01-01T00:00:00Z"),
+      msg("temp-123", "2024-01-02T00:00:00Z", "user", "hello"),
+      real,
+    ];
+    const result = replaceOptimisticBuffered(prev, "temp-123", real);
+    expect(result).toHaveLength(2);
+    expect(result.map((m) => m.id)).toEqual(["m1", "real-abc"]);
+    expect(result.find((m) => m.id === "temp-123")).toBeUndefined();
+  });
+
+  it("full race simulation: optimistic → WS add → HTTP replace produces no duplicates", () => {
+    const optimisticId = "temp-1716000000000";
+    const optimistic = msg(optimisticId, "2024-01-02T00:00:00Z", "user", "follow-up");
+    const real = msg("PjddM86V1he-JYuedi9tY", "2024-01-02T00:00:00Z", "user", "follow-up");
+
+    let state: Message[] = [msg("m1", "2024-01-01T00:00:00Z")];
+
+    // Step 1: add optimistic
+    state = [...state, optimistic];
+    expect(state).toHaveLength(2);
+
+    // Step 2: WebSocket delivers real message first
+    state = addBufferedIfNew(state, real);
+    expect(state).toHaveLength(3);
+
+    // Step 3: HTTP response arrives, replaces optimistic
+    state = replaceOptimisticBuffered(state, optimisticId, real);
+    expect(state).toHaveLength(2);
+    expect(state.map((m) => m.id)).toEqual(["m1", "PjddM86V1he-JYuedi9tY"]);
+  });
+
+  it("full normal flow: optimistic → HTTP replace → WS ignored produces no duplicates", () => {
+    const optimisticId = "temp-1716000000000";
+    const optimistic = msg(optimisticId, "2024-01-02T00:00:00Z", "user", "follow-up");
+    const real = msg("server-id", "2024-01-02T00:00:00Z", "user", "follow-up");
+
+    let state: Message[] = [msg("m1", "2024-01-01T00:00:00Z")];
+
+    // Step 1: add optimistic
+    state = [...state, optimistic];
+
+    // Step 2: HTTP response arrives first, replaces optimistic
+    state = replaceOptimisticBuffered(state, optimisticId, real);
+    expect(state).toHaveLength(2);
+    expect(state[1].id).toBe("server-id");
+
+    // Step 3: WebSocket arrives late, dedup blocks it
+    state = addBufferedIfNew(state, real);
+    expect(state).toHaveLength(2);
+    expect(state.map((m) => m.id)).toEqual(["m1", "server-id"]);
+  });
+
+  it("handles multiple buffered messages — only the targeted optimistic is affected", () => {
+    const prev = [
+      msg("m1", "2024-01-01T00:00:00Z"),
+      msg("temp-100", "2024-01-02T00:00:00Z", "user", "first"),
+      msg("temp-200", "2024-01-03T00:00:00Z", "user", "second"),
+    ];
+    const real = msg("real-100", "2024-01-02T00:00:00Z", "user", "first");
+    const result = replaceOptimisticBuffered(prev, "temp-100", real);
+    expect(result).toHaveLength(3);
+    expect(result.map((m) => m.id)).toEqual(["m1", "real-100", "temp-200"]);
   });
 });

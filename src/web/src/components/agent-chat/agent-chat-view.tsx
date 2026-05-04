@@ -92,6 +92,18 @@ export function mergeMessages(existing: Message[], incoming: Message[]): Message
   return sortMessages([...merged.values()]);
 }
 
+export function addBufferedIfNew(prev: Message[], incoming: Message): Message[] {
+  if (prev.some((m) => m.id === incoming.id)) return prev;
+  return [...prev, incoming];
+}
+
+export function replaceOptimisticBuffered(prev: Message[], optimisticId: string, real: Message): Message[] {
+  if (prev.some((m) => m.id === real.id)) {
+    return prev.filter((m) => m.id !== optimisticId);
+  }
+  return prev.map((m) => (m.id === optimisticId ? real : m));
+}
+
 export type NapMarker = { agentName: string; created_at: string; id: string };
 
 type TimelineItem =
@@ -756,10 +768,7 @@ export function AgentChatView() {
         startPollingRef.current(task.id, msg.conversationId);
       }
       if (msg.type === "followup.created" && msg.conversationId === conversation?.id) {
-        setBufferedMessages((prev) => {
-          if (prev.some((m) => m.id === msg.message.id)) return prev;
-          return [...prev, msg.message];
-        });
+        setBufferedMessages((prev) => addBufferedIfNew(prev, msg.message));
       }
       if (msg.type === "followup.deleted" && msg.conversationId === conversation?.id) {
         setBufferedMessages((prev) => prev.filter((m) => m.id !== msg.messageId));
@@ -896,9 +905,7 @@ export function AgentChatView() {
           workspaceId,
           filesToSend.length > 0 ? filesToSend : undefined,
         );
-        setBufferedMessages((prev) =>
-          prev.map((m) => (m.id === optimisticId ? message : m))
-        );
+        setBufferedMessages((prev) => replaceOptimisticBuffered(prev, optimisticId, message));
       } catch (err) {
         setBufferedMessages((prev) => prev.filter((m) => m.id !== optimisticId));
         setInput(content);
