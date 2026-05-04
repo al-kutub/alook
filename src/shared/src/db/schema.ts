@@ -148,10 +148,32 @@ export const agentPin = sqliteTable(
       .notNull()
       .references(() => user.id, { onDelete: "cascade" }),
     createdAt: text("created_at").notNull().$defaultFn(() => new Date().toISOString()),
+    position: integer("position").notNull().default(0),
   },
   (t) => [
     unique("agent_pin_agent_ws_user").on(t.agentId, t.workspaceId, t.userId),
     index("idx_agent_pin_ws_user").on(t.workspaceId, t.userId),
+    foreignKey({
+      columns: [t.agentId, t.workspaceId],
+      foreignColumns: [agent.id, agent.workspaceId],
+    }).onDelete("cascade"),
+  ]
+);
+
+export const agentSidebarOrder = sqliteTable(
+  "agent_sidebar_order",
+  {
+    id: text("id").primaryKey().$defaultFn(() => nanoid()),
+    agentId: text("agent_id").notNull(),
+    workspaceId: text("workspace_id").notNull(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    position: integer("position").notNull().default(0),
+  },
+  (t) => [
+    unique("agent_sidebar_order_agent_ws_user").on(t.agentId, t.workspaceId, t.userId),
+    index("idx_agent_sidebar_order_ws_user").on(t.workspaceId, t.userId),
     foreignKey({
       columns: [t.agentId, t.workspaceId],
       foreignColumns: [agent.id, agent.workspaceId],

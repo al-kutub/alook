@@ -1,6 +1,6 @@
 "use client";
 
-import { memo } from "react";
+import { memo, useState } from "react";
 import { Handle, Position, type NodeProps } from "@xyflow/react";
 import type { Agent, AgentRuntime } from "@alook/shared";
 import { AgentPreviewCard } from "@/components/agent-preview-card";
@@ -23,9 +23,12 @@ function AgentNodeInner({ data, selected, dragging }: NodeProps) {
 
   const rt = runtimes.find((r: AgentRuntime) => r.id === agent.runtime_id);
   const isOnline = rt?.status === "online";
+  const [isHovered, setIsHovered] = useState(false);
 
   return (
     <div
+      onMouseEnter={() => setIsHovered(true)}
+      onMouseLeave={() => setIsHovered(false)}
       className={cn(
         "bg-background rounded-xl ring-1 ring-foreground/8 shadow-sm transition-all duration-200 py-3 px-3.5 group",
         selected && "ring-2 ring-primary/30 shadow-md",
@@ -49,6 +52,7 @@ function AgentNodeInner({ data, selected, dragging }: NodeProps) {
         isOnline={isOnline}
         activeTaskCount={activeTaskCount}
         variant="compact"
+        isHovered={isHovered}
       />
     </div>
   );

@@ -1233,6 +1233,115 @@
   background-color: oklch(0.4 0.04 80 / 0.3);
 }
 
+/* ── Avatar hover animations ── */
+[data-avatar-shape],
+[data-avatar-eyes],
+[data-avatar-nose] {
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+@keyframes avatar-shape-bounce {
+  0%, 100% { scale: 1; }
+  50% { scale: 1.08; }
+}
+@keyframes avatar-head-tilt {
+  0%, 100% { rotate: 0; }
+  30% { rotate: -4deg; }
+  70% { rotate: 4deg; }
+}
+@keyframes avatar-shake {
+  0%, 100% { translate: 0; }
+  15% { translate: -3px 0; }
+  35% { translate: 3px 0; }
+  55% { translate: -2px 0; }
+  75% { translate: 2px 0; }
+}
+@keyframes avatar-wobble {
+  0%, 100% { rotate: 0; }
+  15% { rotate: -6deg; }
+  35% { rotate: 5deg; }
+  55% { rotate: -3deg; }
+  75% { rotate: 2deg; }
+}
+@keyframes avatar-pulse {
+  0%, 100% { scale: 1; }
+  35% { scale: 1.05; }
+  70% { scale: 0.97; }
+}
+@keyframes avatar-spin {
+  0% { rotate: 0; }
+  100% { rotate: 360deg; }
+}
+@keyframes avatar-jelly {
+  0%, 100% { scale: 1 1; }
+  30% { scale: 1.1 0.9; }
+  65% { scale: 0.95 1.05; }
+}
+@keyframes avatar-float {
+  0%, 100% { translate: 0 0; }
+  35% { translate: 0 -4px; }
+  70% { translate: 0 4px; }
+}
+@keyframes avatar-nod {
+  0%, 100% { rotate: 0; }
+  50% { rotate: 8deg; }
+}
+
+.avatar-anim-shape-bounce [data-avatar-shape] {
+  animation: avatar-shape-bounce 500ms ease-in-out infinite;
+}
+.avatar-anim-head-tilt [data-avatar-shape],
+.avatar-anim-head-tilt [data-avatar-eyes],
+.avatar-anim-head-tilt [data-avatar-nose] {
+  animation: avatar-head-tilt 600ms ease-in-out infinite;
+}
+.avatar-anim-shake {
+  animation: avatar-shake 400ms ease-in-out infinite;
+}
+.avatar-anim-wobble [data-avatar-shape],
+.avatar-anim-wobble [data-avatar-eyes],
+.avatar-anim-wobble [data-avatar-nose] {
+  animation: avatar-wobble 800ms ease-in-out infinite;
+}
+.avatar-anim-pulse {
+  animation: avatar-pulse 600ms ease-in-out infinite;
+}
+.avatar-anim-spin [data-avatar-shape] {
+  animation: avatar-spin 700ms ease-in-out infinite;
+}
+.avatar-anim-jelly [data-avatar-shape] {
+  animation: avatar-jelly 500ms ease-in-out infinite;
+}
+.avatar-anim-float {
+  animation: avatar-float 800ms ease-in-out infinite;
+}
+.avatar-anim-nod [data-avatar-shape],
+.avatar-anim-nod [data-avatar-eyes],
+.avatar-anim-nod [data-avatar-nose] {
+  animation: avatar-nod 500ms ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .avatar-anim-shape-bounce [data-avatar-shape],
+  .avatar-anim-head-tilt [data-avatar-shape],
+  .avatar-anim-head-tilt [data-avatar-eyes],
+  .avatar-anim-head-tilt [data-avatar-nose],
+  .avatar-anim-shake,
+  .avatar-anim-wobble [data-avatar-shape],
+  .avatar-anim-wobble [data-avatar-eyes],
+  .avatar-anim-wobble [data-avatar-nose],
+  .avatar-anim-pulse,
+  .avatar-anim-spin [data-avatar-shape],
+  .avatar-anim-jelly [data-avatar-shape],
+  .avatar-anim-float,
+  .avatar-anim-nod [data-avatar-shape],
+  .avatar-anim-nod [data-avatar-eyes],
+  .avatar-anim-nod [data-avatar-nose] {
+    animation: none !important;
+  }
+}
+
 /* ── Mobile optimizations ── */
 html, body {
   overscroll-behavior: none;

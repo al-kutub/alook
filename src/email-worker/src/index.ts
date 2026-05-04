@@ -1,5 +1,6 @@
 import { nanoid } from "nanoid"
-import { createDb, queries, parseEmailHandle, DEV_WEB_URL, createLogger, buildMimeMessage } from "@alook/shared"
+import PostalMime from "postal-mime"
+import { createDb, queries, parseEmailHandle, DEV_WEB_URL, createLogger, buildMimeMessage, extractAttachmentMeta } from "@alook/shared"
 import { decrypt } from "@alook/shared/crypto"
 import { WorkerMailer, type AuthType } from "worker-mailer"
 
@@ -344,12 +345,16 @@ export default {
       httpMetadata: { contentType: "message/rfc822" },
     })
 
+    const parsed = await PostalMime.parse(rawBytes)
+    const attachmentsMeta = extractAttachmentMeta(parsed.attachments || [])
+
     const subject = message.headers.get("subject") ?? ""
     const messageId = message.headers.get("message-id") ?? ""
     const inReplyTo = message.headers.get("in-reply-to") ?? ""
     const references = message.headers.get("references") ?? ""
 
     const threadingFields = { messageId, inReplyTo, references }
+    const attachmentsField = attachmentsMeta.length > 0 ? { attachments: JSON.stringify(attachmentsMeta) } : {}
 
     if (whitelisted) {
       emailLog.info("whitelisted email, notifying web", { agentId: agent.id })
@@ -362,6 +367,7 @@ export default {
         subject,
         isWhitelisted: true,
         ...threadingFields,
+        ...attachmentsField,
       }, traceId)
     } else {
       emailLog.info("non-whitelisted email, rejecting", { agentId: agent.id })
@@ -375,6 +381,7 @@ export default {
         isWhitelisted: false,
         forwarded: false,
         ...threadingFields,
+        ...attachmentsField,
       }, traceId)
 
       message.setReject("Sender not whitelisted")

@@ -187,8 +187,8 @@ export { isEmptyHtml } from "./lib/html";
 export { extractThreadId, buildEmailMapKey } from "./lib/context-key";
 export { parseIcs } from "./lib/ics-parser";
 export type { MeetingInfo } from "./lib/ics-parser";
-export { buildMimeMessage } from "./lib/mime";
-export type { MimeAttachment, BuildMimeOptions } from "./lib/mime";
+export { buildMimeMessage, extractAttachmentMeta, filterDownloadableAttachments } from "./lib/mime";
+export type { MimeAttachment, BuildMimeOptions, InboundAttachmentMeta } from "./lib/mime";
 export {
   addRepeatInterval,
   computeNextScheduledAt,

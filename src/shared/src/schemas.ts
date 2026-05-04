@@ -483,6 +483,7 @@ export const EmailNotifyRequestSchema = z.object({
   inReplyTo: z.string().optional().default(""),
   references: z.string().optional().default(""),
   meetingInfo: MeetingInfoSchema.nullable().optional(),
+  attachments: z.string().optional(),
 });
 export type EmailNotifyRequest = z.infer<typeof EmailNotifyRequestSchema>;
 

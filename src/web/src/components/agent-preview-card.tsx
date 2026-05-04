@@ -4,7 +4,7 @@ import { useCallback, useState } from "react";
 import type { Agent } from "@alook/shared";
 import { Check, Copy } from "lucide-react";
 import { toast } from "sonner";
-import { AvatarRenderer, parseAvatarUrl } from "@/components/avatar";
+import { AnimatedAvatar, AvatarRenderer, parseAvatarUrl } from "@/components/avatar";
 import { AgentStatusBadge } from "@/components/agent-status-badge";
 
 interface AgentPreviewCardProps {
@@ -12,6 +12,7 @@ interface AgentPreviewCardProps {
   isOnline?: boolean;
   activeTaskCount?: number;
   variant?: "default" | "compact";
+  isHovered?: boolean;
 }
 
 export function AgentPreviewCard({
@@ -19,6 +20,7 @@ export function AgentPreviewCard({
   isOnline,
   activeTaskCount,
   variant = "default",
+  isHovered,
 }: AgentPreviewCardProps) {
   const [copied, setCopied] = useState(false);
   const email = agent.email_handle ? `${agent.email_handle}@alook.ai` : null;
@@ -42,7 +44,7 @@ export function AgentPreviewCard({
         {(() => {
           const avatarConfig = parseAvatarUrl(agent.avatar_url);
           if (avatarConfig) {
-            return <AvatarRenderer config={avatarConfig} size={32} className="shrink-0 rounded-xl" />;
+            return <AnimatedAvatar config={avatarConfig} size={32} className="shrink-0 rounded-xl" isHovered={isHovered ?? false} />;
           }
           return (
             <div className="flex items-center justify-center size-8 rounded-xl bg-secondary text-secondary-foreground text-xs font-medium shrink-0">

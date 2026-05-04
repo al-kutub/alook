@@ -29,6 +29,7 @@ export async function POST(req: NextRequest) {
     inReplyTo: body.inReplyTo,
     references: body.references,
     direction: "inbound",
+    attachments: body.attachments,
   })
 
   if (body.meetingInfo && agent) {

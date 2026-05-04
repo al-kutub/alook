@@ -1,7 +1,7 @@
 import { DurableObject } from "cloudflare:workers"
 import PostalMime from "postal-mime"
 import { nanoid } from "nanoid"
-import { createDb, queries, createLogger, parseIcs } from "@alook/shared"
+import { createDb, queries, createLogger, parseIcs, extractAttachmentMeta } from "@alook/shared"
 import type { MeetingInfo } from "@alook/shared"
 import { decrypt } from "@alook/shared/crypto"
 import { ImapClient, ImapAuthError } from "./lib/imap-client"
@@ -165,6 +165,8 @@ export class ImapPollerDO extends DurableObject<EmailEnv> {
           }
         }
 
+        const attachmentsMeta = extractAttachmentMeta(parsed.attachments || [])
+
         await this.notifyWeb({
           agentId: account.agentId,
           workspaceId: account.workspaceId,
@@ -177,6 +179,7 @@ export class ImapPollerDO extends DurableObject<EmailEnv> {
           inReplyTo: parsed.inReplyTo || "",
           references: parsed.references || "",
           meetingInfo,
+          ...(attachmentsMeta.length > 0 ? { attachments: JSON.stringify(attachmentsMeta) } : {}),
         })
 
         maxUid = Math.max(maxUid, uid)

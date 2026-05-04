@@ -25,12 +25,14 @@ function Cycler<K extends string>({
   value,
   onChange,
   renderThumb,
+  mobile = false,
 }: {
   label: string;
   keys: K[];
   value: K;
   onChange: (v: K) => void;
   renderThumb: (key: K) => React.ReactNode;
+  mobile?: boolean;
 }) {
   const idx = keys.indexOf(value);
   const go = (delta: number) =>
@@ -47,7 +49,10 @@ function Cycler<K extends string>({
       <button
         type="button"
         onClick={() => go(-1)}
-        className="flex items-center justify-center size-7 rounded-md hover:bg-accent transition-colors"
+        className={cn(
+          "flex items-center justify-center rounded-md hover:bg-accent transition-colors",
+          mobile ? "size-10" : "size-7"
+        )}
       >
         <svg viewBox="0 0 24 24" width="16" height="16">
           <path
@@ -88,7 +93,10 @@ function Cycler<K extends string>({
       <button
         type="button"
         onClick={() => go(1)}
-        className="flex items-center justify-center size-7 rounded-md hover:bg-accent transition-colors"
+        className={cn(
+          "flex items-center justify-center rounded-md hover:bg-accent transition-colors",
+          mobile ? "size-10" : "size-7"
+        )}
       >
         <svg viewBox="0 0 24 24" width="16" height="16">
           <path
@@ -113,9 +121,11 @@ interface AvatarGeneratorProps {
   onChange: (config: AvatarConfig) => void;
   /** "horizontal" puts preview left + controls right; default is vertical stack */
   layout?: "vertical" | "horizontal";
+  /** Mobile mode — smaller preview, bigger touch targets, 3-col grid */
+  mobile?: boolean;
 }
 
-export function AvatarGenerator({ config, onChange, layout = "vertical" }: AvatarGeneratorProps) {
+export function AvatarGenerator({ config, onChange, layout = "vertical", mobile = false }: AvatarGeneratorProps) {
   const [tab, setTab] = useState<"presets" | "custom">("presets");
 
   const setField = useCallback(
@@ -185,13 +195,16 @@ export function AvatarGenerator({ config, onChange, layout = "vertical" }: Avata
 
   const isHorizontal = layout === "horizontal";
 
+  const previewSize = isHorizontal ? 220 : mobile ? 120 : 160;
+
   const preview = (
     <div className={cn(
-      "flex flex-col items-center gap-3 rounded-2xl bg-muted/30 p-4",
+      "flex flex-col items-center gap-3 rounded-2xl bg-muted/30",
+      mobile ? "p-3" : "p-4",
       isHorizontal ? "w-[280px] shrink-0 justify-center" : ""
     )}>
       <div className={cn("rounded-2xl", shaking && "animate-[shake_0.45s_cubic-bezier(.36,.07,.19,.97)]")}>
-        <AvatarRenderer config={config} size={isHorizontal ? 220 : 160} />
+        <AvatarRenderer config={config} size={previewSize} />
       </div>
       <button
         type="button"
@@ -250,7 +263,7 @@ export function AvatarGenerator({ config, onChange, layout = "vertical" }: Avata
       {/* Tab content — fixed height so dialog doesn't resize on tab switch */}
       <div className={cn("flex-1 min-h-0", isHorizontal && "overflow-y-auto thin-scrollbar")}>
       {tab === "presets" && (
-        <div className="grid grid-cols-4 gap-2">
+        <div className={cn("grid gap-2", mobile ? "grid-cols-3" : "grid-cols-4")}>
           {PRESETS.map((p) => {
             const isActive =
               p.config.shape === config.shape &&
@@ -287,6 +300,7 @@ export function AvatarGenerator({ config, onChange, layout = "vertical" }: Avata
             value={config.shape}
             onChange={(v) => setField("shape", v)}
             renderThumb={renderShapeThumb}
+            mobile={mobile}
           />
           <Cycler
             label="Nose"
@@ -294,6 +308,7 @@ export function AvatarGenerator({ config, onChange, layout = "vertical" }: Avata
             value={config.nose}
             onChange={(v) => setField("nose", v)}
             renderThumb={renderNoseThumb}
+            mobile={mobile}
           />
           <Cycler
             label="Eyes"
@@ -301,6 +316,7 @@ export function AvatarGenerator({ config, onChange, layout = "vertical" }: Avata
             value={config.eye}
             onChange={(v) => setField("eye", v)}
             renderThumb={renderEyeThumb}
+            mobile={mobile}
           />
 
           {/* Background colors */}
@@ -308,7 +324,7 @@ export function AvatarGenerator({ config, onChange, layout = "vertical" }: Avata
             <div className="mb-2 text-xs font-medium text-muted-foreground">
               Color
             </div>
-            <div className="flex flex-wrap gap-2 p-1">
+            <div className={cn("flex flex-wrap p-1", mobile ? "gap-3" : "gap-2")}>
               {BG_COLORS.map((c, i) => (
                 <button
                   key={c.value}
@@ -316,7 +332,8 @@ export function AvatarGenerator({ config, onChange, layout = "vertical" }: Avata
                   onClick={() => setField("bg", i)}
                   title={c.name}
                   className={cn(
-                    "size-7 rounded-full transition-shadow",
+                    "rounded-full transition-shadow",
+                    mobile ? "size-8" : "size-7",
                     config.bg === i
                       ? "ring-2 ring-primary ring-offset-2"
                       : "ring-1 ring-border"

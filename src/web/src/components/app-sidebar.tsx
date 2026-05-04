@@ -21,6 +21,10 @@ import {
 import { AgentPreviewCard } from "@/components/agent-preview-card";
 import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
 import { AvatarRenderer, parseAvatarUrl } from "@/components/avatar";
+import { AnimatedAvatar } from "@/components/avatar/animated-avatar";
+import { DndContext, closestCenter, PointerSensor, useSensor, useSensors, type DragEndEvent } from "@dnd-kit/core";
+import { SortableContext, verticalListSortingStrategy, useSortable, arrayMove } from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 
 function AgentSidebarButton({
   agent,
@@ -72,7 +76,7 @@ function AgentSidebarButton({
           {(() => {
             const avatarConfig = parseAvatarUrl(agent.avatar_url);
             if (avatarConfig) {
-              return <AvatarRenderer config={avatarConfig} size={40} className="rounded-xl" />;
+              return <AnimatedAvatar config={avatarConfig} size={40} className="rounded-xl" isHovered={false} isWorking={taskCount > 0} />;
             }
             return agent.name.charAt(0).toUpperCase();
           })()}
@@ -101,11 +105,26 @@ function AgentSidebarButton({
   );
 }
 
+function SortableAgentButton({ id, children }: { id: string; children: React.ReactNode }) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id });
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+    zIndex: isDragging ? 10 : undefined,
+  };
+  return (
+    <div ref={setNodeRef} style={style} {...attributes} {...listeners}>
+      {children}
+    </div>
+  );
+}
+
 export function AppSidebar({ onNavigate }: { onNavigate?: () => void } = {}) {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
-  const { agents, runtimes, loading, pins, handlePinAgent, handleUnpinAgent } = useAgentContext();
+  const { agents, runtimes, loading, pins, unpinnedOrder, handlePinAgent, handleUnpinAgent, handleReorderPins, handleReorderUnpinned } = useAgentContext();
   const { slug } = useWorkspace();
 
   const { resolvedTheme, setTheme } = useTheme();
@@ -113,10 +132,39 @@ export function AppSidebar({ onNavigate }: { onNavigate?: () => void } = {}) {
 
   const pinned = agents
     .filter((a) => pins.has(a.id))
-    .sort((a, b) => (pins.get(a.id)! < pins.get(b.id)! ? -1 : 1));
+    .sort((a, b) => pins.get(a.id)!.position - pins.get(b.id)!.position);
   const unpinned = agents
     .filter((a) => !pins.has(a.id))
-    .sort((a, b) => a.name.localeCompare(b.name));
+    .sort((a, b) => {
+      const posA = unpinnedOrder.get(a.id);
+      const posB = unpinnedOrder.get(b.id);
+      if (posA !== undefined && posB !== undefined) return posA - posB;
+      if (posA !== undefined) return -1;
+      if (posB !== undefined) return 1;
+      return a.name.localeCompare(b.name);
+    });
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 5 } })
+  );
+
+  function handleDragEnd(event: DragEndEvent) {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+    const oldIndex = pinned.findIndex((a) => a.id === active.id);
+    const newIndex = pinned.findIndex((a) => a.id === over.id);
+    const reordered = arrayMove(pinned, oldIndex, newIndex);
+    handleReorderPins(reordered.map((a) => a.id));
+  }
+
+  function handleUnpinnedDragEnd(event: DragEndEvent) {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+    const oldIndex = unpinned.findIndex((a) => a.id === active.id);
+    const newIndex = unpinned.findIndex((a) => a.id === over.id);
+    const reordered = arrayMove(unpinned, oldIndex, newIndex);
+    handleReorderUnpinned(reordered.map((a) => a.id));
+  }
 
   const prefix = `/w/${slug}`;
   const isHome = pathname === `${prefix}/home`;
@@ -166,11 +214,27 @@ export function AppSidebar({ onNavigate }: { onNavigate?: () => void } = {}) {
           <Skeleton className="size-10 rounded-xl" />
         ) : (
           <>
-            {pinned.map(renderAgentButton)}
+            <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+              <SortableContext items={pinned.map((a) => a.id)} strategy={verticalListSortingStrategy}>
+                {pinned.map((agent) => (
+                  <SortableAgentButton key={agent.id} id={agent.id}>
+                    {renderAgentButton(agent)}
+                  </SortableAgentButton>
+                ))}
+              </SortableContext>
+            </DndContext>
             {pinned.length > 0 && unpinned.length > 0 && (
               <div className="w-6 border-t border-border/50" />
             )}
-            {unpinned.map(renderAgentButton)}
+            <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleUnpinnedDragEnd}>
+              <SortableContext items={unpinned.map((a) => a.id)} strategy={verticalListSortingStrategy}>
+                {unpinned.map((agent) => (
+                  <SortableAgentButton key={agent.id} id={agent.id}>
+                    {renderAgentButton(agent)}
+                  </SortableAgentButton>
+                ))}
+              </SortableContext>
+            </DndContext>
           </>
         )}
 

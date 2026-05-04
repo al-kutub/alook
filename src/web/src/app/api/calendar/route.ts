@@ -124,10 +124,8 @@ export const POST = withAuth(async (req: NextRequest, ctx) => {
     }
   }
 
-  const description =
-    body.description && !isEmptyHtml(body.description)
-      ? body.description
-      : null;
+  const rawDesc = body.description?.trim() || null;
+  const description = rawDesc && isEmptyHtml(rawDesc) ? null : rawDesc;
 
   const created = await queries.calendarEvent.createCalendarEvent(db, {
     agentId: body.agent_id,

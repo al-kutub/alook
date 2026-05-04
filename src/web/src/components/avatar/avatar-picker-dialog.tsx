@@ -10,6 +10,7 @@ import {
 } from "@/components/ui/dialog";
 import { type AvatarConfig, AvatarRenderer } from "./avatar-parts";
 import { AvatarGenerator } from "./avatar-generator";
+import { useIsMobile } from "@/hooks/use-mobile";
 
 interface AvatarPickerDialogProps {
   config: AvatarConfig;
@@ -19,6 +20,7 @@ interface AvatarPickerDialogProps {
 export function AvatarPickerDialog({ config, onChange }: AvatarPickerDialogProps) {
   const [open, setOpen] = useState(false);
   const [draft, setDraft] = useState<AvatarConfig>(config);
+  const isMobile = useIsMobile();
 
   return (
     <Dialog
@@ -41,18 +43,32 @@ export function AvatarPickerDialog({ config, onChange }: AvatarPickerDialogProps
         </DialogTrigger>
       </div>
 
-      <DialogContent className="sm:max-w-[720px]">
+      <DialogContent className={
+        isMobile
+          ? "top-auto left-0 translate-x-0 translate-y-0 bottom-0 max-w-full sm:max-w-full w-full rounded-b-none rounded-t-xl max-h-[85dvh] overflow-y-auto pb-[env(safe-area-inset-bottom)]"
+          : "sm:max-w-[720px]"
+      }>
         <DialogHeader>
           <DialogTitle>Choose Avatar</DialogTitle>
         </DialogHeader>
         <AvatarGenerator
           config={draft}
-          layout="horizontal"
+          layout={isMobile ? "vertical" : "horizontal"}
           onChange={(next) => {
             setDraft(next);
             onChange(next);
           }}
+          mobile={isMobile}
         />
+        {isMobile && (
+          <button
+            type="button"
+            onClick={() => setOpen(false)}
+            className="w-full rounded-xl bg-primary py-3 text-sm font-medium text-primary-foreground hover:bg-primary/90 transition-colors"
+          >
+            Done
+          </button>
+        )}
       </DialogContent>
     </Dialog>
   );
