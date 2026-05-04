@@ -155,7 +155,7 @@ function ActivityRow({ task, slug, agentId, workspaceId, onRetry }: { task: Acti
         {task.status === "failed" && task.error && (
           <>
             <span className="text-muted-foreground/40">—</span>
-            <span className="text-xs text-destructive truncate max-w-[200px]">
+            <span className="text-xs text-destructive truncate max-w-50">
               {task.error}
             </span>
           </>
@@ -312,7 +312,7 @@ export default function AgentActivityPage() {
       {/* Filter bar */}
       <div className="sticky top-0 z-10 flex items-center gap-2 px-4 py-2.5">
         <Select value={statusFilter} onValueChange={(v) => updateFilter("status", v ?? "")}>
-          <SelectTrigger className="w-[140px] border-none bg-transparent shadow-none text-xs text-muted-foreground hover:bg-muted hover:text-foreground transition-colors">
+          <SelectTrigger className="w-35 border-none bg-transparent shadow-none text-xs text-muted-foreground hover:bg-muted hover:text-foreground transition-colors">
             <SelectValue placeholder="Status: All" />
           </SelectTrigger>
           <SelectPopup>

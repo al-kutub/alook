@@ -1319,7 +1319,7 @@ export function AgentChatView() {
                     className="inline-flex items-center gap-1.5 rounded-md bg-muted px-2 py-1 text-xs text-muted-foreground"
                   >
                     <FileText className="size-3 shrink-0" />
-                    <span className="truncate max-w-[120px]">{file.name}</span>
+                    <span className="truncate max-w-30">{file.name}</span>
                     <span className="text-muted-foreground/60">{formatSize(file.size)}</span>
                     <button
                       type="button"

@@ -4,8 +4,9 @@ import { useCallback, useState } from "react";
 import type { Agent } from "@alook/shared";
 import { Check, Copy } from "lucide-react";
 import { toast } from "sonner";
-import { AnimatedAvatar, AvatarRenderer, parseAvatarUrl } from "@/components/avatar";
+import { AnimatedAvatar, parseAvatarUrl } from "@/components/avatar";
 import { AgentStatusBadge } from "@/components/agent-status-badge";
+import { cn } from "@/lib/utils";
 
 interface AgentPreviewCardProps {
   agent: Agent;
@@ -54,7 +55,7 @@ export function AgentPreviewCard({
         })()}
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-1.5">
-            <p className="text-sm font-medium truncate max-w-[140px]">{agent.name}</p>
+            <p className="text-sm font-medium truncate max-w-35">{agent.name}</p>
             {email && (
               <span className="text-xs text-muted-foreground truncate">{email}</span>
             )}
@@ -74,48 +75,37 @@ export function AgentPreviewCard({
   }
 
   return (
-    <div className="flex flex-col gap-2.5 p-1">
-      <div className="flex items-start gap-3">
-        {(() => {
-          const avatarConfig = parseAvatarUrl(agent.avatar_url);
-          if (avatarConfig) {
-            return <AvatarRenderer config={avatarConfig} size={40} className="shrink-0 rounded-xl" />;
-          }
-          return (
-            <div className="flex items-center justify-center size-10 rounded-xl bg-secondary text-secondary-foreground text-sm font-medium shrink-0">
-              {agent.name.charAt(0).toUpperCase()}
-            </div>
-          );
-        })()}
-        <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-1.5">
-            <p className="text-sm font-medium truncate">{agent.name}</p>
-            {isOnline !== undefined && (
-              <AgentStatusBadge
-                isOnline={isOnline}
-                taskCount={activeTaskCount ?? 0}
-                agentId={agent.id}
-              />
-            )}
-          </div>
-          {email && (
-            <div className="flex items-center gap-1 mt-0.5">
-              <span className="text-xs text-muted-foreground truncate">{email}</span>
-              <button
-                type="button"
-                onClick={(e) => { e.stopPropagation(); handleCopy(); }}
-                className="shrink-0 p-0.5 rounded-sm text-muted-foreground/60 hover:text-foreground transition-colors cursor-pointer"
-              >
-                {copied ? (
-                  <Check className="size-3 text-green-500" />
-                ) : (
-                  <Copy className="size-3" />
-                )}
-              </button>
-            </div>
-          )}
-        </div>
+    <div className="flex flex-col gap-1.5 p-1">
+      <div className="flex items-center gap-1.5">
+        <p className="text-sm font-medium truncate">{agent.name}</p>
+        <span className="flex-1" />
+        {isOnline !== undefined && (
+          <span className="inline-flex items-center gap-1 text-[11px] text-muted-foreground">
+            <span className={cn(
+              "size-1.5 rounded-full",
+              !isOnline ? "bg-status-offline" : "bg-status-online",
+              isOnline && (activeTaskCount ?? 0) > 0 && "animate-pulse"
+            )} />
+            {!isOnline ? "Offline" : (activeTaskCount ?? 0) > 0 ? "Working" : "Online"}
+          </span>
+        )}
       </div>
+      {email && (
+        <div className="flex items-center gap-1">
+          <span className="text-xs text-muted-foreground truncate">{email}</span>
+          <button
+            type="button"
+            onClick={(e) => { e.stopPropagation(); handleCopy(); }}
+            className="shrink-0 p-0.5 rounded-sm text-muted-foreground/60 hover:text-foreground transition-colors cursor-pointer"
+          >
+            {copied ? (
+              <Check className="size-3 text-green-500" />
+            ) : (
+              <Copy className="size-3" />
+            )}
+          </button>
+        </div>
+      )}
       {agent.description && (
         <p className="text-xs text-muted-foreground line-clamp-2">{agent.description}</p>
       )}

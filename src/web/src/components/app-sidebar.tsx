@@ -23,6 +23,7 @@ import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover
 import { AvatarRenderer, parseAvatarUrl } from "@/components/avatar";
 import { AnimatedAvatar } from "@/components/avatar/animated-avatar";
 import { DndContext, closestCenter, PointerSensor, useSensor, useSensors, type DragEndEvent } from "@dnd-kit/core";
+import { restrictToVerticalAxis } from "@dnd-kit/modifiers";
 import { SortableContext, verticalListSortingStrategy, useSortable, arrayMove } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 
@@ -30,6 +31,7 @@ function AgentSidebarButton({
   agent,
   isActive,
   isPinned,
+  isOnline,
   taskCount,
   onClick,
   onPin,
@@ -38,6 +40,7 @@ function AgentSidebarButton({
   agent: Agent;
   isActive: boolean;
   isPinned: boolean;
+  isOnline: boolean;
   taskCount: number;
   onClick: () => void;
   onPin: () => void;
@@ -99,7 +102,7 @@ function AgentSidebarButton({
         </ContextMenuContent>
       </ContextMenu>
       <PopoverContent side="right" className="w-fit max-w-80">
-        <AgentPreviewCard agent={agent} />
+        <AgentPreviewCard agent={agent} isOnline={isOnline} activeTaskCount={taskCount} />
       </PopoverContent>
     </Popover>
   );
@@ -183,12 +186,15 @@ export function AppSidebar({ onNavigate }: { onNavigate?: () => void } = {}) {
     onNavigate?.();
   };
 
+  const hasOnlineRuntime = runtimes.some((r) => r.status === "online");
+
   const renderAgentButton = (agent: typeof agents[number]) => (
     <AgentSidebarButton
       key={agent.id}
       agent={agent}
       isActive={activeAgentId === agent.id}
       isPinned={pins.has(agent.id)}
+      isOnline={hasOnlineRuntime}
       taskCount={taskCounts[agent.id] ?? 0}
       onClick={() => handleAgentClick(agent.id)}
       onPin={() => handlePinAgent(agent.id)}
@@ -214,7 +220,7 @@ export function AppSidebar({ onNavigate }: { onNavigate?: () => void } = {}) {
           <Skeleton className="size-10 rounded-xl" />
         ) : (
           <>
-            <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+            <DndContext sensors={sensors} collisionDetection={closestCenter} modifiers={[restrictToVerticalAxis]} onDragEnd={handleDragEnd}>
               <SortableContext items={pinned.map((a) => a.id)} strategy={verticalListSortingStrategy}>
                 {pinned.map((agent) => (
                   <SortableAgentButton key={agent.id} id={agent.id}>
@@ -226,7 +232,7 @@ export function AppSidebar({ onNavigate }: { onNavigate?: () => void } = {}) {
             {pinned.length > 0 && unpinned.length > 0 && (
               <div className="w-6 border-t border-border/50" />
             )}
-            <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleUnpinnedDragEnd}>
+            <DndContext sensors={sensors} collisionDetection={closestCenter} modifiers={[restrictToVerticalAxis]} onDragEnd={handleUnpinnedDragEnd}>
               <SortableContext items={unpinned.map((a) => a.id)} strategy={verticalListSortingStrategy}>
                 {unpinned.map((agent) => (
                   <SortableAgentButton key={agent.id} id={agent.id}>
