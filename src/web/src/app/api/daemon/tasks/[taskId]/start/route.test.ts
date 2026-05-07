@@ -26,6 +26,9 @@ vi.mock("@/lib/middleware/helpers", async () => {
     "@/lib/middleware/helpers"
   );
 });
+vi.mock("@/lib/broadcast", () => ({
+  broadcastToUser: vi.fn().mockReturnValue(Promise.resolve()),
+}));
 vi.mock("@/lib/services/task", () => {
   const MockTaskService = function (this: any) {
     this.startTask = (...a: any[]) => mockStartTask(...a);

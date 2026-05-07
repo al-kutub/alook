@@ -25,6 +25,9 @@ vi.mock("@alook/shared", async () => {
         updateIssue: (...a: unknown[]) => mockUpdateIssue(...a),
         deleteIssue: (...a: unknown[]) => mockDeleteIssue(...a),
       },
+      task: {
+        getTask: vi.fn().mockResolvedValue(null),
+      },
       message: { createMessage: (...a: unknown[]) => mockCreateMessage(...a) },
       artifact: {
         listArtifactsByConversation: (...a: unknown[]) => mockListArtifactsByConversation(...a),
@@ -62,7 +65,7 @@ describe("GET /api/issues/[id]", () => {
     const res = await GET(new NextRequest("http://localhost/api/issues/iss_1"), { params: { id: "iss_1" } } as any);
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({
-      issue: { id: "iss_1", status: "todo", conversation_id: "c1" },
+      issue: { id: "iss_1", status: "todo", conversation_id: "c1", trace_id: null },
       messages: [{ id: "m1", role: "event", content: "Created" }],
       artifacts: [{ id: "art_1", filename: "brief.md" }],
     });
