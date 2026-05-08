@@ -3,6 +3,7 @@ import { getCloudflareContext } from "@opennextjs/cloudflare"
 import { queries } from "@alook/shared"
 import { getDb } from "@/lib/db"
 import { createAuth } from "@/lib/auth"
+import { cached, cacheKeys, bindCacheKV } from "@/lib/cache"
 
 export interface AuthContext {
   userId: string
@@ -28,6 +29,7 @@ export function withAuth(handler: AuthenticatedHandler) {
 
     const { env } = await getCloudflareContext({ async: true })
     const cloudflareEnv = env as Env
+    bindCacheKV(cloudflareEnv.CACHE_KV ?? null)
 
     const authHeader = req.headers.get("Authorization")
     if (authHeader?.startsWith("Bearer ")) {
@@ -35,7 +37,11 @@ export function withAuth(handler: AuthenticatedHandler) {
       if (raw.startsWith("al_")) {
         try {
           const db = getDb(cloudflareEnv.DB)
-          const mt = await queries.machineToken.getMachineTokenByToken(db, raw)
+          const mt = await cached(
+            cacheKeys.machineToken(raw),
+            900,
+            () => queries.machineToken.getMachineTokenByToken(db, raw),
+          )
           if (!mt) {
             return NextResponse.json({ error: "invalid token" }, { status: 401 })
           }

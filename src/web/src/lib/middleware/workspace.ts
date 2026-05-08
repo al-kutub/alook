@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { getCloudflareContext } from "@opennextjs/cloudflare"
 import { queries } from "@alook/shared"
 import { getDb } from "@/lib/db"
+import { cached, cacheKeys } from "@/lib/cache"
 import type { AuthContext } from "./auth"
 
 export interface WorkspaceContext extends AuthContext {
@@ -35,10 +36,10 @@ export async function withWorkspaceMember(
   const { env } = await getCloudflareContext({ async: true })
   const db = getDb((env as Env).DB)
 
-  const membership = await queries.member.getMemberByUserAndWorkspace(
-    db,
-    auth.userId,
-    workspaceId
+  const membership = await cached(
+    cacheKeys.member(workspaceId, auth.userId),
+    1800,
+    () => queries.member.getMemberByUserAndWorkspace(db, auth.userId, workspaceId),
   )
   if (!membership && auth.workspaceId === workspaceId) {
     return { workspaceId, memberRole: "member" }

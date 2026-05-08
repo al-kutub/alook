@@ -5,6 +5,7 @@ import { getDb } from "@/lib/db"
 import { withAuth } from "@/lib/middleware/auth";
 import { withWorkspaceMember } from "@/lib/middleware/workspace";
 import { writeJSON, writeError, parseBody } from "@/lib/middleware/helpers";
+import { invalidate, cacheKeys } from "@/lib/cache";
 
 export const GET = withAuth(async (req: NextRequest, ctx) => {
   const ws = await withWorkspaceMember(req, ctx);
@@ -40,6 +41,8 @@ export const PATCH = withAuth(async (req: NextRequest, ctx) => {
     body.global_instruction
   );
   if (!updated) return writeError("member not found", 404);
+
+  await invalidate(cacheKeys.member(ws.workspaceId, ctx.userId));
 
   return writeJSON({ global_instruction: updated.globalInstruction });
 });
