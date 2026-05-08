@@ -14,6 +14,7 @@ import { log } from "@/lib/logger";
 export const POST = withAuth(async (req: NextRequest, ctx) => {
   const { env } = getCloudflareContext();
   const db = getDb((env as Env).DB);
+  const { cached, cacheKeys } = await import("@/lib/cache");
 
   const [body, err] = await parseBody(req, PollRequestSchema);
   if (err) return err;
@@ -22,11 +23,11 @@ export const POST = withAuth(async (req: NextRequest, ctx) => {
     return writeError("Forbidden: machine token required", 403);
   }
 
-  // 1. Resolve runtime IDs from daemon_id + workspaceId
-  const runtimeIds = await queries.runtime.getRuntimeIdsByDaemon(
-    db,
-    body.daemon_id,
-    ctx.workspaceId,
+  // 1. Resolve runtime IDs from daemon_id + workspaceId (cached 10min)
+  const runtimeIds = await cached(
+    cacheKeys.runtimeIds(ctx.workspaceId, body.daemon_id),
+    600,
+    () => queries.runtime.getRuntimeIdsByDaemon(db, body.daemon_id, ctx.workspaceId!),
   );
 
   if (runtimeIds.length === 0) {

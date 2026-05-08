@@ -7,6 +7,7 @@ import { writeJSON, parseBody } from "@/lib/middleware/helpers";
 import { runtimeToResponse } from "@/lib/api/responses";
 import { RegisterDaemonRequestSchema } from "@alook/shared";
 import { broadcastToUser } from "@/lib/broadcast";
+import { invalidate, cacheKeys } from "@/lib/cache";
 
 export const POST = withAuth(async (req: NextRequest, ctx) => {
   const { env } = getCloudflareContext()
@@ -58,6 +59,8 @@ export const POST = withAuth(async (req: NextRequest, ctx) => {
     });
     results.push({ ...result, machineLastSeenAt: new Date().toISOString() });
   }
+
+  await invalidate(cacheKeys.runtimeIds(workspaceId, daemonId));
 
   broadcastToUser(ctx.userId, {
     type: "runtime.registered",

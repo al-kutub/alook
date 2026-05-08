@@ -38,4 +38,6 @@ export async function invalidate(key: string): Promise<void> {
 export const cacheKeys = {
   machineToken: (token: string) => `mt:${token.slice(0, 20)}`,
   member: (workspaceId: string, userId: string) => `mem:${workspaceId}:${userId}`,
+  runtimeIds: (workspaceId: string, daemonId: string) => `rt:${workspaceId}:${daemonId}`,
+  agent: (workspaceId: string, agentId: string) => `ag:${workspaceId}:${agentId}`,
 };
