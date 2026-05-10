@@ -454,10 +454,10 @@ export function IssueSheet({
         value={commentContent}
         onChange={(e) => setCommentContent(e.target.value)}
         className="w-full resize-none bg-transparent px-3.5 py-2.5 text-sm leading-relaxed outline-none placeholder:text-muted-foreground field-sizing-content min-h-[60px] max-h-32 thin-scrollbar overflow-y-auto"
-        onKeyDown={(e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) handleCommentSubmit(); }}
+        onKeyDown={(e) => { if (e.key === "Enter" && e.shiftKey) { e.preventDefault(); handleCommentSubmit(); } }}
       />
       <div className="flex items-center justify-between px-2.5 pb-2 pt-0.5">
-        <kbd className="text-[11px] text-muted-foreground/50 font-sans select-none">⌘↵</kbd>
+        <kbd className="text-[11px] text-muted-foreground/50 font-sans select-none">⇧↵</kbd>
         <Button
           size="icon-sm"
           onClick={handleCommentSubmit}
