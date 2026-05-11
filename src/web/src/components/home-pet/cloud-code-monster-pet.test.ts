@@ -271,6 +271,18 @@ describe("production workspace PET mounting", () => {
       path.join(root, "src/components/home-pet/cloud-code-monster-pet-pixel-parts.tsx"),
       "utf8"
     );
+    const petTypes = readFileSync(
+      path.join(root, "src/components/home-pet/cloud-code-monster-pet-types.ts"),
+      "utf8"
+    );
+    const petPresets = readFileSync(
+      path.join(root, "src/components/home-pet/cloud-code-monster-pet-presets.ts"),
+      "utf8"
+    );
+    const petDirectShapes = readFileSync(
+      path.join(root, "src/components/home-pet/cloud-code-monster-pet-direct-shapes.tsx"),
+      "utf8"
+    );
     const petCssModule = readFileSync(
       path.join(root, "src/components/home-pet/cloud-code-monster-pet.module.css"),
       "utf8"
@@ -280,6 +292,36 @@ describe("production workspace PET mounting", () => {
       "utf8"
     );
     const globalCss = readFileSync(path.join(root, "src/app/globals.css"), "utf8");
+    const clientPetSources = [petTypes, petPresets, petDirectShapes].join("\n");
+    const sensitiveShapeIds = [
+      "dor" + "aemon",
+      "pika" + "chu",
+      "kir" + "by",
+      "bulba" + "saur",
+      "char" + "mander",
+      "squir" + "tle",
+      "mine" + "craft",
+      "to" + "ad",
+      "son" + "ic",
+      "pac" + "man",
+      "bo" + "o",
+      "mar" + "io",
+      "po" + "oh",
+      "hello-" + "kitty",
+      "my-" + "melody",
+      "kur" + "omi",
+      "toto" + "ro",
+      "soot-" + "sprite",
+      "luf" + "fy",
+      "nar" + "uto",
+      "go" + "ku",
+      "sailor-" + "moon",
+      "gun" + "dam",
+      "dragon-quest-" + "slime",
+      "ink" + "ling",
+      "snoo" + "py",
+      "chop" + "per",
+    ];
 
     expect(workspaceHomePage).toContain("CloudCodeMonsterPet");
     expect(workspaceHomePage).toContain("dynamic<CloudCodeMonsterPetProps>");
@@ -305,6 +347,9 @@ describe("production workspace PET mounting", () => {
     expect(petComponent).toContain("setPetTimer(\"peek\"");
     expect(petComponent).not.toContain("peekTargets = []");
     expect(petComponent).not.toContain("TimerRef = useRef");
+    for (const sensitiveShapeId of sensitiveShapeIds) {
+      expect(clientPetSources).not.toContain(`"${sensitiveShapeId}"`);
+    }
     expect(petPixelParts).toContain(
       'import("./cloud-code-monster-pet-direct-shapes")'
     );
@@ -312,6 +357,7 @@ describe("production workspace PET mounting", () => {
     expect(agentNode).toContain('data-agent-working={activeTaskCount > 0 ? "true" : "false"}');
     expect(petCssModule).toContain(":global(.cloud-code-monster-pet)");
     expect(globalCss).not.toContain(".cloud-code-monster-pet");
+    expect(globalCss).not.toContain(".home-pet");
     expect(globalCss).not.toContain(".pet-preview-flow");
   });
 });

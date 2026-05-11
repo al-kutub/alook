@@ -190,7 +190,7 @@ export function MonsterDirectPixelCharacter({
   const shape = preset.shape;
 
   switch (shape) {
-    case "doraemon":
+    case "gadget-buddy":
       return (
         <>
           <rect x="36" y="23" width="56" height="13" fill="#2d9bd3" />
@@ -207,7 +207,7 @@ export function MonsterDirectPixelCharacter({
           <rect x="54" y="73" width="20" height="3" fill="#111318" />
         </>
       );
-    case "pikachu":
+    case "electric-mascot":
       return (
         <>
           <rect x="31" y="15" width="10" height="31" fill="#2b2319" />
@@ -225,7 +225,7 @@ export function MonsterDirectPixelCharacter({
           <rect x="84" y="68" width="11" height="10" fill="#e84b43" />
         </>
       );
-    case "kirby":
+    case "star-puff":
       return (
         <>
           <rect x="42" y="29" width="44" height="9" fill="#f2a8bd" />
@@ -240,7 +240,7 @@ export function MonsterDirectPixelCharacter({
           <rect x="83" y="69" width="9" height="8" fill="#e95d77" />
         </>
       );
-    case "bulbasaur":
+    case "leaf-bud-shape":
       return (
         <>
           <rect x="45" y="20" width="38" height="18" fill="#5e9f5b" />
@@ -255,7 +255,7 @@ export function MonsterDirectPixelCharacter({
           <rect x="67" y="75" width="7" height="4" fill="#2d5d56" />
         </>
       );
-    case "charmander":
+    case "ember-scout":
       return (
         <>
           <rect x="38" y="29" width="50" height="13" fill="#e88743" />
@@ -269,7 +269,7 @@ export function MonsterDirectPixelCharacter({
           <DirectPixelEyes activityId={activityId} preset={preset} reacting={reacting} shaken={shaken} fainted={fainted} leftX={48} rightX={77} y={50} />
         </>
       );
-    case "squirtle":
+    case "shell-sprout":
       return (
         <>
           <rect x="39" y="27" width="50" height="13" fill="#83b7d8" />
@@ -283,7 +283,7 @@ export function MonsterDirectPixelCharacter({
           <DirectPixelEyes activityId={activityId} preset={preset} reacting={reacting} shaken={shaken} fainted={fainted} leftX={46} rightX={76} y={48} />
         </>
       );
-    case "minecraft-steve":
+    case "block-builder-shape":
       return (
         <>
           <rect x="42" y="18" width="44" height="14" fill="#5b3625" />
@@ -297,7 +297,7 @@ export function MonsterDirectPixelCharacter({
           <rect x="57" y="59" width="14" height="4" fill="#6c3f2b" />
         </>
       );
-    case "minecraft-creeper":
+    case "block-hiss-shape":
       return (
         <>
           <rect x="37" y="20" width="54" height="54" fill="#5aaa4c" />
@@ -314,7 +314,7 @@ export function MonsterDirectPixelCharacter({
           <rect x="67" y="64" width="10" height="8" fill="#151711" />
         </>
       );
-    case "minecraft-zombie":
+    case "block-walker-shape":
       return (
         <>
           <rect x="38" y="22" width="52" height="49" fill="#77a86c" />
@@ -327,7 +327,7 @@ export function MonsterDirectPixelCharacter({
           <rect x="57" y="58" width="14" height="4" fill="#2b221d" />
         </>
       );
-    case "toad":
+    case "mushroom-pal-shape":
       return (
         <>
           <rect x="29" y="19" width="70" height="22" fill="#fff3e4" />
@@ -343,7 +343,7 @@ export function MonsterDirectPixelCharacter({
           <DirectPixelEyes activityId={activityId} preset={preset} reacting={reacting} shaken={shaken} fainted={fainted} leftX={48} rightX={74} y={54} />
         </>
       );
-    case "sonic":
+    case "blue-spinner":
       return (
         <>
           <rect x="33" y="22" width="17" height="13" fill="#2d62b3" />
@@ -357,7 +357,7 @@ export function MonsterDirectPixelCharacter({
           <DirectPixelEyes activityId={activityId} preset={preset} reacting={reacting} shaken={shaken} fainted={fainted} leftX={49} rightX={74} y={42} />
         </>
       );
-    case "pacman":
+    case "arcade-chomper":
       return (
         <>
           <rect x="43" y="28" width="45" height="11" fill="#f1d34a" />
@@ -368,7 +368,7 @@ export function MonsterDirectPixelCharacter({
           <DirectPixelEyes activityId={activityId} preset={preset} reacting={reacting} shaken={shaken} fainted={fainted} leftX={58} rightX={58} y={43} singleEye mouthX={84} mouthY={62} mouthWidth={15} mouthHeight={7} mouthColor="#15110d" mouthStyle="open" />
         </>
       );
-    case "boo":
+    case "peek-ghost-shape":
       return (
         <>
           <rect x="39" y="26" width="50" height="12" fill="#f0f2fb" />
@@ -382,7 +382,7 @@ export function MonsterDirectPixelCharacter({
           <rect x="57" y="63" width="18" height="13" fill="#df7198" />
         </>
       );
-    case "mario":
+    case "cap-jumper":
       return (
         <>
           <rect x="35" y="18" width="58" height="12" fill="#d34437" />
@@ -397,7 +397,7 @@ export function MonsterDirectPixelCharacter({
           <DirectPixelEyes activityId={activityId} preset={preset} reacting={reacting} shaken={shaken} fainted={fainted} leftX={49} rightX={74} y={41} />
         </>
       );
-    case "pooh":
+    case "honey-cub-shape":
       return (
         <>
           <rect x="31" y="30" width="13" height="14" fill="#d99b39" />
@@ -410,7 +410,7 @@ export function MonsterDirectPixelCharacter({
           <rect x="61" y="59" width="7" height="5" fill="#4a2c1e" />
         </>
       );
-    case "hello-kitty":
+    case "ribbon-cat-shape":
       return (
         <>
           <rect x="28" y="25" width="16" height="18" fill="#f6f3ea" />
@@ -429,18 +429,18 @@ export function MonsterDirectPixelCharacter({
           <rect x="82" y="58" width="7" height="2" fill="#25201f" opacity="0.72" />
         </>
       );
-    case "my-melody":
-    case "kuromi": {
-      const isKuromi = shape === "kuromi";
-      const hood = isKuromi ? "#51425c" : "#e78eaa";
-      const accent = isKuromi ? "#dd6d99" : "#d84c64";
+    case "cozy-hood-bunny-shape":
+    case "imp-hood-shape": {
+      const isImpHood = shape === "imp-hood-shape";
+      const hood = isImpHood ? "#51425c" : "#e78eaa";
+      const accent = isImpHood ? "#dd6d99" : "#d84c64";
       return (
         <>
           <rect x="27" y="12" width="13" height="42" fill={hood} />
           <rect x="88" y="12" width="13" height="42" fill={hood} />
           <rect x="35" y="25" width="58" height="54" fill={hood} />
           <rect x="42" y="39" width="44" height="34" fill="#fff5ee" />
-          {isKuromi ? (
+          {isImpHood ? (
             <>
               <rect x="57" y="28" width="14" height="10" fill="#f2e9e1" />
               <rect x="60" y="31" width="3" height="3" fill="#51425c" />
@@ -448,8 +448,8 @@ export function MonsterDirectPixelCharacter({
               <rect x="63" y="35" width="3" height="2" fill="#51425c" />
             </>
           ) : null}
-          <rect x="48" y="57" width="7" height="6" fill={isKuromi ? "#f2dfe8" : "#f3d6dc"} />
-          <rect x="76" y="57" width="7" height="6" fill={isKuromi ? "#f2dfe8" : "#f3d6dc"} />
+          <rect x="48" y="57" width="7" height="6" fill={isImpHood ? "#f2dfe8" : "#f3d6dc"} />
+          <rect x="76" y="57" width="7" height="6" fill={isImpHood ? "#f2dfe8" : "#f3d6dc"} />
           <rect x="38" y="79" width="52" height="25" fill={accent} />
           <rect className="cloud-code-monster-pet-left-foot" x="39" y="104" width="17" height="10" fill={hood} />
           <rect className="cloud-code-monster-pet-right-foot" x="72" y="104" width="17" height="10" fill={hood} />
@@ -457,7 +457,7 @@ export function MonsterDirectPixelCharacter({
         </>
       );
     }
-    case "totoro":
+    case "forest-neighbor-shape":
       return (
         <>
           <rect x="38" y="16" width="10" height="22" fill="#74766a" />
@@ -471,7 +471,7 @@ export function MonsterDirectPixelCharacter({
           <DirectPixelEyes activityId={activityId} preset={preset} reacting={reacting} shaken={shaken} fainted={fainted} leftX={47} rightX={76} y={47} />
         </>
       );
-    case "soot-sprite":
+    case "dust-puff-shape":
       return (
         <>
           <rect x="38" y="29" width="52" height="9" fill="#2b2c31" />
@@ -485,7 +485,7 @@ export function MonsterDirectPixelCharacter({
           <rect x="74" y="56" width="5" height="6" fill="#17181e" />
         </>
       );
-    case "luffy":
+    case "straw-voyager-shape":
       return (
         <>
           <rect x="31" y="18" width="66" height="9" fill="#e7c65d" />
@@ -499,7 +499,7 @@ export function MonsterDirectPixelCharacter({
           <DirectPixelEyes activityId={activityId} preset={preset} reacting={reacting} shaken={shaken} fainted={fainted} leftX={49} rightX={75} y={44} />
         </>
       );
-    case "naruto":
+    case "leaf-runner-shape":
       return (
         <>
           <rect x="34" y="18" width="11" height="16" fill="#e0a641" />
@@ -515,7 +515,7 @@ export function MonsterDirectPixelCharacter({
           <DirectPixelEyes activityId={activityId} preset={preset} reacting={reacting} shaken={shaken} fainted={fainted} leftX={49} rightX={75} y={50} />
         </>
       );
-    case "goku":
+    case "energy-pearl-shape":
       return (
         <>
           <rect x="35" y="14" width="13" height="23" fill="#191817" />
@@ -530,7 +530,7 @@ export function MonsterDirectPixelCharacter({
           <DirectPixelEyes activityId={activityId} preset={preset} reacting={reacting} shaken={shaken} fainted={fainted} leftX={49} rightX={75} y={47} />
         </>
       );
-    case "sailor-moon":
+    case "moon-wand-shape":
       return (
         <>
           <rect x="29" y="24" width="14" height="14" fill="#e6c44e" />
@@ -545,7 +545,7 @@ export function MonsterDirectPixelCharacter({
           <DirectPixelEyes activityId={activityId} preset={preset} reacting={reacting} shaken={shaken} fainted={fainted} leftX={49} rightX={75} y={48} />
         </>
       );
-    case "gundam":
+    case "mecha-guard-shape":
       return (
         <>
           <rect x="38" y="25" width="52" height="39" fill="#d7dbe2" />
@@ -562,7 +562,7 @@ export function MonsterDirectPixelCharacter({
           <rect className="cloud-code-monster-pet-right-foot" x="70" y="103" width="20" height="12" fill="#26344f" />
         </>
       );
-    case "dragon-quest-slime":
+    case "teardrop-slime-shape":
       return (
         <>
           <rect x="56" y="16" width="16" height="15" fill="#80c4ef" />
@@ -573,7 +573,7 @@ export function MonsterDirectPixelCharacter({
           <rect x="58" y="72" width="14" height="5" fill="#c4444a" />
         </>
       );
-    case "inkling":
+    case "ink-runner-shape":
       return (
         <>
           <rect x="50" y="13" width="11" height="28" fill="#61c3b8" />
@@ -586,7 +586,7 @@ export function MonsterDirectPixelCharacter({
           <DirectPixelEyes activityId={activityId} preset={preset} reacting={reacting} shaken={shaken} fainted={fainted} leftX={48} rightX={74} y={45} />
         </>
       );
-    case "snoopy":
+    case "little-beagle-shape":
       return (
         <>
           <rect x="42" y="23" width="36" height="9" fill="#fffaf0" />
@@ -615,7 +615,7 @@ export function MonsterDirectPixelCharacter({
           <DirectPixelEyes activityId={activityId} preset={preset} reacting={reacting} shaken={shaken} fainted={fainted} leftX={61} rightX={61} y={43} color="#1f1f22" highlightColor="#fffaf0" singleEye mouthX={86} mouthY={59} mouthWidth={11} mouthHeight={3} mouthColor="#1f1f22" mouthStyle="flat" />
         </>
       );
-    case "chopper":
+    case "tiny-antler-shape":
       return (
         <>
           <rect x="32" y="19" width="14" height="8" fill="#b07d55" />
