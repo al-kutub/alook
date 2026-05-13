@@ -10,6 +10,7 @@ import {
 } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
 import { MarkdownEditor } from "@/components/ui/markdown-editor";
+import type { ImageUploadFn } from "@/components/ui/markdown-editor";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
 import {
@@ -233,6 +234,23 @@ export function IssueSheet({
   const isTaskActive = activeTask && !["completed", "failed", "cancelled", "superseded"].includes(activeTask.status);
   const hasActiveTraceTasks = traceTasks?.some(t => ["queued", "dispatched", "running"].includes(t.status)) ?? false;
 
+  // Image upload for markdown editor and comment textarea
+  const uploadImage: ImageUploadFn = useCallback(async (file: File) => {
+    const fd = new FormData();
+    fd.append("file", file);
+    const res = await fetch(`/api/issues/upload?workspace_id=${workspaceId}`, {
+      method: "POST",
+      credentials: "include",
+      body: fd,
+    });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      throw new Error((body as { error?: string }).error || "Upload failed");
+    }
+    const data = await res.json() as { url: string };
+    return data.url;
+  }, [workspaceId]);
+
   // Seed state on open/issue change
   useEffect(() => {
     if (!open) return;
@@ -341,6 +359,36 @@ export function IssueSheet({
       setCommentSubmitting(false);
     }
   };
+
+  // Handle image paste in comment textarea
+  const handleCommentPaste = useCallback(async (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
+    const items = e.clipboardData?.items;
+    if (!items) return;
+    const imageFiles: File[] = [];
+    for (const item of items) {
+      if (item.type.startsWith("image/")) {
+        const file = item.getAsFile();
+        if (file) imageFiles.push(file);
+      }
+    }
+    if (imageFiles.length === 0) return;
+    e.preventDefault();
+    for (const file of imageFiles) {
+      if (file.size > 10 * 1024 * 1024) {
+        toast.error(`Image "${file.name}" exceeds 10 MB limit`);
+        continue;
+      }
+      try {
+        const url = await uploadImage(file);
+        setCommentContent((prev) => {
+          const imgMd = `![${file.name}](${url})`;
+          return prev ? `${prev}\n${imgMd}` : imgMd;
+        });
+      } catch {
+        toast.error(`Failed to upload image "${file.name}"`);
+      }
+    }
+  }, [uploadImage]);
 
   // Shift+Enter capture handler (create mode only — detail auto-saves)
   const commentRef = useRef<HTMLTextAreaElement>(null);
@@ -459,6 +507,7 @@ export function IssueSheet({
         value={commentContent}
         onChange={(e) => setCommentContent(e.target.value)}
         className="w-full resize-none bg-transparent px-3.5 py-2.5 text-sm leading-relaxed outline-none placeholder:text-muted-foreground field-sizing-content min-h-15 max-h-32 thin-scrollbar overflow-y-auto"
+        onPaste={handleCommentPaste}
         onKeyDown={(e) => { if (e.key === "Enter" && e.shiftKey) { e.preventDefault(); handleCommentSubmit(); } }}
       />
       <div className="flex items-center justify-between px-2.5 pb-2 pt-0.5">
@@ -615,6 +664,7 @@ export function IssueSheet({
           variant="seamless"
           contentType="markdown"
           agents={agents}
+          onImageUpload={uploadImage}
         />
       </div>
 

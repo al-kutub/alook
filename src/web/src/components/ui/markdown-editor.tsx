@@ -1,17 +1,21 @@
 "use client";
 
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState, useRef, useCallback } from "react";
 import { useEditor, EditorContent } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import Placeholder from "@tiptap/extension-placeholder";
 import Mention from "@tiptap/extension-mention";
+import Image from "@tiptap/extension-image";
 import { Markdown } from "@tiptap/markdown";
 import { cn } from "@/lib/utils";
 import { isEmptyHtml } from "@alook/shared";
 import type { Agent } from "@alook/shared";
 import { createPortal } from "react-dom";
+import { toast } from "sonner";
 
 export { isEmptyHtml };
+
+export type ImageUploadFn = (file: File) => Promise<string>;
 
 export interface MarkdownEditorProps {
   value: string;
@@ -23,6 +27,7 @@ export interface MarkdownEditorProps {
   variant?: "default" | "seamless";
   contentType?: "html" | "markdown";
   agents?: Agent[];
+  onImageUpload?: ImageUploadFn;
 }
 
 function normalize(html: string | null | undefined): string {
@@ -183,8 +188,11 @@ export function MarkdownEditor({
   variant = "default",
   contentType = "html",
   agents,
+  onImageUpload,
 }: MarkdownEditorProps) {
   const isMd = contentType === "markdown";
+  const uploadRef = useRef(onImageUpload);
+  useEffect(() => { uploadRef.current = onImageUpload; }, [onImageUpload]);
 
   const minHeightStyle =
     typeof minHeight === "number" ? `${minHeight}px` : minHeight;
@@ -196,6 +204,29 @@ export function MarkdownEditor({
 
   const { mentionExt, popup, anchorEl } = useMentionSuggestion(agents);
 
+  const editorRef = useRef<ReturnType<typeof useEditor>>(null);
+
+  const handleImageFiles = useCallback(async (files: File[]) => {
+    const ed = editorRef.current;
+    if (!ed || !uploadRef.current) return false;
+    const images = files.filter((f) => f.type.startsWith("image/"));
+    if (images.length === 0) return false;
+
+    for (const file of images) {
+      if (file.size > 10 * 1024 * 1024) {
+        toast.error(`Image "${file.name}" exceeds 10 MB limit`);
+        continue;
+      }
+      try {
+        const url = await uploadRef.current(file);
+        ed.chain().focus().setImage({ src: url, alt: file.name }).run();
+      } catch {
+        toast.error(`Failed to upload image "${file.name}"`);
+      }
+    }
+    return true;
+  }, []);
+
   const editor = useEditor({
     immediatelyRender: false,
     content: value || undefined,
@@ -203,6 +234,7 @@ export function MarkdownEditor({
     extensions: [
       StarterKit,
       Placeholder.configure({ placeholder: placeholder ?? "" }),
+      Image.configure({ inline: false, allowBase64: false }),
       ...(isMd ? [Markdown] : []),
       ...(mentionExt ? [mentionExt] : []),
     ],
@@ -211,12 +243,39 @@ export function MarkdownEditor({
         class: innerClass,
         style: `min-height: ${minHeightStyle}`,
       },
+      handlePaste: (_view, event) => {
+        const items = event.clipboardData?.items;
+        if (!items || !uploadRef.current) return false;
+        const imageFiles: File[] = [];
+        for (const item of items) {
+          if (item.type.startsWith("image/")) {
+            const file = item.getAsFile();
+            if (file) imageFiles.push(file);
+          }
+        }
+        if (imageFiles.length === 0) return false;
+        // Fire-and-forget: return true synchronously to prevent default paste, upload runs in background
+        handleImageFiles(imageFiles);
+        return true;
+      },
+      handleDrop: (_view, event) => {
+        const files = event.dataTransfer?.files;
+        if (!files || files.length === 0 || !uploadRef.current) return false;
+        const imageFiles = Array.from(files).filter((f) => f.type.startsWith("image/"));
+        if (imageFiles.length === 0) return false;
+        event.preventDefault();
+        // Fire-and-forget: return true synchronously to prevent default drop, upload runs in background
+        handleImageFiles(imageFiles);
+        return true;
+      },
     },
     autofocus: autoFocus ? "end" : false,
     onUpdate: ({ editor }) => {
       onChange(isMd ? editor.getMarkdown() : editor.getHTML());
     },
   });
+
+  useEffect(() => { editorRef.current = editor; }, [editor]);
 
   useEffect(() => {
     if (!editor) return;
