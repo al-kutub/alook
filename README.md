@@ -115,27 +115,27 @@ Start with a pre-built company template — open-source maintainer, indie hacker
 
 flowchart TB
     subgraph client["  Your Machine  "]
-        CLI("🔧  CLI + Daemon  ")
-        RT("🤖  AI Runtimes  ")
+        CLI("CLI Daemon")
+        RT("Agents  ")
     end
 
     subgraph cloud["  Server-side  "]
-        WEB("🌐  App  ")
-        EML("📨  Email Worker  ")
-        WSK("⚡  WebSocket DO  ")
+        WEB("App  ")
+        EML("Email  ")
+        WSK("WebSocket  ")
     end
 
     subgraph store["  Storage  "]
-        D1[("D1  ·  SQLite  ")]
-        R2[("R2  ·  Files  ")]
+        D1[("D1\nSQLite  ")]
+        R2[("R2\nFiles  ")]
     end
 
-    CLI -- "HTTP/HTTPS" --> WEB
+    CLI -- "POLL" --> WEB
     CLI -..-> RT
     EML --> WEB
     WEB <--> WSK
-    WEB --> D1
-    WEB --> R2
+    cloud --> R2
+    cloud --> D1
 
     style client fill:#F7F3EE,stroke:#C9BFB3,stroke-width:2px,color:#2A2520,rx:12,ry:12
     style cloud fill:#FDF5EC,stroke:#DFC9AD,stroke-width:2px,color:#2A2520,rx:12,ry:12
