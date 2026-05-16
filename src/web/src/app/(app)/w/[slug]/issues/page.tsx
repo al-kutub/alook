@@ -19,6 +19,8 @@ import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import { DndContext, DragOverlay, PointerSensor, useSensor, useSensors, useDroppable, useDraggable, type DragEndEvent, type DragStartEvent } from "@dnd-kit/core";
 import { IssueSheet } from "@/components/issues/issue-sheet";
+import { ArtifactSheet } from "@/components/agent-chat/artifact-sheet";
+import { isPreviewable, getArtifactUrl, computeArtifactVersions } from "@/components/artifact-content-renderer";
 
 const SIDECAR_DEFAULT_WIDTH = 448;
 
@@ -250,12 +252,29 @@ export default function IssuesPage() {
   const [sidecarWidth, setSidecarWidth] = useState(SIDECAR_DEFAULT_WIDTH);
   const [traceTasks, setTraceTasks] = useState<TraceTask[] | null>(null);
   const [activeDragId, setActiveDragId] = useState<string | null>(null);
+  const [artifactSheetOpen, setArtifactSheetOpen] = useState(false);
+  const [selectedArtifact, setSelectedArtifact] = useState<Artifact | null>(null);
   const pendingStatusUpdate = useRef<string | null>(null);
   const refreshSeqRef = useRef(0);
   const selectedIdRef = useRef<string | null>(null);
 
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 8 } }));
   const agentsById = useMemo(() => new Map(agents.map(a => [a.id, a])), [agents]);
+
+  const issueArtifacts = useMemo(() => detail?.artifacts ?? [], [detail?.artifacts]);
+  const { versionMap: artifactVersionMap, duplicateFilenames: artifactDuplicateFilenames } = useMemo(
+    () => computeArtifactVersions(issueArtifacts),
+    [issueArtifacts],
+  );
+
+  const handleArtifactClick = useCallback((artifact: Artifact) => {
+    if (isPreviewable(artifact)) {
+      setSelectedArtifact(artifact);
+      setArtifactSheetOpen(true);
+    } else {
+      window.open(getArtifactUrl(artifact.id, workspaceId, true), "_blank");
+    }
+  }, [workspaceId]);
 
   async function reload() {
     setLoading(true);
@@ -801,6 +820,20 @@ export default function IssuesPage() {
         onStatusChange={handleStatusChange}
         onCommented={() => selectedId && openIssue(selectedId)}
         onDispatched={(id) => { silentReload(); openIssue(id); }}
+        onArtifactClick={handleArtifactClick}
+      />
+
+      <ArtifactSheet
+        open={artifactSheetOpen}
+        onOpenChange={(v) => {
+          setArtifactSheetOpen(v);
+          if (!v) setTimeout(() => setSelectedArtifact(null), 300);
+        }}
+        artifacts={issueArtifacts}
+        workspaceId={workspaceId}
+        initialArtifact={selectedArtifact}
+        versionMap={artifactVersionMap}
+        duplicateFilenames={artifactDuplicateFilenames}
       />
     </div>
   );

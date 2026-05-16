@@ -27,6 +27,8 @@ import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import { Streamdown } from "streamdown";
 import type { Agent, Artifact, Issue, IssueComment, Message, TaskApi } from "@alook/shared";
+import { isPreviewable, getArtifactUrl } from "@/components/artifact-content-renderer";
+import { formatSize } from "@/components/agent-chat/artifact-sheet";
 import { isTerminalIssueStatus } from "@alook/shared";
 import type { TraceTask } from "@/lib/api";
 import { updateIssue } from "@/lib/api";
@@ -137,29 +139,41 @@ function CommentRow({ comment, agents }: { comment: IssueComment; agents: Agent[
   );
 }
 
-function AttachmentList({ artifacts, workspaceId }: { artifacts: Artifact[]; workspaceId: string }) {
+function AttachmentList({ artifacts, workspaceId, onArtifactClick }: { artifacts: Artifact[]; workspaceId: string; onArtifactClick?: (artifact: Artifact) => void }) {
   if (artifacts.length === 0) return null;
+  const baseCls = "flex items-center gap-2 rounded-md px-2 py-1.5 text-sm transition-colors hover:bg-accent";
   return (
     <div className="space-y-1">
-      {artifacts.map((artifact) => (
-        <a
-          key={artifact.id}
-          href={`/api/artifacts/${artifact.id}/content?workspace_id=${workspaceId}&download=1`}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="flex items-center gap-2 rounded-md px-2 py-1.5 text-sm transition-colors hover:bg-accent"
-        >
-          <FileIcon className="size-3.5 shrink-0 text-muted-foreground" />
-          <span className="min-w-0 flex-1 truncate">{artifact.filename}</span>
-          <span className="shrink-0 text-xs text-muted-foreground">
-            {artifact.size < 1024
-              ? `${artifact.size} B`
-              : artifact.size < 1024 * 1024
-                ? `${(artifact.size / 1024).toFixed(1)} KB`
-                : `${(artifact.size / (1024 * 1024)).toFixed(1)} MB`}
-          </span>
-        </a>
-      ))}
+      {artifacts.map((artifact) => {
+        const canPreview = onArtifactClick && isPreviewable(artifact);
+        const inner = (
+          <>
+            <FileIcon className="size-3.5 shrink-0 text-muted-foreground" />
+            <span className="min-w-0 flex-1 truncate">{artifact.filename}</span>
+            <span className="shrink-0 text-xs text-muted-foreground">{formatSize(artifact.size)}</span>
+          </>
+        );
+        return canPreview ? (
+          <button
+            key={artifact.id}
+            type="button"
+            onClick={() => onArtifactClick(artifact)}
+            className={cn(baseCls, "w-full text-left")}
+          >
+            {inner}
+          </button>
+        ) : (
+          <a
+            key={artifact.id}
+            href={getArtifactUrl(artifact.id, workspaceId, true)}
+            target="_blank"
+            rel="noopener noreferrer"
+            className={baseCls}
+          >
+            {inner}
+          </a>
+        );
+      })}
     </div>
   );
 }
@@ -188,6 +202,7 @@ export interface IssueSheetProps {
   onStatusChange?: (issueId: string, status: string) => Promise<void>;
   onCommented?: () => void;
   onDispatched?: (issueId: string) => void;
+  onArtifactClick?: (artifact: Artifact) => void;
 }
 
 export function IssueSheet({
@@ -212,6 +227,7 @@ export function IssueSheet({
   onStatusChange,
   onCommented,
   onDispatched,
+  onArtifactClick,
 }: IssueSheetProps) {
   const mode = issue ? "detail" : "create";
 
@@ -647,7 +663,7 @@ export function IssueSheet({
       {/* Attachments (detail mode) */}
       {mode === "detail" && detail?.artifacts && detail.artifacts.length > 0 && (
         <div className="shrink-0 px-2 sm:px-3 py-2">
-          <AttachmentList artifacts={detail.artifacts} workspaceId={workspaceId} />
+          <AttachmentList artifacts={detail.artifacts} workspaceId={workspaceId} onArtifactClick={onArtifactClick} />
         </div>
       )}
     </>

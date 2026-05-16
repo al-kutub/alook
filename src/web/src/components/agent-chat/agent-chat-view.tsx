@@ -50,7 +50,7 @@ import { highlightMentions } from "@/lib/highlight-mentions";
 import { ArtifactSheet, formatSize } from "@/components/agent-chat/artifact-sheet";
 import { EmailEventSheet } from "@/components/agent-chat/email-event-sheet";
 import { IssueSheet } from "@/components/issues/issue-sheet";
-import { isPreviewable, getArtifactUrl } from "@/components/artifact-content-renderer";
+import { isPreviewable, getArtifactUrl, computeArtifactVersions } from "@/components/artifact-content-renderer";
 import { FollowUpBuffer } from "@/components/agent-chat/follow-up-buffer";
 import { ScrollToBottomButton } from "@/components/ui/scroll-to-bottom-button";
 import { MessageItem } from "@/components/agent-chat/message-list";
@@ -338,6 +338,7 @@ export function AgentChatView({
   const [artifacts, setArtifacts] = useState<Artifact[]>([]);
   const [artifactSheetOpen, setArtifactSheetOpen] = useState(false);
   const [selectedArtifact, setSelectedArtifact] = useState<Artifact | null>(null);
+  const [artifactSheetSource, setArtifactSheetSource] = useState<"agent" | "issue" | null>(null);
   const [emailSheetOpen, setEmailSheetOpen] = useState(false);
   const [selectedEmailId, setSelectedEmailId] = useState<string | null>(null);
   const [issueSheetOpen, setIssueSheetOpen] = useState(false);
@@ -381,28 +382,33 @@ export function AgentChatView({
 
   const agentArtifacts = useMemo(() => artifacts.filter((a) => a.source === "agent"), [artifacts]);
 
-  const { versionMap, duplicateFilenames } = useMemo(() => {
-    const groups = new Map<string, Artifact[]>();
-    for (const a of agentArtifacts) {
-      const group = groups.get(a.filename) || [];
-      group.push(a);
-      groups.set(a.filename, group);
-    }
-    const vm = new Map<string, number>();
-    const dupes = new Set<string>();
-    for (const [filename, group] of groups) {
-      group.sort((a, b) => a.created_at.localeCompare(b.created_at));
-      if (group.length > 1) dupes.add(filename);
-      group.forEach((a, i) => vm.set(a.id, i + 1));
-    }
-    return { versionMap: vm, duplicateFilenames: dupes };
-  }, [agentArtifacts]);
+  const { versionMap, duplicateFilenames } = useMemo(() => computeArtifactVersions(agentArtifacts), [agentArtifacts]);
+
+  const artifactSheetArtifacts = useMemo(
+    () => artifactSheetSource === "agent" ? agentArtifacts : artifactSheetSource === "issue" ? (issueDetail?.artifacts ?? []) : [],
+    [artifactSheetSource, agentArtifacts, issueDetail?.artifacts],
+  );
+  const { versionMap: artifactSheetVersionMap, duplicateFilenames: artifactSheetDuplicateFilenames } = useMemo(
+    () => computeArtifactVersions(artifactSheetArtifacts),
+    [artifactSheetArtifacts],
+  );
 
   const timeline = useMemo(() => buildTimeline(messages, agentArtifacts, napMarkers, conversation?.id), [messages, agentArtifacts, napMarkers, conversation?.id]);
 
   const handleArtifactClick = useCallback((artifact: Artifact) => {
     if (isPreviewable(artifact)) {
       setSelectedArtifact(artifact);
+      setArtifactSheetSource("agent");
+      setArtifactSheetOpen(true);
+    } else {
+      window.open(getArtifactUrl(artifact.id, workspaceId, true), "_blank");
+    }
+  }, [workspaceId]);
+
+  const handleIssueArtifactClick = useCallback((artifact: Artifact) => {
+    if (isPreviewable(artifact)) {
+      setSelectedArtifact(artifact);
+      setArtifactSheetSource("issue");
       setArtifactSheetOpen(true);
     } else {
       window.open(getArtifactUrl(artifact.id, workspaceId, true), "_blank");
@@ -1884,7 +1890,7 @@ export function AgentChatView({
                     <Button
                       variant="ghost"
                       size="icon-sm"
-                      onClick={() => setArtifactSheetOpen(true)}
+                      onClick={() => { setArtifactSheetSource("agent"); setArtifactSheetOpen(true); }}
                       className="relative rounded-lg text-muted-foreground/60 hover:text-foreground transition-colors duration-200"
                     />
                   }>
@@ -1993,13 +1999,13 @@ export function AgentChatView({
         open={artifactSheetOpen}
         onOpenChange={(v) => {
           setArtifactSheetOpen(v);
-          if (!v) setTimeout(() => setSelectedArtifact(null), 300);
+          if (!v) setTimeout(() => { setSelectedArtifact(null); setArtifactSheetSource(null); }, 300);
         }}
-        artifacts={agentArtifacts}
+        artifacts={artifactSheetArtifacts}
         workspaceId={workspaceId}
         initialArtifact={selectedArtifact}
-        versionMap={versionMap}
-        duplicateFilenames={duplicateFilenames}
+        versionMap={artifactSheetVersionMap}
+        duplicateFilenames={artifactSheetDuplicateFilenames}
       />
 
       <EmailEventSheet
@@ -2056,6 +2062,7 @@ export function AgentChatView({
         onCommented={() => {
           if (selectedIssueId) openIssue(selectedIssueId);
         }}
+        onArtifactClick={handleIssueArtifactClick}
       />
     </>
   );
