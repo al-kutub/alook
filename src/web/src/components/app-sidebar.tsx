@@ -666,6 +666,7 @@ export function AppSidebar({ onNavigate }: { onNavigate?: () => void } = {}) {
           activeAgentId={activeAgentId}
           isOnline={hasOnlineRuntime}
           taskCounts={taskCounts}
+          // eslint-disable-next-line react-hooks/refs -- stable DOM ref read, useEffect would cause anchor flash
           anchorRef={folderAnchorRefs.current.get(expandedFolder.id) ?? null}
           onAgentClick={handleAgentClick}
           onRemoveFromFolder={(agentId) =>

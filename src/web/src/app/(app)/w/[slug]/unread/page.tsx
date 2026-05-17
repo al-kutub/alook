@@ -128,7 +128,7 @@ export default function InboxPage() {
   const scrollRef = useRef<HTMLDivElement>(null);
   const isFetchingRef = useRef(false);
   const filterTypesRef = useRef(filterTypes);
-  filterTypesRef.current = filterTypes;
+  useEffect(() => { filterTypesRef.current = filterTypes; });
 
   const loadInitial = useCallback(async (opts?: { silent?: boolean }) => {
     if (!opts?.silent) setLoading(true);
@@ -144,7 +144,7 @@ export default function InboxPage() {
   }, [workspaceId]);
 
   const refreshInboxCountRef = useRef(refreshInboxCount);
-  refreshInboxCountRef.current = refreshInboxCount;
+  useEffect(() => { refreshInboxCountRef.current = refreshInboxCount; });
 
   useEffect(() => {
     loadInitial();

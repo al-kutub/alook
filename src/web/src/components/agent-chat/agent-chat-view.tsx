@@ -367,7 +367,7 @@ export function AgentChatView({
   const [selectionPopup, setSelectionPopup] = useState<{ text: string; x: number; y: number } | null>(null);
   const [flaggedIds, setFlaggedIds] = useState<Set<string>>(new Set());
   const flaggedIdsRef = useRef(flaggedIds);
-  flaggedIdsRef.current = flaggedIds;
+  useEffect(() => { flaggedIdsRef.current = flaggedIds; });
 
   const { increment: flagIncrement, decrement: flagDecrement } = useFlagCount();
 

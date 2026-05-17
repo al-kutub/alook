@@ -241,7 +241,7 @@ export default function IssuesPage() {
   const [showCompleted, setShowCompleted] = useLocalStorage<boolean>("issues-show-completed", true);
   const [issues, setIssues] = useState<IssueListItem[]>([]);
   const issuesRef = useRef<IssueListItem[]>([]);
-  issuesRef.current = issues;
+  useEffect(() => { issuesRef.current = issues; });
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
   const [sheetOpen, setSheetOpen] = useState(false);
@@ -363,8 +363,8 @@ export default function IssuesPage() {
           .then(task => { if (seq === refreshSeqRef.current && selectedIdRef.current === issueId) setActiveTask(task); })
           .catch(() => {});
       }
-    } catch (err: any) {
-      if (err?.status === 404) {
+    } catch (err: unknown) {
+      if (err && typeof err === "object" && "status" in err && (err as { status: number }).status === 404) {
         handleSheetOpenChange(false);
       }
     }
@@ -372,13 +372,13 @@ export default function IssuesPage() {
 
   const detailConvId = detail?.issue.conversation_id ?? null;
   const detailConvIdRef = useRef<string | null>(null);
-  detailConvIdRef.current = detailConvId;
+  useEffect(() => { detailConvIdRef.current = detailConvId; });
   const detailTaskId = detail?.issue.latest_task_id ?? null;
   const detailTaskIdRef = useRef<string | null>(null);
-  detailTaskIdRef.current = detailTaskId;
+  useEffect(() => { detailTaskIdRef.current = detailTaskId; });
   const detailAgentId = detail?.issue.agent_id ?? null;
   const detailAgentIdRef = useRef<string | null>(null);
-  detailAgentIdRef.current = detailAgentId;
+  useEffect(() => { detailAgentIdRef.current = detailAgentId; });
 
   useEffect(() => {
     if (!detailTaskId) { setActiveTask(null); return; }
@@ -388,12 +388,6 @@ export default function IssuesPage() {
     }).catch(() => {});
     return () => { cancelled = true; };
   }, [detailTaskId, workspaceId]);
-
-  const isTaskActive = activeTask && !["completed", "failed", "cancelled", "superseded"].includes(activeTask.status);
-  const hasActiveTraceTasks = traceTasks?.some(t =>
-    ["queued", "dispatched", "running"].includes(t.status)
-  ) ?? false;
-
 
   useEffect(() => {
     const unsub = subscribeWs((msg: WsMessage) => {

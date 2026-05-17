@@ -38,7 +38,7 @@ export function InboxCountProvider({ children }: { children: ReactNode }) {
   const pendingAgentIdRef = useRef<string | null>(null);
 
   const agentsRef = useRef(agents);
-  agentsRef.current = agents;
+  useEffect(() => { agentsRef.current = agents; });
 
   const refresh = useCallback(() => {
     const types = getInboxFilterTypes();

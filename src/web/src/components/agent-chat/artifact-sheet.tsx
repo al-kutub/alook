@@ -121,7 +121,7 @@ export function ArtifactSheet({ open, onOpenChange, artifacts, workspaceId, init
             </SheetHeader>
             <SheetBody className={cn(
               "thin-scrollbar",
-              isHtmlType(selectedArtifact.content_type) && "!p-0 !overflow-hidden"
+              isHtmlType(selectedArtifact.content_type) && "p-0! overflow-hidden!"
             )}>
               <ArtifactContentRenderer artifact={selectedArtifact} workspaceId={workspaceId} />
             </SheetBody>

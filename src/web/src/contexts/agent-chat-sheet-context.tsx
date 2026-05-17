@@ -5,6 +5,7 @@ import {
   useContext,
   useState,
   useCallback,
+  useEffect,
   useRef,
   type ReactNode,
 } from "react";
@@ -47,7 +48,7 @@ export function AgentChatSheetProvider({ children }: { children: ReactNode }) {
   const agent = agentId ? agents.find((a) => a.id === agentId) ?? null : null;
 
   const agentsRef = useRef(agents);
-  agentsRef.current = agents;
+  useEffect(() => { agentsRef.current = agents; });
 
   const openAgentChat = useCallback(
     (id: string, opts?: { conversationId?: string; taskId?: string; messageId?: string }) => {
