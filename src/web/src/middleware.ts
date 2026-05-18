@@ -14,7 +14,7 @@ export async function middleware(request: NextRequest) {
     !request.nextUrl.hostname.startsWith("localhost") &&
     !request.nextUrl.hostname.startsWith("127.")
   ) {
-    const httpsUrl = new URL(request.url)
+    const httpsUrl = request.nextUrl.clone()
     httpsUrl.protocol = "https:"
     return NextResponse.redirect(httpsUrl, 301)
   }
