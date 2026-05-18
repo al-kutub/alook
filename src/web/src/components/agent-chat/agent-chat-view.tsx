@@ -32,6 +32,7 @@ import {
   flagMessage as apiFlagMessage,
   unflagMessage as apiUnflagMessage,
 } from "@/lib/api";
+import { appendCachedMessage, mergeCachedMessages } from "@/lib/chat-cache";
 import type { PreviousConversation, TraceTask } from "@/lib/api";
 import type { Artifact, Conversation, Issue, IssueComment, Message, TaskApi as Task, TaskMessage, WsMessage } from "@alook/shared";
 import { useAgentContext } from "@/contexts/agent-context";
@@ -44,6 +45,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
 import { ArrowUp, BedDouble, Box, FileText, Loader2, Mail, MessageSquareQuote, Mic, Paperclip, Square, X } from "lucide-react";
 import { useSpeechRecognition } from "@/hooks/use-speech-recognition";
+import { useCachedMessages } from "@/hooks/use-cached-messages";
 import { useMentionPopup } from "@/hooks/use-mention-popup";
 import { MentionPopup } from "@/components/agent-chat/mention-popup";
 import { highlightMentions } from "@/lib/highlight-mentions";
@@ -371,6 +373,12 @@ export function AgentChatView({
 
   const { increment: flagIncrement, decrement: flagDecrement, refresh: flagRefresh } = useFlagCount();
 
+  const { cachedMessages, isFromCache, writeToCache } = useCachedMessages(targetConvId ?? null, workspaceId);
+  const cachedMessagesRef = useRef(cachedMessages);
+  const isFromCacheRef = useRef(isFromCache);
+  const writeToCacheRef = useRef(writeToCache);
+  useEffect(() => { cachedMessagesRef.current = cachedMessages; isFromCacheRef.current = isFromCache; writeToCacheRef.current = writeToCache; }, [cachedMessages, isFromCache, writeToCache]);
+
   useEffect(() => {
     setChannelAgentId(agentId);
   }, [agentId, setChannelAgentId]);
@@ -476,9 +484,11 @@ export function AgentChatView({
     pollRef.current = null;
     pollTaskIdRef.current = null;
     let ignore = false;
+    const cached = cachedMessagesRef.current;
+    const hasCacheHit = isFromCacheRef.current && cached && cached.length > 0;
     queueMicrotask(() => {
       if (ignore) return;
-      setLoading(true);
+      setLoading(!hasCacheHit);
       initialScrollDone.current = false;
       setActiveTask(null);
       setTaskMessages([]);
@@ -490,6 +500,9 @@ export function AgentChatView({
       setHasMoreConversations(false);
       oldestConversationCursorRef.current = null;
       setInput(localStorage.getItem(`chat-draft:${agentId}:${targetConvId ?? 'default'}`) ?? "");
+      if (hasCacheHit) {
+        setMessages(cached!);
+      }
     });
     async function load() {
       try {
@@ -503,10 +516,11 @@ export function AgentChatView({
             ]);
             if (ignore) return;
             setConversation(conv);
-            setMessages(msgsResult.messages);
+            setMessages((prev) => mergeMessages(prev, msgsResult.messages));
             setHasMore(msgsResult.has_more);
             setArtifacts(arts);
             setBufferedMessages(buffered);
+            writeToCacheRef.current(msgsResult.messages, msgsResult.has_more).catch(() => {});
             const taskIds = [...new Set(msgsResult.messages.filter((m) => m.role === "assistant" && m.task_id).map((m) => m.task_id!))];
             if (taskIds.length > 0) {
               getTaskStepCounts(taskIds, workspaceId)
@@ -534,11 +548,12 @@ export function AgentChatView({
             const data = await chatInit(agentId, workspaceId, activeChannel);
             if (ignore) return;
             setConversation(data.conversation);
-            setMessages(data.messages);
+            setMessages((prev) => prev.length > 0 ? mergeMessages(prev, data.messages) : data.messages);
             setHasMore(data.has_more_messages);
             setArtifacts(data.artifacts);
             setBufferedMessages(data.buffered_messages);
             setHasMoreConversations(data.has_more_conversations);
+            writeToCacheRef.current(data.messages, data.has_more_messages).catch(() => {});
             listFlaggedMessageIds(workspaceId, data.conversation.id)
               .then((r) => { if (!ignore) setFlaggedIds(new Set(r.message_ids)); })
               .catch(() => {});
@@ -547,11 +562,12 @@ export function AgentChatView({
           const data = await chatInit(agentId, workspaceId, activeChannel);
           if (ignore) return;
           setConversation(data.conversation);
-          setMessages(data.messages);
+          setMessages((prev) => prev.length > 0 ? mergeMessages(prev, data.messages) : data.messages);
           setHasMore(data.has_more_messages);
           setArtifacts(data.artifacts);
           setBufferedMessages(data.buffered_messages);
           setHasMoreConversations(data.has_more_conversations);
+          writeToCacheRef.current(data.messages, data.has_more_messages).catch(() => {});
           listFlaggedMessageIds(workspaceId, data.conversation.id)
             .then((r) => { if (!ignore) setFlaggedIds(new Set(r.message_ids)); })
             .catch(() => {});
@@ -575,6 +591,7 @@ export function AgentChatView({
     }
     load();
     return () => { ignore = true; };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [agentId, workspaceId, targetConvId, scrollToTaskId, activeChannel, channelLoading]);
 
   const refreshInboxCountRef = useRef(refreshInboxCount);
@@ -860,6 +877,13 @@ export function AgentChatView({
         }
       });
 
+      if (allNewMessages.length > 0 && conversation) {
+        const currentConvMessages = allNewMessages.filter((m) => m.conversation_id === conversation.id);
+        if (currentConvMessages.length > 0) {
+          mergeCachedMessages(conversation.id, currentConvMessages, lastHasMore, workspaceId).catch(() => {});
+        }
+      }
+
       loadingMoreRef.current = false;
       flushSync(() => setLoadingMore(false));
 
@@ -1074,6 +1098,7 @@ export function AgentChatView({
       }
       if (msg.type === "conversation.message" && msg.conversationId === conversation?.id) {
         setMessages((prev) => mergeMessages(prev, [msg.message]));
+        appendCachedMessage(msg.conversationId, msg.message, workspaceId).catch(() => {});
       }
       if (msg.type === "artifact.uploaded" && msg.conversationId === conversation?.id) {
         setArtifacts((prev) => {
@@ -1090,6 +1115,7 @@ export function AgentChatView({
         listMessages(msg.conversationId, workspaceId)
           .then(({ messages: latest }) => setMessages((prev) => mergeMessages(prev, latest)))
           .catch(() => { });
+        appendCachedMessage(msg.conversationId, msg.message, workspaceId).catch(() => {});
         const task = msg.task as Task;
         activeTaskIdRef.current = task.id;
         setActiveTask(task);

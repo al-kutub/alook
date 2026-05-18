@@ -23,6 +23,7 @@ import { Logo } from "@/components/logo";
 import { toast } from "sonner";
 import type { AgentRuntime as Runtime } from "@alook/shared";
 import { signOut } from "@/lib/auth-client";
+import { clearAllCache } from "@/lib/chat-cache";
 import { cliCmd, daemonStartCmd } from "@/lib/utils";
 import { ProviderLogo } from "@/components/provider-logo";
 
@@ -404,6 +405,7 @@ export function DashboardNavbar() {
               variant="ghost"
               size="sm"
               onClick={async () => {
+                await clearAllCache();
                 await signOut();
               }}
             >

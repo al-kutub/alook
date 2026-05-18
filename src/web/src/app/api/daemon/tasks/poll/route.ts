@@ -14,7 +14,7 @@ import { log } from "@/lib/logger";
 export const POST = withAuth(async (req: NextRequest, ctx) => {
   const { env } = getCloudflareContext();
   const db = getDb((env as Env).DB);
-  const { cached, cacheKeys, throttled } = await import("@/lib/cache");
+  const { cached, cacheKeys, throttled, invalidate } = await import("@/lib/cache");
 
   const [body, err] = await parseBody(req, PollRequestSchema);
   if (err) return err;
@@ -43,8 +43,9 @@ export const POST = withAuth(async (req: NextRequest, ctx) => {
     kv.put(
       cacheKeys.heartbeat(ctx.workspaceId, body.daemon_id),
       new Date().toISOString(),
-      { expirationTtl: 60 },
+      { expirationTtl: 120 },
     ).catch(() => {});
+    invalidate(cacheKeys.allRuntimes(ctx.workspaceId)).catch(() => {});
   }
   try {
     await throttled(

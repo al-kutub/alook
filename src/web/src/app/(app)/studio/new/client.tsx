@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Loader2, CheckCircle2, XCircle, LogOut, ArrowLeft, LayoutGrid } from "lucide-react";
 import { toast } from "sonner";
 import { signOut } from "@/lib/auth-client";
+import { clearAllCache } from "@/lib/chat-cache";
 
 import { ConnectMachineSteps } from "@/components/connect-machine-steps";
 import { ScenarioPicker } from "@/components/studio-onboarding/scenario-picker";
@@ -295,7 +296,7 @@ export function StudioOnboardingClient({
           variant="ghost"
           size="sm"
           className="absolute top-4 right-4 text-xs text-muted-foreground"
-          onClick={() => signOut({ fetchOptions: { onSuccess: () => router.push("/sign-in") } })}
+          onClick={async () => { await clearAllCache(); signOut({ fetchOptions: { onSuccess: () => router.push("/sign-in") } }); }}
         >
           <LogOut className="size-3 mr-1.5" />
           Sign out
@@ -363,7 +364,7 @@ export function StudioOnboardingClient({
         variant="ghost"
         size="sm"
         className="absolute top-4 right-4 text-xs text-muted-foreground"
-        onClick={() => signOut({ fetchOptions: { onSuccess: () => router.push("/sign-in") } })}
+        onClick={async () => { await clearAllCache(); signOut({ fetchOptions: { onSuccess: () => router.push("/sign-in") } }); }}
       >
         <LogOut className="size-3 mr-1.5" />
         Sign out

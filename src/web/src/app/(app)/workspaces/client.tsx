@@ -7,6 +7,7 @@ import { GradientBackground } from "@/components/gradient-background"
 import { Logo } from "@/components/logo"
 import { Plus, ArrowRight, LogOut } from "lucide-react"
 import { signOut } from "@/lib/auth-client"
+import { clearAllCache } from "@/lib/chat-cache"
 
 interface WorkspaceItem {
   id: string
@@ -30,6 +31,7 @@ export function WorkspaceListClient({
         size="sm"
         className="absolute top-4 right-4 text-muted-foreground"
         onClick={async () => {
+          await clearAllCache()
           await signOut()
           router.push("/sign-in")
         }}

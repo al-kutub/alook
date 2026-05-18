@@ -21,9 +21,11 @@ const mockListScheduledMeetings = vi.fn();
 const mockClaimMeetingSessions = vi.fn();
 const mockGetAllEmailAccountsForWorkspace = vi.fn();
 const mockGetAllColleaguesForWorkspace = vi.fn();
+const mockInvalidate = vi.fn().mockResolvedValue(undefined);
+const mockKvPut = vi.fn().mockResolvedValue(undefined);
 
 vi.mock("@opennextjs/cloudflare", () => ({
-  getCloudflareContext: vi.fn(() => ({ env: { DB: {} } })),
+  getCloudflareContext: vi.fn(() => ({ env: { DB: {}, CACHE_KV: { put: (...args: unknown[]) => mockKvPut(...args), get: vi.fn().mockResolvedValue(null), delete: vi.fn().mockResolvedValue(undefined) } } })),
 }));
 
 vi.mock("@/lib/db", () => ({
@@ -112,6 +114,26 @@ vi.mock("@/lib/broadcast", () => ({
 
 vi.mock("@/lib/logger", () => ({
   log: { warn: vi.fn(), info: vi.fn(), error: vi.fn(), debug: vi.fn() },
+}));
+
+vi.mock("@/lib/cache", () => ({
+  cached: vi.fn((_key: string, _ttl: number, fn: () => Promise<any>) => fn()),
+  cacheKeys: {
+    machineToken: (token: string) => `mt:${token.slice(0, 20)}`,
+    runtimeIds: (wsId: string, daemonId: string) => `rt:${wsId}:${daemonId}`,
+    agent: (wsId: string, agentId: string) => `ag:${wsId}:${agentId}`,
+    heartbeat: (wsId: string, daemonId: string) => `hb:${wsId}:${daemonId}`,
+    user: (userId: string) => `usr:${userId}`,
+    allAgents: (wsId: string) => `agents:${wsId}`,
+    allEmailAccounts: (wsId: string) => `ea:${wsId}`,
+    allColleagues: (wsId: string) => `col:${wsId}`,
+    allRuntimes: (wsId: string) => `runtimes:${wsId}`,
+    member: (wsId: string, userId: string) => `mem:${wsId}:${userId}`,
+    allHandles: (wsId: string) => `handles:${wsId}`,
+    allMembers: (wsId: string) => `members:${wsId}`,
+  },
+  throttled: vi.fn((_key: string, _interval: number, fn: () => Promise<void>) => fn().then(() => true)),
+  invalidate: (...args: unknown[]) => mockInvalidate(...args),
 }));
 
 vi.mock("@/lib/api/responses", () => ({
@@ -813,5 +835,58 @@ describe("POST /api/daemon/tasks/poll", () => {
     expect(res.status).toBe(200);
     expect(body.tasks).toEqual([]);
     expect(body.pending_update).toBeUndefined();
+  });
+
+  // --- Heartbeat cache invalidation ---
+
+  it("invalidates allRuntimes cache on every poll heartbeat", async () => {
+    mockUpsertMachine.mockResolvedValue({});
+    mockGetRuntimeIdsByDaemon.mockResolvedValue(["r1"]);
+    mockSweepStaleState.mockResolvedValue(undefined);
+    mockBroadcastToUser.mockResolvedValue(undefined);
+    mockClaimTasksForRuntimes.mockResolvedValue([]);
+
+    await POST(postReq({ daemon_id: "d1" }));
+
+    expect(mockInvalidate).toHaveBeenCalledWith("runtimes:w1");
+  });
+
+  it("writes KV heartbeat with 120s TTL", async () => {
+    mockUpsertMachine.mockResolvedValue({});
+    mockGetRuntimeIdsByDaemon.mockResolvedValue(["r1"]);
+    mockSweepStaleState.mockResolvedValue(undefined);
+    mockBroadcastToUser.mockResolvedValue(undefined);
+    mockClaimTasksForRuntimes.mockResolvedValue([]);
+
+    await POST(postReq({ daemon_id: "d1" }));
+
+    expect(mockKvPut).toHaveBeenCalledWith(
+      "hb:w1:d1",
+      expect.any(String),
+      { expirationTtl: 120 },
+    );
+  });
+
+  it("poll does not crash when invalidate throws", async () => {
+    mockInvalidate.mockRejectedValue(new Error("KV delete failed"));
+    mockUpsertMachine.mockResolvedValue({});
+    mockGetRuntimeIdsByDaemon.mockResolvedValue(["r1"]);
+    mockSweepStaleState.mockResolvedValue(undefined);
+    mockBroadcastToUser.mockResolvedValue(undefined);
+    mockClaimTasksForRuntimes.mockResolvedValue([]);
+
+    const res = await POST(postReq({ daemon_id: "d1" }));
+    const body = await res.json();
+
+    expect(res.status).toBe(200);
+    expect(body.tasks).toEqual([]);
+  });
+
+  it("does not invalidate cache when daemon has no runtimes (evicted early)", async () => {
+    mockGetRuntimeIdsByDaemon.mockResolvedValue([]);
+
+    await POST(postReq({ daemon_id: "d1" }));
+
+    expect(mockInvalidate).not.toHaveBeenCalled();
   });
 });
