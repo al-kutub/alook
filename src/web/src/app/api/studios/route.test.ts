@@ -18,6 +18,16 @@ const mockEnqueueTask = vi.fn();
 
 vi.mock("@/lib/db", () => ({ getDb: vi.fn(() => ({})) }));
 
+vi.mock("@/lib/cache", () => ({
+  invalidate: vi.fn(),
+  cached: vi.fn((_key: string, _ttl: number, fn: () => Promise<any>) => fn()),
+  cacheKeys: {
+    allAgents: (ws: string) => `agents:${ws}`,
+    allHandles: (ws: string) => `handles:${ws}`,
+    allColleagues: (ws: string) => `col:${ws}`,
+  },
+}));
+
 vi.mock("@alook/shared", async () => {
   const actual = await vi.importActual("@alook/shared");
   return {

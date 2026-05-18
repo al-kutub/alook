@@ -19,9 +19,7 @@ const mockMarkFileRequestsDispatched = vi.fn();
 const mockExpireStaleFileRequests = vi.fn();
 const mockListScheduledMeetings = vi.fn();
 const mockClaimMeetingSessions = vi.fn();
-const mockGetEmailAccountsByAgents = vi.fn();
 const mockGetAllEmailAccountsForWorkspace = vi.fn();
-const mockGetColleaguesForAgents = vi.fn();
 const mockGetAllColleaguesForWorkspace = vi.fn();
 
 vi.mock("@opennextjs/cloudflare", () => ({
@@ -62,7 +60,7 @@ vi.mock("@alook/shared", async () => {
         getUser: (...args: unknown[]) => mockGetUser(...args),
       },
       emailAccount: {
-        getEmailAccountsByAgents: (...args: unknown[]) => mockGetEmailAccountsByAgents(...args),
+        getEmailAccountsByAgents: (...args: unknown[]) => mockGetAllEmailAccountsForWorkspace(...args),
         getAllEmailAccountsForWorkspace: (...args: unknown[]) => mockGetAllEmailAccountsForWorkspace(...args),
       },
       workspaceFileRequest: {
@@ -75,7 +73,7 @@ vi.mock("@alook/shared", async () => {
         claimMeetingSessions: (...args: unknown[]) => mockClaimMeetingSessions(...args),
       },
       agentLink: {
-        getColleaguesForAgents: (...args: unknown[]) => mockGetColleaguesForAgents(...args),
+        getColleaguesForAgents: (...args: unknown[]) => mockGetAllColleaguesForWorkspace(...args),
         getAllColleaguesForWorkspace: (...args: unknown[]) => mockGetAllColleaguesForWorkspace(...args),
       },
     },
@@ -145,10 +143,7 @@ describe("POST /api/daemon/tasks/poll", () => {
     mockExpireStaleFileRequests.mockResolvedValue(undefined);
     mockListScheduledMeetings.mockResolvedValue([]);
     mockGetAllAgentsForWorkspace.mockResolvedValue([]);
-    mockGetAllAgentsForWorkspace.mockResolvedValue([]);
-    mockGetEmailAccountsByAgents.mockResolvedValue([]);
     mockGetAllEmailAccountsForWorkspace.mockResolvedValue([]);
-    mockGetColleaguesForAgents.mockResolvedValue([]);
     mockGetAllColleaguesForWorkspace.mockResolvedValue([]);
   });
 

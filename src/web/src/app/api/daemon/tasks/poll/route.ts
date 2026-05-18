@@ -107,16 +107,20 @@ export const POST = withAuth(async (req: NextRequest, ctx) => {
   const nonKillTasks = claimed.filter((t) => t.type !== "kill_task");
   const agentIds = [...new Set(nonKillTasks.map((t) => t.agentId))];
 
-  const [cachedAgents, cachedEmailAccounts, cachedColleagues] = await Promise.all([
-    cached(cacheKeys.allAgents(ctx.workspaceId!), 300, () => queries.agent.getAllAgentsForWorkspace(db, ctx.workspaceId!)),
-    cached(cacheKeys.allEmailAccounts(ctx.workspaceId!), 600, () => queries.emailAccount.getAllEmailAccountsForWorkspace(db, ctx.workspaceId!)),
-    cached(cacheKeys.allColleagues(ctx.workspaceId!), 600, () => queries.agentLink.getAllColleaguesForWorkspace(db, ctx.workspaceId!)).catch(() => [] as Awaited<ReturnType<typeof queries.agentLink.getAllColleaguesForWorkspace>>),
-  ]);
-
-  const agentIdSet = new Set(agentIds);
-  const allAgents = cachedAgents.filter((a) => agentIdSet.has(a.id));
-  const allEmailAccounts = cachedEmailAccounts.filter((a) => agentIdSet.has(a.agentId));
-  const allColleagues = cachedColleagues.filter((c) => agentIdSet.has(c.agentId));
+  const [allAgents, allEmailAccounts, allColleagues] = agentIds.length > 0
+    ? await Promise.all([
+        cached(cacheKeys.allAgents(ctx.workspaceId!), 300, () => queries.agent.getAllAgentsForWorkspace(db, ctx.workspaceId!)),
+        cached(cacheKeys.allEmailAccounts(ctx.workspaceId!), 600, () => queries.emailAccount.getAllEmailAccountsForWorkspace(db, ctx.workspaceId!)),
+        cached(cacheKeys.allColleagues(ctx.workspaceId!), 600, () => queries.agentLink.getAllColleaguesForWorkspace(db, ctx.workspaceId!)).catch(() => [] as Awaited<ReturnType<typeof queries.agentLink.getAllColleaguesForWorkspace>>),
+      ]).then(([agents, emails, colleagues]) => {
+        const agentIdSet = new Set(agentIds);
+        return [
+          agents.filter((a) => agentIdSet.has(a.id)),
+          emails.filter((a) => agentIdSet.has(a.agentId)),
+          colleagues.filter((c) => agentIdSet.has(c.agentId)),
+        ] as const;
+      })
+    : [[], [], [] as Awaited<ReturnType<typeof queries.agentLink.getAllColleaguesForWorkspace>>];
 
   const agentMap = new Map(allAgents.map((a) => [a.id, a]));
   const emailAccountsByAgent = new Map<string, string[]>();

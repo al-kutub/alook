@@ -6,7 +6,6 @@ const mockGetAgentByHandle = vi.fn();
 const mockCreateEmail = vi.fn();
 const mockIsWhitelisted = vi.fn();
 const mockGetEmailAccountsByAgent = vi.fn();
-const mockGetAllEmailAccountsForWorkspace = vi.fn();
 const mockGetEmailAccountScoped = vi.fn();
 const mockEmailWorkerFetch = vi.fn();
 const mockEmailBucketGet = vi.fn();
@@ -31,6 +30,13 @@ vi.mock("@opennextjs/cloudflare", () => ({
 
 vi.mock("@/lib/db", () => ({ getDb: vi.fn(() => ({})) }));
 
+vi.mock("@/lib/cache", () => ({
+  cached: vi.fn((_key: string, _ttl: number, fn: () => Promise<any>) => fn()),
+  cacheKeys: {
+    allEmailAccounts: (ws: string) => `ea:${ws}`,
+  },
+}));
+
 vi.mock("@alook/shared", async () => {
   const actual = await vi.importActual("@alook/shared");
   return {
@@ -49,8 +55,8 @@ vi.mock("@alook/shared", async () => {
       },
       emailAccount: {
         getEmailAccountsByAgent: (...args: unknown[]) => mockGetEmailAccountsByAgent(...args),
-        getAllEmailAccountsForWorkspace: (...args: unknown[]) => mockGetAllEmailAccountsForWorkspace(...args),
         getEmailAccountScoped: (...args: unknown[]) => mockGetEmailAccountScoped(...args),
+        getAllEmailAccountsForWorkspace: (...args: unknown[]) => mockGetEmailAccountsByAgent(...args),
       },
       conversation: {
         getConversation: (...args: unknown[]) => mockGetConversation(...args),
@@ -97,10 +103,7 @@ function makeReq(body: Record<string, unknown>) {
 }
 
 describe("POST /api/email/send", () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-    mockGetAllEmailAccountsForWorkspace.mockResolvedValue([]);
-  });
+  beforeEach(() => vi.clearAllMocks());
 
   it("sends email via EMAIL_WORKER and returns the created record", async () => {
     mockGetAgent.mockResolvedValue({ id: "a1", emailHandle: "test-agent" });
@@ -461,7 +464,7 @@ describe("POST /api/email/send", () => {
 
     it("skips local delivery when sender uses custom SMTP account", async () => {
       mockGetAgent.mockResolvedValue({ id: "a1", emailHandle: "sender-agent", workspaceId: "ws1" });
-      mockGetAllEmailAccountsForWorkspace.mockResolvedValue([
+      mockGetEmailAccountsByAgent.mockResolvedValue([
         { id: "acct1", agentId: "a1", emailAddress: "agent@company.com" },
       ]);
       mockEmailWorkerFetch.mockResolvedValue(Response.json({ ok: true, r2Key: "emails/x/raw" }));
