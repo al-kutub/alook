@@ -20,6 +20,31 @@ function run(cmd: string, cwd: string) {
   execSync(cmd, { cwd, stdio: "inherit" });
 }
 
+function rewriteAbsolutePaths(webDest: string): void {
+  const handlerDir = join(webDest, ".open-next/server-functions/default/src/web");
+  const metaPath = join(handlerDir, "handler.mjs.meta.json");
+  const handlerPath = join(handlerDir, "handler.mjs");
+
+  if (!existsSync(metaPath) || !existsSync(handlerPath)) return;
+
+  let meta = readFileSync(metaPath, "utf-8");
+
+  // Wrangler resolves "path" fields relative to the handler file's directory (src/web/).
+  // Assets live at .open-next/server-functions/default/node_modules/... which is ../../node_modules/ from src/web/.
+  const match = meta.match(/"path":\s*"(\/[^"]*?)\.open-next\/server-functions\/default\/node_modules\//);
+  if (!match) return;
+
+  const ciPrefix = match[1] + ".open-next/server-functions/default/node_modules/";
+  console.log(`[bundle] Rewriting CI paths (prefix: ${ciPrefix})`);
+
+  meta = meta.replaceAll(ciPrefix, "../../node_modules/");
+  writeFileSync(metaPath, meta);
+
+  let handler = readFileSync(handlerPath, "utf-8");
+  handler = handler.replaceAll(ciPrefix, "../../node_modules/");
+  writeFileSync(handlerPath, handler);
+}
+
 // Clean
 if (existsSync(bundledDir)) rmSync(bundledDir, { recursive: true });
 
@@ -63,6 +88,7 @@ try {
 const webDest = join(bundledDir, "web");
 mkdirSync(webDest, { recursive: true });
 cpSync(join(webSrc, ".open-next"), join(webDest, ".open-next"), { recursive: true });
+rewriteAbsolutePaths(webDest);
 cpSync(join(webSrc, "wrangler.toml"), join(webDest, "wrangler.toml"));
 cpSync(join(webSrc, "custom-worker.ts"), join(webDest, "custom-worker.ts"));
 cpSync(join(webSrc, "migrations"), join(webDest, "migrations"), { recursive: true });

@@ -12,6 +12,18 @@ function setDevPort(tomlPath: string, port: number): void {
   writeFileSync(tomlPath, content);
 }
 
+function setInspectorPort(tomlPath: string, inspectorPort: number): void {
+  let content = readFileSync(tomlPath, "utf-8");
+  if (content.includes("inspector_port")) {
+    content = content.replace(/inspector_port\s*=\s*\d+/, `inspector_port = ${inspectorPort}`);
+  } else if (content.includes("[dev]")) {
+    content = content.replace(/(\[dev\][^\[]*)/, `$1inspector_port = ${inspectorPort}\n`);
+  } else {
+    content += `\n[dev]\ninspector_port = ${inspectorPort}\n`;
+  }
+  writeFileSync(tomlPath, content);
+}
+
 function setVar(content: string, key: string, value: string): string {
   const pattern = new RegExp(`${key}\\s*=\\s*"[^"]*"`);
   if (pattern.test(content)) {
@@ -40,4 +52,8 @@ export function patchWranglerConfigs(ports: { web: number; emailWorker: number; 
 
   setDevPort(join(SELF_HOSTED_DIR, "email-worker", "wrangler.toml"), ports.emailWorker);
   setDevPort(join(SELF_HOSTED_DIR, "ws-do", "wrangler.toml"), ports.wsDo);
+
+  setInspectorPort(join(SELF_HOSTED_DIR, "web", "wrangler.toml"), 19229);
+  setInspectorPort(join(SELF_HOSTED_DIR, "ws-do", "wrangler.toml"), 19230);
+  setInspectorPort(join(SELF_HOSTED_DIR, "email-worker", "wrangler.toml"), 19231);
 }
