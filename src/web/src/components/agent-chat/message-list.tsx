@@ -32,6 +32,7 @@ export interface MessageItemProps {
   onArtifactClick: (a: Artifact) => void;
   onEmailClick: (emailId: string) => void;
   onIssueClick: (issueId: string) => void;
+  onCalendarEventClick: (calendarEventId: string) => void;
   onRetry?: () => void;
   mentionComponents: Record<string, React.ComponentType<Record<string, unknown> & { children?: React.ReactNode }>>;
   isFlagged?: boolean;
@@ -120,6 +121,7 @@ export const MessageItem = memo(function MessageItem({
   onArtifactClick,
   onEmailClick,
   onIssueClick,
+  onCalendarEventClick,
   onRetry,
   mentionComponents,
   isFlagged,
@@ -251,7 +253,8 @@ export const MessageItem = memo(function MessageItem({
       })() : msg.role === "event" ? (() => {
         const eventEmailId = msg.metadata?.emailId as string | undefined;
         const eventIssueId = msg.metadata?.issueId as string | undefined;
-        const isClickable = !!eventEmailId || !!eventIssueId;
+        const eventCalendarEventId = msg.metadata?.calendarEventId as string | undefined;
+        const isClickable = !!eventEmailId || !!eventIssueId || !!eventCalendarEventId;
         return (
           <div className="flex justify-start" data-message-id={msg.id} {...(msg.task_id ? { "data-task-id": msg.task_id } : {})}>
             <div
@@ -259,7 +262,7 @@ export const MessageItem = memo(function MessageItem({
                 "w-full rounded-md border bg-muted/50 text-muted-foreground text-sm px-3 py-2 flex items-start gap-2",
                 isClickable && "cursor-pointer hover:bg-muted transition-colors"
               )}
-              onClick={eventEmailId ? () => onEmailClick(eventEmailId) : eventIssueId ? () => onIssueClick(eventIssueId) : undefined}
+              onClick={eventEmailId ? () => onEmailClick(eventEmailId) : eventIssueId ? () => onIssueClick(eventIssueId) : eventCalendarEventId ? () => onCalendarEventClick(eventCalendarEventId) : undefined}
             >
               <EventMessageIcon content={msg.content} conversationType={conversationType} />
               <span className="min-w-0 wrap-anywhere">{msg.content}</span>

@@ -653,6 +653,9 @@ export const listCalendarEvents = (
   return apiFetch<CalendarEvent[]>(`/api/calendar${wsQuery(workspaceId, extra)}`);
 };
 
+export const getCalendarEvent = (id: string, workspaceId: string) =>
+  apiFetch<CalendarEvent>(`/api/calendar/${id}${wsQuery(workspaceId)}`);
+
 export const createCalendarEvent = (
   req: CreateCalendarEventRequest,
   workspaceId: string

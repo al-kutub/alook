@@ -160,6 +160,14 @@
   --tw-roller: oklch(0.15 0.01 55);
 }
 
+/* ─── Feature flip cards ─── */
+.flip-card:hover .flip-card-inner {
+  transform: rotateY(180deg);
+}
+.flip-card:hover .flip-card-front {
+  pointer-events: none;
+}
+
 /* ─── Front-Facing Typewriter Illustration ───
 
   Classic front-view typewriter (Olivetti-inspired):

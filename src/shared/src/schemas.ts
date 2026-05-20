@@ -258,6 +258,7 @@ export const CreateCalendarEventRequestSchema = z
       .string()
       .regex(/^\d{4}-\d{2}-\d{2}$/)
       .optional(),
+    conversation_id: z.string().optional(),
   })
   .refine(
     (data) =>

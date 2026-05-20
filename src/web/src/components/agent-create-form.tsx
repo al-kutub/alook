@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import type { AgentRuntime as Runtime } from "@alook/shared";
 import {
@@ -20,6 +20,7 @@ import {
   randomConfig,
   serializeAvatarConfig,
 } from "@/components/avatar";
+import { uniqueNamesGenerator, names } from "unique-names-generator";
 import {
   type AgentCreateFieldErrors,
   hasAgentCreateFieldErrors,
@@ -134,13 +135,19 @@ export function AgentCreateForm({
   const [model, setModel] = useState("");
   const [avatarConfig, setAvatarConfig] = useState<AvatarConfig>(INITIAL_AVATAR);
 
-  // Randomize avatar on client mount to avoid hydration mismatch
+  // Randomize avatar and name on client mount to avoid hydration mismatch
   const avatarInitialized = useRef(false);
   useEffect(() => {
     if (!avatarInitialized.current) {
       avatarInitialized.current = true;
       setAvatarConfig(randomConfig());
+      setName(uniqueNamesGenerator({ dictionaries: [names], length: 1, style: "capital" }));
     }
+  }, []);
+
+  const shuffleName = useCallback(() => {
+    setName(uniqueNamesGenerator({ dictionaries: [names], length: 1, style: "capital" }));
+    setFieldErrors((prev) => ({ ...prev, name: undefined }));
   }, []);
 
   const selectedRuntime = runtimes.find((r) => r.id === runtimeId);
@@ -227,6 +234,7 @@ export function AgentCreateForm({
           providerModels={providerModels}
           errors={fieldErrors}
           runtimeAsRadio
+          onShuffle={shuffleName}
         />
 
         <div className="border-t border-border/50 pt-4 mt-4 space-y-4">

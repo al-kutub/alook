@@ -51,6 +51,7 @@ import { MentionPopup } from "@/components/agent-chat/mention-popup";
 import { highlightMentions } from "@/lib/highlight-mentions";
 import { ArtifactSheet, formatSize } from "@/components/agent-chat/artifact-sheet";
 import { EmailEventSheet } from "@/components/agent-chat/email-event-sheet";
+import { CalendarEventDetailSheet } from "@/components/agent-chat/calendar-event-sheet";
 import { IssueSheet } from "@/components/issues/issue-sheet";
 import { isPreviewable, getArtifactUrl, computeArtifactVersions } from "@/components/artifact-content-renderer";
 import { FollowUpBuffer } from "@/components/agent-chat/follow-up-buffer";
@@ -343,6 +344,8 @@ export function AgentChatView({
   const [artifactSheetSource, setArtifactSheetSource] = useState<"agent" | "issue" | null>(null);
   const [emailSheetOpen, setEmailSheetOpen] = useState(false);
   const [selectedEmailId, setSelectedEmailId] = useState<string | null>(null);
+  const [calendarEventSheetOpen, setCalendarEventSheetOpen] = useState(false);
+  const [selectedCalendarEventId, setSelectedCalendarEventId] = useState<string | null>(null);
   const [issueSheetOpen, setIssueSheetOpen] = useState(false);
   const [selectedIssueId, setSelectedIssueId] = useState<string | null>(null);
   const [issueDetail, setIssueDetail] = useState<{
@@ -959,12 +962,13 @@ export function AgentChatView({
   const MIN_MESSAGES = 10;
   useEffect(() => {
     if (messagesLoading || !conversation) return;
+    if (scrollToTaskId || targetConvId) return;
     if (messages.length >= MIN_MESSAGES || !canLoadMore) return;
     if (loadingMore) return;
     if (backfillAttemptsRef.current >= 3) return;
     backfillAttemptsRef.current += 1;
     loadOlderMessages(true);
-  }, [messagesLoading, messages.length, canLoadMore, loadingMore, conversation, loadOlderMessages]);
+  }, [messagesLoading, messages.length, canLoadMore, loadingMore, conversation, loadOlderMessages, scrollToTaskId, targetConvId]);
 
   const handleScroll = useCallback(() => {
     const el = scrollRef.current;
@@ -1791,6 +1795,10 @@ export function AgentChatView({
                     setSelectedEmailId(emailId);
                     setEmailSheetOpen(true);
                   }}
+                  onCalendarEventClick={(id) => {
+                    setSelectedCalendarEventId(id);
+                    setCalendarEventSheetOpen(true);
+                  }}
                   onIssueClick={(issueId) => openIssue(issueId)}
                   onRetry={handleRetryTask}
                   mentionComponents={MENTION_COMPONENTS}
@@ -2099,6 +2107,16 @@ export function AgentChatView({
           if (!v) setTimeout(() => setSelectedEmailId(null), 300);
         }}
         emailId={selectedEmailId}
+        workspaceId={workspaceId}
+      />
+
+      <CalendarEventDetailSheet
+        open={calendarEventSheetOpen}
+        onOpenChange={(v) => {
+          setCalendarEventSheetOpen(v);
+          if (!v) setTimeout(() => setSelectedCalendarEventId(null), 300);
+        }}
+        calendarEventId={selectedCalendarEventId}
         workspaceId={workspaceId}
       />
 

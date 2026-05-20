@@ -26,7 +26,7 @@ import { ProviderLogo } from "@/components/provider-logo";
 import { isValidHandle } from "@alook/shared";
 import type { AgentRuntime as Runtime } from "@alook/shared";
 import { cn } from "@/lib/utils";
-import { InfoIcon, XIcon } from "lucide-react";
+import { InfoIcon, XIcon, Dices } from "lucide-react";
 import { useWorkspace } from "@/contexts/workspace-context";
 import {
   listWhitelist,
@@ -74,6 +74,7 @@ interface GeneralFieldsProps {
     runtimeId?: string;
   };
   runtimeAsRadio?: boolean;
+  onShuffle?: () => void;
 }
 
 export function GeneralFields({
@@ -91,20 +92,28 @@ export function GeneralFields({
   providerModels,
   errors,
   runtimeAsRadio = false,
+  onShuffle,
 }: GeneralFieldsProps) {
   return (
     <>
       <div className="space-y-1.5">
         <Label htmlFor="agent-name">Name <span className="text-destructive">*</span></Label>
-        <Input
-          id="agent-name"
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          placeholder="My Agent"
-          required
-          aria-invalid={Boolean(errors?.name)}
-          aria-describedby={errors?.name ? "agent-name-error" : undefined}
-        />
+        <div className="flex items-center gap-1">
+          <Input
+            id="agent-name"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="My Agent"
+            required
+            aria-invalid={Boolean(errors?.name)}
+            aria-describedby={errors?.name ? "agent-name-error" : undefined}
+          />
+          {onShuffle && (
+            <Button type="button" variant="ghost" size="icon" className="shrink-0 size-8" onClick={onShuffle} aria-label="Randomize name">
+              <Dices className="size-4 text-muted-foreground" />
+            </Button>
+          )}
+        </div>
         {errors?.name && (
           <p id="agent-name-error" className="text-xs text-destructive">
             {errors.name}

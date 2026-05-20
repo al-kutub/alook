@@ -80,6 +80,7 @@ export async function promoteDueCalendarEventsForWorkspace(
         conversationId: conv.id,
         role: "event",
         content: ev.title,
+        metadata: JSON.stringify({ calendarEventId: ev.id }),
       });
 
       await queries.task.createTask(db, {

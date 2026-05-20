@@ -15,7 +15,9 @@ interface StartOptions {
   foreground?: boolean;
 }
 
-const isDevMode = resolveMode({ nodeEnv: process.env.NODE_ENV }) === "dev";
+const isDevMode =
+  resolveMode({ nodeEnv: process.env.NODE_ENV }) === "dev" &&
+  !!process.env.ALOOK_PROJECT_ROOT;
 
 function logDir(): string {
   const dir = join(SELF_HOSTED_DIR, "logs");
