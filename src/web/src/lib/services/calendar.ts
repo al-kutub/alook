@@ -41,6 +41,7 @@ export async function promoteDueCalendarEventsForWorkspace(
   nowIso: string = new Date().toISOString(),
 ): Promise<number> {
   const candidates = await listDueCalendarEvents(db, workspaceId, nowIso);
+  const ownerCache = new Map<string, { name: string; email: string } | null>();
   let enqueued = 0;
 
   for (const ev of candidates) {
@@ -83,6 +84,20 @@ export async function promoteDueCalendarEventsForWorkspace(
         metadata: JSON.stringify({ calendarEventId: ev.id }),
       });
 
+      if (!ownerCache.has(agent.ownerId)) {
+        const u = await queries.user.getUser(db, agent.ownerId);
+        ownerCache.set(agent.ownerId, u ? { name: u.name, email: u.email } : null);
+      }
+      const ownerInfo = ownerCache.get(agent.ownerId)!;
+
+      const taskContext: Record<string, unknown> = {};
+      if (ev.description) {
+        taskContext.description = ev.description;
+      }
+      if (ownerInfo) {
+        taskContext.scheduled_by = ownerInfo;
+      }
+
       await queries.task.createTask(db, {
         agentId: ev.agentId,
         runtimeId: agent.runtimeId,
@@ -93,6 +108,7 @@ export async function promoteDueCalendarEventsForWorkspace(
         priority: 0,
         traceId: "tr_" + nanoid(),
         parentTaskId: null,
+        context: Object.keys(taskContext).length > 0 ? taskContext : undefined,
       });
 
       if (ev.repeatInterval) {

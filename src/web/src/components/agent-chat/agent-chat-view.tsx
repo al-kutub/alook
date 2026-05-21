@@ -51,7 +51,7 @@ import { MentionPopup } from "@/components/agent-chat/mention-popup";
 import { highlightMentions } from "@/lib/highlight-mentions";
 import { ArtifactSheet, formatSize } from "@/components/agent-chat/artifact-sheet";
 import { EmailEventSheet } from "@/components/agent-chat/email-event-sheet";
-import { CalendarEventDetailSheet } from "@/components/agent-chat/calendar-event-sheet";
+import { CalendarEventSheet } from "@/components/calendar/calendar-event-sheet";
 import { IssueSheet } from "@/components/issues/issue-sheet";
 import { isPreviewable, getArtifactUrl, computeArtifactVersions } from "@/components/artifact-content-renderer";
 import { FollowUpBuffer } from "@/components/agent-chat/follow-up-buffer";
@@ -2116,7 +2116,8 @@ export function AgentChatView({
         workspaceId={workspaceId}
       />
 
-      <CalendarEventDetailSheet
+      <CalendarEventSheet
+        readonly
         open={calendarEventSheetOpen}
         onOpenChange={(v) => {
           setCalendarEventSheetOpen(v);

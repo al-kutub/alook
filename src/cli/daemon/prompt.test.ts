@@ -93,8 +93,65 @@ describe("buildPrompt", () => {
     expect(parsed.notice).toContain("final text response is visible to the user");
   });
 
-  it("does not add notice for non-email non-dm tasks", () => {
-    const task = makeTask("Check inbox", "calendar_event");
+  it("adds CALENDAR_NOTICE for calendar_event tasks with no context", () => {
+    const task = makeTask("Do the standup", "calendar_event");
+    const parsed = JSON.parse(buildPrompt(task));
+    expect(parsed.notice).toContain("scheduled calendar event");
+    expect(parsed.notice).toContain("no human in this session");
+    expect(parsed.notice).toContain("email sending tool");
+    expect(parsed.description).toBeUndefined();
+    expect(parsed.scheduled_by).toBeUndefined();
+  });
+
+  it("includes description and scheduled_by for calendar_event with full context", () => {
+    const task: Task = {
+      ...makeTask("Do the standup", "calendar_event"),
+      context: {
+        description: "Check PRs merged this week",
+        scheduled_by: { name: "Gus", email: "gus@memodb.io" },
+      },
+    };
+    const parsed = JSON.parse(buildPrompt(task));
+    expect(parsed.notice).toContain("scheduled calendar event");
+    expect(parsed.description).toBe("Check PRs merged this week");
+    expect(parsed.scheduled_by).toEqual({ name: "Gus", email: "gus@memodb.io" });
+  });
+
+  it("includes only description for calendar_event when scheduled_by is absent", () => {
+    const task: Task = {
+      ...makeTask("Do the standup", "calendar_event"),
+      context: { description: "Check PRs merged this week" },
+    };
+    const parsed = JSON.parse(buildPrompt(task));
+    expect(parsed.notice).toContain("scheduled calendar event");
+    expect(parsed.description).toBe("Check PRs merged this week");
+    expect(parsed.scheduled_by).toBeUndefined();
+  });
+
+  it("includes only scheduled_by for calendar_event when description is absent", () => {
+    const task: Task = {
+      ...makeTask("Do the standup", "calendar_event"),
+      context: { scheduled_by: { name: "Gus", email: "gus@memodb.io" } },
+    };
+    const parsed = JSON.parse(buildPrompt(task));
+    expect(parsed.notice).toContain("scheduled calendar event");
+    expect(parsed.description).toBeUndefined();
+    expect(parsed.scheduled_by).toEqual({ name: "Gus", email: "gus@memodb.io" });
+  });
+
+  it("omits description for calendar_event when description is empty string", () => {
+    const task: Task = {
+      ...makeTask("Do the standup", "calendar_event"),
+      context: { description: "", scheduled_by: { name: "Gus", email: "gus@memodb.io" } },
+    };
+    const parsed = JSON.parse(buildPrompt(task));
+    expect(parsed.notice).toContain("scheduled calendar event");
+    expect(parsed.description).toBeUndefined();
+    expect(parsed.scheduled_by).toEqual({ name: "Gus", email: "gus@memodb.io" });
+  });
+
+  it("does not add notice for unknown task types", () => {
+    const task = makeTask("Check inbox", "some_other_type");
     const parsed = JSON.parse(buildPrompt(task));
     expect(parsed.notice).toBeUndefined();
   });

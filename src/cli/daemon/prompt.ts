@@ -11,6 +11,12 @@ const EMAIL_NOTICE =
   " If you need more information or confirmation from the human, send them an email asking for it and then exit." +
   " Do not wait — when the human replies, a new task will be triggered automatically and you will be woken up with their response.";
 
+const CALENDAR_NOTICE =
+  "This task was triggered by a scheduled calendar event. There is no human in this session." +
+  " If you need to communicate with a human, you MUST send an email using the email sending tool." +
+  " If you need more information or confirmation, send an email asking for it and then exit." +
+  " Do not wait — when the human replies, a new task will be triggered automatically and you will be woken up with their response.";
+
 const ISSUE_NOTICE =
   "This task was triggered by an assigned issue. The issue_id is provided in this message." +
   " Use `alook issue show --issue_id <issue_id>` to read full context." +
@@ -43,6 +49,16 @@ export function buildPrompt(task: Task, attachments?: Attachment[]): string {
       obj.notice = buildDmNotice(dmUser.name, dmUser.email);
     } else {
       obj.notice = EMAIL_NOTICE;
+    }
+  }
+  if (task.type === "calendar_event") {
+    obj.notice = CALENDAR_NOTICE;
+    const ctx = task.context as Record<string, unknown> | undefined;
+    if (ctx?.description) {
+      obj.description = ctx.description;
+    }
+    if (ctx?.scheduled_by) {
+      obj.scheduled_by = ctx.scheduled_by;
     }
   }
   if (task.type === "issue_event") {
