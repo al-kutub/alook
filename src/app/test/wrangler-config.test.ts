@@ -14,7 +14,11 @@ function setVar(content: string, key: string, value: string): string {
 
 function setDevPort(content: string, port: number): string {
   if (content.includes("[dev]")) {
-    return content.replace(/(\[dev\][^\[]*?)port\s*=\s*\d+/, `$1port = ${port}`);
+    const patched = content.replace(/(\[dev\][^\[]*?)(?<!inspector_)port\s*=\s*\d+/, `$1port = ${port}`);
+    if (patched === content) {
+      return content.replace(/(\[dev\][^\[]*)/, `$1port = ${port}\n`);
+    }
+    return patched;
   }
   return content + `\n[dev]\nport = ${port}\n`;
 }
@@ -60,6 +64,35 @@ describe("wrangler-config", () => {
       const result = setDevPort(content, 3000);
       expect(result).toContain("[dev]");
       expect(result).toContain("port = 3000");
+    });
+
+    it("does not match inspector_port when it precedes port", () => {
+      const content = `[dev]\ninspector_port = 19229\nport = 15210`;
+      const result = setDevPort(content, 16000);
+      expect(result).toContain("inspector_port = 19229");
+      expect(result).toContain("port = 16000");
+      expect(result).not.toContain("port = 15210");
+    });
+
+    it("correctly matches standalone port when inspector_port precedes it", () => {
+      const content = `[dev]\ninspector_port = 19229\nport = 15210\n`;
+      const result = setDevPort(content, 8080);
+      expect(result).toContain("inspector_port = 19229");
+      expect(result).toContain("port = 8080");
+    });
+
+    it("correctly matches port when port comes first (no regression)", () => {
+      const content = `[dev]\nport = 15210\ninspector_port = 19229\n`;
+      const result = setDevPort(content, 9000);
+      expect(result).toContain("port = 9000");
+      expect(result).toContain("inspector_port = 19229");
+    });
+
+    it("appends port when [dev] exists with only inspector_port", () => {
+      const content = `[dev]\ninspector_port = 19229\n`;
+      const result = setDevPort(content, 15210);
+      expect(result).toContain("inspector_port = 19229");
+      expect(result).toContain("port = 15210");
     });
   });
 });
