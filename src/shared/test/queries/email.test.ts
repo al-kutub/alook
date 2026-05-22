@@ -37,6 +37,38 @@ describe("email query module exports", () => {
   it("exports updateEmailStatus", () => {
     expect(typeof emailQueries.updateEmailStatus).toBe("function");
   });
+
+  it("exports getEmailsByMailbox", () => {
+    expect(typeof emailQueries.getEmailsByMailbox).toBe("function");
+  });
+
+  it("exports updateEmailMailbox", () => {
+    expect(typeof emailQueries.updateEmailMailbox).toBe("function");
+  });
+
+  it("does not export unused updateEmailDraft API", () => {
+    expect("updateEmailDraft" in emailQueries).toBe(false);
+  });
+
+  it("exports claimDraftForSend", () => {
+    expect(typeof emailQueries.claimDraftForSend).toBe("function");
+  });
+
+  it("exports finalizeDraftSend", () => {
+    expect(typeof emailQueries.finalizeDraftSend).toBe("function");
+  });
+
+  it("exports restoreDraftAfterSendFailure", () => {
+    expect(typeof emailQueries.restoreDraftAfterSendFailure).toBe("function");
+  });
+
+  it("exports markDraftSendUnknown", () => {
+    expect(typeof emailQueries.markDraftSendUnknown).toBe("function");
+  });
+
+  it("does not export weak updateEmailAfterSend helper", () => {
+    expect("updateEmailAfterSend" in emailQueries).toBe(false);
+  });
 });
 
 describe("email query function signatures", () => {

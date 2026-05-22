@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest"
 import {
   POLL_INTERVAL_MS, OFFLINE_THRESHOLD_MS, EVENT_POLL_INTERVAL_MS, AGENT_HANDLE_MIN_LENGTH,
-  TaskStatus, TERMINAL_TASK_STATUSES, isTerminalTaskStatus,
+  TaskStatus, TERMINAL_TASK_STATUSES, isTerminalTaskStatus, EmailMailbox,
 } from "../src/constants"
 
 describe("constants", () => {
@@ -39,5 +39,14 @@ describe("TaskStatus", () => {
     expect(isTerminalTaskStatus("queued")).toBe(false)
     expect(isTerminalTaskStatus("dispatched")).toBe(false)
     expect(isTerminalTaskStatus("running")).toBe(false)
+  })
+})
+
+describe("EmailMailbox", () => {
+  it("defines the four email folders", () => {
+    expect(EmailMailbox.INBOX).toBe("inbox")
+    expect(EmailMailbox.SENT).toBe("sent")
+    expect(EmailMailbox.DRAFT).toBe("draft")
+    expect(EmailMailbox.UNTRUST).toBe("untrust")
   })
 })

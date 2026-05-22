@@ -74,6 +74,7 @@ export {
   TERMINAL_TASK_STATUSES,
   isTerminalTaskStatus,
   TASK_TYPES,
+  EmailMailbox,
   IssueStatus,
   ACTIVE_ISSUE_STATUSES,
   TERMINAL_ISSUE_STATUSES,
@@ -97,6 +98,7 @@ export type {
   RuntimeStatusType,
   TaskStatusType,
   TaskType,
+  EmailMailboxType,
   IssueStatusType,
   MessageRoleType,
   MeetingStatusType,
@@ -147,6 +149,7 @@ export {
   EmailAttachmentSchema,
   SendEmailRequestSchema,
   UpdateEmailStatusRequestSchema,
+  CreateEmailDraftRequestSchema,
   EmailNotifyRequestSchema,
   UpdateMemberRequestSchema,
   CreateWorkspaceRequestSchema,
@@ -200,6 +203,7 @@ export type {
   CreateEmailAccountRequest,
   UpdateMemberRequest,
   UpdateEmailAccountRequest,
+  CreateEmailDraftRequest,
   TestEmailConnectionRequest,
   FileRequestItem,
   WorkspaceFileEntry,
@@ -222,6 +226,13 @@ export type { LogLevel, LoggerOptions } from "./logger"
 // Lib
 export { isEmptyHtml } from "./lib/html";
 export { extractThreadId, buildEmailMapKey } from "./lib/context-key";
+export {
+  canDiscardEmail,
+  canSendDraftEmail,
+  getMailboxAddressFields,
+  isInboundDraftReviewEmail,
+  isOutboundDraftEmail,
+} from "./lib/email-mailbox";
 export { parseIcs } from "./lib/ics-parser";
 export type { MeetingInfo } from "./lib/ics-parser";
 export { buildMimeMessage, extractAttachmentMeta, filterDownloadableAttachments } from "./lib/mime";

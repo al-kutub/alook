@@ -48,6 +48,15 @@ export const TASK_TYPES = {
 
 export type TaskType = (typeof TASK_TYPES)[keyof typeof TASK_TYPES];
 
+export const EmailMailbox = {
+  INBOX: "inbox",
+  SENT: "sent",
+  DRAFT: "draft",
+  UNTRUST: "untrust",
+} as const;
+
+export type EmailMailboxType = (typeof EmailMailbox)[keyof typeof EmailMailbox];
+
 export const IssueStatus = {
   TODO: "todo",
   IN_PROGRESS: "in_progress",

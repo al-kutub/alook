@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { IssueStatus, TASK_TYPES } from "./constants";
+import { EmailMailbox, IssueStatus, TASK_TYPES } from "./constants";
 
 // ---------------------------------------------------------------------------
 // Task status
@@ -565,15 +565,42 @@ export const SendEmailRequestSchema = z.object({
   conversationId: z.string().optional(),
   traceId: z.string().optional(),
   sourceTaskId: z.string().optional(),
+  draftEmailId: z.string().optional(),
 });
 export type SendEmailRequest = z.infer<typeof SendEmailRequestSchema>;
 
-export const UpdateEmailStatusRequestSchema = z.object({
-  status: z.enum(["unread", "read", "archived", "sent"]),
-});
+export const EmailMailboxSchema = z.enum([
+  EmailMailbox.INBOX,
+  EmailMailbox.SENT,
+  EmailMailbox.DRAFT,
+  EmailMailbox.UNTRUST,
+]);
+
+export const UpdateEmailStatusRequestSchema = z.union([
+  z.object({
+    status: z.enum(["unread", "read", "archived"]),
+  }),
+  z.object({
+    action: z.literal("discard"),
+  }),
+]);
 export type UpdateEmailStatusRequest = z.infer<
   typeof UpdateEmailStatusRequestSchema
 >;
+
+export const CreateEmailDraftRequestSchema = z.object({
+  agentId: z.string().min(1, "agentId is required"),
+  to: z.string().email("valid recipient email required"),
+  subject: z.string().min(1, "subject is required"),
+  htmlBody: z.string().default(""),
+  customAccountId: z.string().optional(),
+  from: z.string().email().optional(),
+  inReplyToEmailId: z.string().optional(),
+  inReplyTo: z.string().optional(),
+  references: z.string().optional(),
+  attachments: z.array(EmailAttachmentSchema).optional(),
+});
+export type CreateEmailDraftRequest = z.infer<typeof CreateEmailDraftRequestSchema>;
 
 export const MeetingInfoSchema = z.object({
   title: z.string(),
