@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   Sheet,
+  SheetClose,
   SheetContent,
   SheetTitle,
   SheetBody,
@@ -21,6 +22,7 @@ import {
   Loader2,
   MessageSquare,
   User,
+  XIcon,
 } from "lucide-react";
 import Link from "next/link";
 import { cn } from "@/lib/utils";
@@ -685,6 +687,15 @@ export function IssueSheet({
           onLostPointerCapture={onPointerUp}
           className="hidden sm:block absolute -left-px top-0 bottom-0 w-1.5 cursor-col-resize z-10 hover:bg-primary/20 active:bg-primary/30 transition-colors rounded-l-xl"
         />
+
+        {/* Mobile close button */}
+        <SheetClose
+          render={<Button variant="ghost" size="icon-sm" />}
+          className="absolute top-3 right-3 z-10 sm:hidden"
+        >
+          <XIcon />
+          <span className="sr-only">Close</span>
+        </SheetClose>
 
         {/* Timeline floating panel — desktop only, detail mode only, not for todo drafts */}
         {mode === "detail" && !isTodoDraft && (
