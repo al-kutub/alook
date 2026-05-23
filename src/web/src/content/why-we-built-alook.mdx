@@ -4,44 +4,58 @@ export const metadata = {
   date: "2026-05-15",
   author: "Gus",
   excerpt:
-    "The pain of managing AI across ten platforms, and why we decided to build something different.",
+    "Agents got powerful. I got more anxious. The problem was never AI capability — it was that I became the bottleneck.",
   readingTime: "4 min read",
 };
 
-I was drowning in tabs. ChatGPT for brainstorming. Claude for code. Midjourney for visuals. Notion AI for notes. A different tool for every thought, a different context window for every task. None of them talked to each other. None of them remembered what the others had done.
+![You are the message bus](/blog/why-we-built-alook/hero.svg)
 
-This wasn't the future of AI-augmented work. This was tool fragmentation dressed up as progress.
+I was using Claude Code and Codex every day. The agents were powerful. And somehow, I was more anxious than before I had them.
 
-## The Breaking Point
+The more capable my tools got, the more I became a router. Copy context from one session into another. Remember which tab was doing what. Juggle four tmux windows running four agents on the same codebase. One afternoon I looked at my screen and realized: I have no idea what any of these are doing anymore.
 
-I'd been building products for a decade. I knew what good tools felt like — they disappeared into your workflow, not multiplied across it. But the AI landscape was evolving so fast that every week brought a new best-in-class model for something. The rational response was to use them all. The human cost was context-switching hell.
+Not the code — the code was there. But the context was gone. Why they made those choices. What they were about to do next. What they'd already tried and failed.
 
-One afternoon I counted: I had eleven AI subscriptions. Eleven billing pages. Eleven different memory systems (mostly none). I was spending more time orchestrating my AI tools than doing the actual work they were supposed to help with.
+That was the breaking point. Not "I need a better AI." But: I need to manage AI the way I'd manage a team.
 
-## The Insight
+## The Wrong Axis
 
-What if instead of using AI tools, you could hire AI the way you hire people? Not as isolated utilities, but as a team. A team that shares context, divides labor, and collaborates without you being the bottleneck in every loop.
+![Project-centric vs agent-centric](/blog/why-we-built-alook/wrong-axis.svg)
 
-That's the core idea behind Alook. Not another AI tool — a personal company. A team of AI agents that work together, remember your preferences, and get things done while you focus on what matters.
+Every tool I used was project-centric. One project, one agent, many context windows. A single project needs a planner, a coder, a reviewer, a marketer. Four roles — but the tool only gives you one agent. So you open more tabs, more sessions, more windows. You become the message bus between your own context windows.
 
-## What "Personal Company" Means
+This is the trap: the tools are organized around code. But work is organized around people.
 
-A company has roles. A company has communication channels. A company has institutional memory. These aren't metaphors — they're architectural decisions.
+The moment I saw it, I couldn't unsee it. Organize around agents, not projects. Give each agent a role, a memory, a way to talk to the others. Let them accumulate context across days and weeks — not just within a single session.
 
-In Alook, each agent has a job description, a set of tools, and the ability to email other agents when it needs help. Your planner agent writes development plans. Your coder agent implements them. Your reviewer agent catches bugs. They coordinate through structured communication, not shared token windows.
+## The Missing Context Layer
 
-> The best manager doesn't do the work — they make sure the right people are doing the right work at the right time.
+![Email as persistent memory](/blog/why-we-built-alook/email-memory.svg)
 
-That's the role we think humans should play with AI. Not writing prompts all day, but setting direction and letting a competent team execute.
+Agents without shared context are just expensive autocomplete. Every session starts from zero. Every handoff requires you to re-explain. The context lives in your head — which means you're still the bottleneck.
 
-## Why Now
+What agents actually need is a context center. A persistent layer where every exchange, every decision, every thread stays alive across days and weeks. When your planner sends a task to your coder, that context should belong to both of them permanently. Next week, they still know what happened. You don't re-explain. You don't copy-paste. You don't lose the thread.
 
-Three things converged: models got good enough to be genuinely useful at specialized tasks. Context windows got large enough to hold meaningful work state. And tool-use capabilities matured to the point where agents could actually do things in the world — send emails, write code, manage calendars.
+In Alook, that context layer is email. Async, persistent, and contextual by design. You talk to your agents the way you'd message a colleague. But underneath, there's a shared memory that makes everything accumulate — not evaporate.
 
-The missing piece was the orchestration layer. Something that turned isolated capabilities into coordinated action. That's what we're building.
+The interface is familiar. The capability is not.
 
-## What's Next
+## One Person, A Thousand Agents
 
-Alook is open source. It runs on your machine or your cloud. Your data stays yours. We believe the future of AI assistance is personal, private, and composable — not locked behind someone else's platform.
+![One person, a thousand agents](/blog/why-we-built-alook/agent-company.svg)
 
-We're just getting started, and we'd love your help shaping what comes next.
+I built Alook's MVP in one week with Claude Code. After that first week, I used Alook to build Alook. My planner breaks down features. My coder implements them. My CMO writes the launch copy. I set direction once. They execute.
+
+The real question isn't "what can one agent do." It's "how many agents can one person manage." I think the answer is a thousand — if you have the right system. We're building that system.
+
+Not a better chat window. An agent company builder.
+
+> The goal is simple: think less, not more. Delegate and forget. Wake up and your agents did the work — and you can trace exactly why.
+
+Your brain gets lighter. That's the whole point.
+
+## Build Your Agent Company
+
+Alook is open source. It runs on your machine. Your data stays yours. Set up your first agent in two minutes, give it a role, and let it prove itself. Then add another. Then another.
+
+[Get started →](https://github.com/alookai/alook)

@@ -10,6 +10,7 @@ import { ArchitectureOverview } from "./architecture-overview";
 import { MarketingNav } from "./marketing-nav";
 import { MarketingFooter } from "./marketing-footer";
 import { ByoaSection } from "./byoa-section";
+import { UseCasesSection } from "./use-cases-section";
 import { QuickstartSection } from "./quickstart-section";
 
 gsap.registerPlugin(useGSAP, ScrollTrigger);
@@ -60,8 +61,9 @@ export function HomePage({ isLoggedIn }: { isLoggedIn: boolean }) {
     >
       <MarketingNav isLoggedIn={isLoggedIn} />
       <HeroSection isLoggedIn={isLoggedIn} />
-      <ByoaSection />
+      <UseCasesSection />
       <FeatureShowcase />
+      <ByoaSection />
       <QuickstartSection />
       <ArchitectureOverview />
       <MarketingFooter />

@@ -1,9 +1,8 @@
 import type { BlogPost } from "../types";
 
 import { metadata as whyWeBuiltAlook } from "@/content/why-we-built-alook.mdx";
-import { metadata as buildingYourFirstAgentTeam } from "@/content/building-your-first-agent-team.mdx";
 
-const posts: BlogPost[] = [buildingYourFirstAgentTeam, whyWeBuiltAlook];
+const posts: BlogPost[] = [whyWeBuiltAlook];
 
 export type { BlogPost } from "../types";
 
