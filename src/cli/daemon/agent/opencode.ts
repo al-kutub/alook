@@ -35,7 +35,7 @@ export class OpenCodeBackend implements AgentBackend {
       };
     }
 
-    const args = ["run", "--format", "json"];
+    const args = ["run", "--format", "json", "--dir", options.cwd];
 
     if (options.model) {
       args.push("--model", options.model);

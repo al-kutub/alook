@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import gsap from "gsap";
 import { useGSAP } from "@gsap/react";
 import { ScrollTrigger } from "gsap/ScrollTrigger";
@@ -189,7 +189,7 @@ export function FeatureShowcase() {
         </p>
       </div>
 
-      <div className="mx-auto flex max-w-5xl flex-col gap-24 px-6 lg:gap-32 lg:px-12">
+      <div className="mx-auto flex max-w-5xl flex-col gap-16 px-6 sm:gap-24 lg:gap-32 lg:px-12">
         {features.map((feature, i) => (
           <FeaturePanel key={feature.number} feature={feature} reversed={i % 2 === 1} />
         ))}
@@ -245,7 +245,7 @@ function FeaturePanel({ feature, reversed }: { feature: Feature; reversed: boole
       </div>
 
       {/* Flip card */}
-      <div className={`mx-auto w-full max-w-sm sm:max-w-md ${reversed ? "lg:[direction:ltr]" : ""}`}>
+      <div className={`mx-auto w-full max-w-sm sm:max-w-md ${reversed ? "lg:[direction:ltr]" : ""}`} style={{ isolation: "isolate" }}>
         <FlipCard feature={feature} />
       </div>
     </div>
@@ -253,17 +253,28 @@ function FeaturePanel({ feature, reversed }: { feature: Feature; reversed: boole
 }
 
 function FlipCard({ feature }: { feature: Feature }) {
+  const [flipped, setFlipped] = useState(false);
+
   return (
     <div
-      className="flip-card panel-crt cursor-pointer"
+      className="flip-card panel-crt relative z-[1] cursor-pointer"
       style={{ perspective: "1200px" }}
+      onClick={(e) => {
+        if ((e.target as HTMLElement).closest("a")) return;
+        setFlipped((f) => !f);
+      }}
     >
-      <div className="flip-card-inner relative w-full transition-transform duration-500 ease-out [transform-style:preserve-3d]">
+      <div
+        className="flip-card-inner relative w-full transition-transform duration-500 ease-out [transform-style:preserve-3d]"
+        style={flipped ? { transform: "rotateY(180deg)" } : undefined}
+      >
         {/* Front — ASCII art */}
         <div
           className="flip-card-front rounded-lg p-2"
           style={{
             backfaceVisibility: "hidden",
+            WebkitBackfaceVisibility: "hidden",
+            pointerEvents: flipped ? "none" : undefined,
             backgroundColor: "oklch(0.82 0.02 75)",
             boxShadow:
               "0 4px 16px oklch(0.15 0.01 55 / 15%), inset 0 1px 0 oklch(0.95 0.01 80 / 40%)",
@@ -305,6 +316,7 @@ function FlipCard({ feature }: { feature: Feature }) {
           className="flip-card-back absolute inset-0 flex flex-col items-center justify-center rounded-lg p-6"
           style={{
             backfaceVisibility: "hidden",
+            WebkitBackfaceVisibility: "hidden",
             transform: "rotateY(180deg)",
             backgroundColor: "var(--landing-crt-bg)",
             boxShadow:
@@ -395,9 +407,9 @@ function AnimatedArt({ lines }: { lines: string[] }) {
   return (
     <pre
       ref={preRef}
-      className="text-[10px] sm:text-[13px]"
       style={{
         fontFamily: "'Menlo', 'Consolas', 'DejaVu Sans Mono', monospace",
+        fontSize: "clamp(7px, 2.5vw, 13px)",
         color: "var(--landing-phosphor)",
         textShadow: "0 0 8px oklch(0.75 0.18 80 / 40%)",
         opacity: 0.8,

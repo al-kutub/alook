@@ -635,7 +635,7 @@ export const EmailNotifyRequestSchema = z.object({
   r2Key: z.string().min(1),
   from: z.string().min(1),
   to: z.string().optional(),
-  subject: z.string().min(1),
+  subject: z.string(),
   isWhitelisted: z.boolean(),
   forwarded: z.boolean().optional().default(false),
   messageId: z.string().optional().default(""),
@@ -766,6 +766,30 @@ export const WorkspaceFileReportSchema = z.object({
   path: z.string(),
 });
 export type WorkspaceFileReport = z.infer<typeof WorkspaceFileReportSchema>;
+
+// ---------------------------------------------------------------------------
+// Workspace skill browsing (V2 — D1 cache)
+// ---------------------------------------------------------------------------
+
+export const SkillEntrySchema = z.object({
+  name: z.string(),
+  description: z.string(),
+  isGlobal: z.boolean().optional(),
+});
+export type SkillEntry = z.infer<typeof SkillEntrySchema>;
+
+const SkillItemSchema = z.object({
+  name: z.string(),
+  description: z.string(),
+});
+
+export const SkillSyncRequestSchema = z.object({
+  scope: z.enum(["global", "agent"]),
+  agent_id: z.string().min(1).optional(),
+  runtime: z.enum(["claude", "codex", "opencode"]),
+  skills: z.array(SkillItemSchema),
+});
+export type SkillSyncRequest = z.infer<typeof SkillSyncRequestSchema>;
 
 // ---------------------------------------------------------------------------
 // Studio onboarding

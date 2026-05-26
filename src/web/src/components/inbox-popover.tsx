@@ -109,6 +109,7 @@ export function InboxPopover({
             <TooltipTrigger render={
               <button
                 type="button"
+                data-pet-target-id="inbox"
                 className={cn(
                   "relative flex items-center justify-center size-10 rounded-xl transition-colors duration-200 cursor-pointer",
                   "text-muted-foreground hover:text-foreground hover:bg-accent",

@@ -1090,6 +1090,12 @@ export const requestWorkspaceBrowse = (
     },
   );
 
+// Skill browsing
+export const getAgentSkills = (agentId: string, workspaceId: string) =>
+  apiFetch<{ skills: { name: string; description: string; isGlobal?: boolean }[] }>(
+    `/api/agents/${agentId}/skills${wsQuery(workspaceId)}`,
+  );
+
 // Meetings
 export const listMeetings = (agentId: string, workspaceId: string) =>
   apiFetch<MeetingSession[]>(`/api/agents/${agentId}/meetings${wsQuery(workspaceId)}`);

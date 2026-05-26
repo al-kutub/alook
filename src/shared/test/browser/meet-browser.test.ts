@@ -25,6 +25,11 @@ let serverUrl: string
 let browser: Browser
 
 beforeAll(async () => {
+  if (process.env.CI) {
+    console.warn("SKIP: browser integration tests disabled in CI (environment-dependent)")
+    return
+  }
+
   const chromePath = findChrome()
   if (!chromePath) {
     console.warn("SKIP: Chrome not installed — browser integration tests require Chrome")

@@ -31,10 +31,11 @@ import {
   listFlaggedMessageIds,
   flagMessage as apiFlagMessage,
   unflagMessage as apiUnflagMessage,
+  getAgentSkills,
 } from "@/lib/api";
 import { appendCachedMessage, getCachedMessages, getCachedMessagesBefore, getCacheMeta, mergeCachedMessages } from "@/lib/chat-cache";
 import type { PreviousConversation, TraceTask } from "@/lib/api";
-import type { Artifact, Conversation, Issue, IssueComment, Message, TaskApi as Task, TaskMessage, WsMessage } from "@alook/shared";
+import type { Artifact, Conversation, Issue, IssueComment, Message, SkillEntry, TaskApi as Task, TaskMessage, WsMessage } from "@alook/shared";
 import { useAgentContext } from "@/contexts/agent-context";
 import { useInboxCount } from "@/contexts/inbox-count-context";
 import { useFlagCount } from "@/contexts/flag-count-context";
@@ -43,11 +44,12 @@ import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
-import { ArrowUp, BedDouble, Box, FileText, Loader2, Mail, MessageSquareQuote, Mic, Paperclip, Square, X } from "lucide-react";
-import { useSpeechRecognition } from "@/hooks/use-speech-recognition";
+import { ArrowUp, BedDouble, Box, FileText, Loader2, Mail, MessageSquareQuote, Paperclip, Square, X } from "lucide-react";
 import { useCachedMessages } from "@/hooks/use-cached-messages";
 import { useMentionPopup } from "@/hooks/use-mention-popup";
 import { MentionPopup } from "@/components/agent-chat/mention-popup";
+import { useSlashCommand } from "@/hooks/use-slash-command";
+import { SlashCommandPopup } from "@/components/agent-chat/slash-command-popup";
 import { highlightMentions } from "@/lib/highlight-mentions";
 import { ArtifactSheet, formatSize } from "@/components/agent-chat/artifact-sheet";
 import { EmailEventSheet } from "@/components/agent-chat/email-event-sheet";
@@ -368,7 +370,13 @@ export function AgentChatView({
   const [renderNow] = useState(() => Date.now());
 
   const [pendingFilesByMessage, setPendingFilesByMessage] = useState<Map<string, File[]>>(() => new Map());
-  const [quotedText, setQuotedText] = useState<string | null>(null);
+  const [quotedText, setQuotedText] = useState<string | null>(() => {
+    if (typeof window === "undefined") return null;
+    try {
+      const meta = JSON.parse(localStorage.getItem(`chat-draft-meta:${agentId}:${targetConvId ?? 'default'}`) ?? "null");
+      return meta?.quote ?? null;
+    } catch { return null; }
+  });
   const [selectionPopup, setSelectionPopup] = useState<{ text: string; x: number; y: number } | null>(null);
   const [flaggedIds, setFlaggedIds] = useState<Set<string>>(new Set());
   const flaggedIdsRef = useRef(flaggedIds);
@@ -384,10 +392,6 @@ export function AgentChatView({
     setChannelAgentId(agentId);
   }, [agentId, setChannelAgentId]);
 
-  const handleSpeechResult = useCallback((text: string) => {
-    setInput((prev) => (prev ? prev + " " + text : text));
-  }, []);
-  const { listening, supported: speechSupported, toggle: toggleSpeech } = useSpeechRecognition(handleSpeechResult);
 
   const agentArtifacts = useMemo(() => artifacts.filter((a) => a.source === "agent"), [artifacts]);
 
@@ -453,6 +457,43 @@ export function AgentChatView({
     onInputChange: setInput,
   });
 
+  // Slash command skills — fetch from D1 on mount
+  const [agentSkills, setAgentSkills] = useState<SkillEntry[]>([]);
+  const skillsFetchedRef = useRef(false);
+  const draftMetaRestoredRef = useRef(false);
+
+  useEffect(() => {
+    if (skillsFetchedRef.current) return;
+    skillsFetchedRef.current = true;
+    getAgentSkills(agentId, workspaceId)
+      .then((res) => setAgentSkills(res.skills as SkillEntry[]))
+      .catch(() => {});
+  }, [agentId, workspaceId]);
+
+  const [initialActiveSkill] = useState<SkillEntry | null>(() => {
+    if (typeof window === "undefined") return null;
+    try {
+      const meta = JSON.parse(localStorage.getItem(`chat-draft-meta:${agentId}:${targetConvId ?? 'default'}`) ?? "null");
+      return meta?.skill ?? null;
+    } catch { return null; }
+  });
+
+  const slashCommand = useSlashCommand({
+    input,
+    caretIndex,
+    textareaRef,
+    skills: agentSkills,
+    onInputChange: setInput,
+    initialActiveSkill,
+  });
+
+  useEffect(() => {
+    if (agentSkills.length === 0 || !slashCommand.activeSkill) return;
+    const exists = agentSkills.some(s => s.name === slashCommand.activeSkill!.name);
+    if (!exists) slashCommand.setActiveSkill(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- intentionally omits slashCommand; only re-validate when the skills list itself changes
+  }, [agentSkills]);
+
   useEffect(() => {
     const key = `chat-draft:${agentId}:${targetConvId ?? 'default'}`;
     if (input) {
@@ -461,6 +502,23 @@ export function AgentChatView({
       localStorage.removeItem(key);
     }
   }, [input, agentId, targetConvId]);
+
+  useEffect(() => {
+    if (!draftMetaRestoredRef.current) return;
+    const key = `chat-draft-meta:${agentId}:${targetConvId ?? 'default'}`;
+    const meta: { skill?: { name: string; description: string } | null; quote?: string | null } = {};
+    if (slashCommand.activeSkill) {
+      meta.skill = { name: slashCommand.activeSkill.name, description: slashCommand.activeSkill.description };
+    }
+    if (quotedText) {
+      meta.quote = quotedText;
+    }
+    if (meta.skill || meta.quote) {
+      localStorage.setItem(key, JSON.stringify(meta));
+    } else {
+      localStorage.removeItem(key);
+    }
+  }, [slashCommand.activeSkill, quotedText, agentId, targetConvId]);
 
   useEffect(() => {
     if (!sending) {
@@ -497,6 +555,21 @@ export function AgentChatView({
     setHasMoreConversations(false);
     oldestConversationCursorRef.current = null;
     setInput(localStorage.getItem(`chat-draft:${agentId}:${targetConvId ?? 'default'}`) ?? "");
+    const metaRaw = localStorage.getItem(`chat-draft-meta:${agentId}:${targetConvId ?? 'default'}`);
+    if (metaRaw) {
+      try {
+        const meta = JSON.parse(metaRaw);
+        setQuotedText(meta.quote ?? null);
+        slashCommand.setActiveSkill(meta.skill ? (meta.skill as SkillEntry) : null);
+      } catch {
+        setQuotedText(null);
+        slashCommand.setActiveSkill(null);
+      }
+    } else {
+      setQuotedText(null);
+      slashCommand.setActiveSkill(null);
+    }
+    draftMetaRestoredRef.current = true;
     setMessages([]);
     async function load() {
       let hasCachedMessages = false;
@@ -1365,14 +1438,20 @@ export function AgentChatView({
     }
 
     // Prepend quoted text as blockquote if present
-    const content = quotedText
+    let content = quotedText
       ? `> ${quotedText.split("\n").join("\n> ")}\n\n${rawContent}`
       : rawContent;
+
+    // Prepend skill instruction if active
+    if (slashCommand.activeSkill) {
+      content = `/${slashCommand.activeSkill.name} ${content}`;
+    }
 
     const filesToSend = [...pendingFiles];
     setInput("");
     setPendingFiles([]);
     setQuotedText(null);
+    slashCommand.clearActiveSkill();
     setSending(true);
 
     const taskActive = !!activeTask && !["completed", "failed", "cancelled", "superseded"].includes(activeTask.status);
@@ -1631,6 +1710,7 @@ export function AgentChatView({
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (mentionPopup.handleMentionKeyDown(e)) return;
+    if (slashCommand.handleSlashKeyDown(e)) return;
     if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
       e.preventDefault();
       handleSend();
@@ -1860,6 +1940,26 @@ export function AgentChatView({
                 <p className="text-sm text-muted-foreground font-medium">Drop files here</p>
               </div>
             )}
+            {slashCommand.activeSkill && (
+              <div className="flex items-center gap-2 px-3.5 pt-2.5 pb-1 border-b border-border/50">
+                <div className="flex-1 min-w-0 flex items-center gap-2">
+                  <span className="shrink-0 text-xs font-medium text-primary">/{slashCommand.activeSkill.name}</span>
+                  {slashCommand.activeSkill.isGlobal && (
+                    <span className="text-[10px] font-medium text-muted-foreground bg-muted rounded px-1 py-0.5">Global</span>
+                  )}
+                  <span className="text-xs text-muted-foreground truncate">
+                    {slashCommand.activeSkill.description}
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={slashCommand.clearActiveSkill}
+                  className="shrink-0 p-0.5 rounded-sm hover:bg-muted-foreground/20 transition-colors text-muted-foreground"
+                >
+                  <X className="size-3.5" />
+                </button>
+              </div>
+            )}
             {quotedText && (
               <div className="flex items-center gap-2 px-3.5 pt-2.5 pb-1 border-b border-border/50">
                 <div className="flex-1 min-w-0 flex items-start gap-2">
@@ -1885,6 +1985,13 @@ export function AgentChatView({
               onSelect={mentionPopup.selectAgent}
               anchorPos={mentionPopup.anchorPos}
             />
+            <SlashCommandPopup
+              isOpen={slashCommand.isOpen}
+              skills={slashCommand.skills}
+              selectedIndex={slashCommand.selectedIndex}
+              onSelect={slashCommand.selectSkill}
+              anchorPos={slashCommand.anchorPos}
+            />
             <div className="relative">
               <div
                 aria-hidden
@@ -1904,6 +2011,7 @@ export function AgentChatView({
               <textarea
                 ref={textareaRef}
                 value={input}
+                enterKeyHint="send"
                 onChange={(e) => {
                   setInput(e.target.value);
                   setCaretIndex(e.target.selectionStart);
@@ -1922,7 +2030,7 @@ export function AgentChatView({
                   const backdrop = (e.target as HTMLTextAreaElement).previousElementSibling;
                   if (backdrop) backdrop.scrollTop = (e.target as HTMLTextAreaElement).scrollTop;
                 }}
-                placeholder={isTaskActive ? "Type a follow-up..." : "Type a message..."}
+                placeholder={isTaskActive ? "Type a follow-up..." : "Type a message or / for skills..."}
                 rows={1}
                 disabled={sending}
                 className={cn(
@@ -2025,28 +2133,6 @@ export function AgentChatView({
                   </TooltipTrigger>
                   <TooltipContent side="top">Attach files</TooltipContent>
                 </Tooltip>
-                {speechSupported && (
-                  <Tooltip>
-                    <TooltipTrigger render={
-                      <Button
-                        variant="ghost"
-                        size="icon-sm"
-                        onPointerDown={(e) => e.preventDefault()}
-                        onClick={toggleSpeech}
-                        disabled={sending}
-                        className={cn(
-                          "rounded-lg transition-colors duration-200",
-                          listening
-                            ? "text-red-500 hover:text-red-600 bg-red-500/10"
-                            : "text-muted-foreground/60 hover:text-foreground"
-                        )}
-                      />
-                    }>
-                      <Mic className={cn("size-3.5", listening && "animate-pulse")} />
-                    </TooltipTrigger>
-                    <TooltipContent side="top">{listening ? "Stop recording" : "Voice input"}</TooltipContent>
-                  </Tooltip>
-                )}
                 {isTaskActive && !input.trim() && !sending ? (
                   <Tooltip>
                     <TooltipTrigger render={

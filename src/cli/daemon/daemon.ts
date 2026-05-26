@@ -22,6 +22,7 @@ import {
 } from "./execenv/steering.js";
 import { TASK_TYPES } from "@alook/shared";
 import { readDirectoryTree, readFileContent, validatePath } from "./workspace-files.js";
+import { startSkillScanner, stopSkillScanner } from "./skill-scanner.js";
 import { resolveLoginShellEnv } from "../lib/shell-env.js";
 import { existsSync, mkdirSync, openSync, closeSync, readdirSync, statSync, unlinkSync } from "fs";
 import { readdir, readFile, unlink, stat as fsStat } from "fs/promises";
@@ -452,6 +453,7 @@ export async function startDaemon(
           }
         }
 
+
         // Spawn meeting bots from merged poll response
         if (meetings) {
           for (const m of meetings) {
@@ -538,6 +540,7 @@ export async function startDaemon(
         }
         break;
       }
+
 
       case "daemon.meetings":
         for (const m of msg.meetings) {
@@ -641,6 +644,17 @@ export async function startDaemon(
   };
   const sweepTimer = setInterval(sweepTick, config.sweepInterval);
 
+  // --- Skill scanner: scans global + agent skills every 60s ---
+  startSkillScanner(client, {
+    workspacesRoot: config.workspacesRoot,
+    workspaces: workspaces.map((ws) => ({
+      workspaceId: ws.id,
+      token: ws.token,
+      agentIds: ws.agent_ids ?? [],
+    })),
+    runtimes: providers.map((p) => p.type as "claude" | "codex" | "opencode"),
+  }, 60_000);
+
   let shuttingDown = false;
   let restartRequested = false;
 
@@ -656,6 +670,7 @@ export async function startDaemon(
     clearInterval(pollTimer);
     clearInterval(heartbeatTimer);
     clearInterval(sweepTimer);
+    stopSkillScanner();
     wsClient?.close();
 
     const shutdownMs = restartRequested ? 30000 : (Number(process.env.ALOOK_SHUTDOWN_TIMEOUT_MS) || 5000);

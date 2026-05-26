@@ -13,8 +13,10 @@ export class WebSocketDurableObject extends DurableObject<Env> {
 
     if (url.pathname === "/broadcast" && request.method === "POST") {
       const body = await request.text()
-      this.broadcast(body)
-      return new Response("ok")
+      const sent = this.broadcast(body)
+      return new Response(JSON.stringify({ sent }), {
+        headers: { "Content-Type": "application/json" },
+      })
     }
 
     if (request.headers.get("Upgrade") !== "websocket") {
@@ -61,7 +63,11 @@ export class WebSocketDurableObject extends DurableObject<Env> {
         return
       }
 
-      const userId = await this.validateToken(msg.token!)
+      if (!msg.token) {
+        ws.close(1008, "Unauthorized")
+        return
+      }
+      const userId = await this.validateToken(msg.token)
       if (!userId) {
         log.warn("websocket auth failed")
         ws.close(1008, "Unauthorized")
@@ -91,13 +97,16 @@ export class WebSocketDurableObject extends DurableObject<Env> {
     try { ws.close(1011, "Internal error") } catch {}
   }
 
-  private broadcast(message: string): void {
+  private broadcast(message: string): number {
+    let sent = 0
     for (const ws of this.ctx.getWebSockets()) {
       const state = ws.deserializeAttachment() as ConnectionState
       if (state.authenticated && ws.readyState === WebSocket.OPEN) {
         ws.send(message)
+        sent++
       }
     }
+    return sent
   }
 
   private async validateToken(token: string): Promise<string | null> {

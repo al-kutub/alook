@@ -116,7 +116,7 @@ describe("POST /api/daemon/register", () => {
     expect(mockUpsertAgentRuntime).toHaveBeenCalledTimes(1);
   });
 
-  it("broadcasts runtime.registered after upserts", async () => {
+  it("broadcasts runtime.registered and runtime.status after upserts", async () => {
     const POST = await loadRoute(authCtx);
 
     mockGetMember.mockResolvedValue({ userId: "u1", workspaceId: "w1" });
@@ -126,12 +126,18 @@ describe("POST /api/daemon/register", () => {
 
     await POST(makeReq(validBody));
 
-    expect(mockBroadcastToUser).toHaveBeenCalledTimes(1);
+    expect(mockBroadcastToUser).toHaveBeenCalledTimes(2);
     expect(mockBroadcastToUser).toHaveBeenCalledWith("u1", {
       type: "runtime.registered",
       daemonId: "d1",
       hostname: "MyMachine",
       workspaceId: "w1",
+    });
+    expect(mockBroadcastToUser).toHaveBeenCalledWith("u1", {
+      type: "runtime.status",
+      daemonId: "d1",
+      workspaceId: "w1",
+      status: "online",
     });
   });
 

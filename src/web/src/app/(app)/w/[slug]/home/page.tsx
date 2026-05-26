@@ -80,6 +80,7 @@ function AgentCanvas({ onAgentClick }: { onAgentClick?: (agent: Agent) => void }
   const { agents, runtimes, loading, activeTaskCounts, agentLinks } = useAgentContext();
   const { slug, workspaceId } = useWorkspace();
   const { zoomIn, zoomOut, fitView } = useReactFlow();
+  const canvasRef = useRef<HTMLDivElement>(null);
 
   const [nodes, setNodes] = useState<Node[]>([]);
   const [edges, setEdges] = useState<Edge[]>([]);
@@ -345,7 +346,7 @@ function AgentCanvas({ onAgentClick }: { onAgentClick?: (agent: Agent) => void }
   );
 
   return (
-    <div className="flex-1 relative">
+    <div ref={canvasRef} className="flex-1 relative">
       <ReactFlow
         nodes={nodes}
         edges={edges}
@@ -370,7 +371,7 @@ function AgentCanvas({ onAgentClick }: { onAgentClick?: (agent: Agent) => void }
 
       {/* Custom floating toolbar */}
       <div
-        className="absolute bottom-4 left-4 bg-background/80 backdrop-blur-sm rounded-lg ring-1 ring-foreground/5 p-1 flex gap-0.5 animate-[fade-up_300ms_ease-out_both]"
+        className="absolute bottom-4 left-4 z-40 bg-background/80 backdrop-blur-sm rounded-lg ring-1 ring-foreground/5 p-1 flex gap-0.5 animate-[fade-up_300ms_ease-out_both]"
         style={{ animationDelay: "200ms" }}
       >
         <button
@@ -405,7 +406,7 @@ function AgentCanvas({ onAgentClick }: { onAgentClick?: (agent: Agent) => void }
 
       {/* No-links hint */}
       {showHint && (
-        <div className="absolute bottom-14 left-4 text-xs text-muted-foreground bg-background/80 backdrop-blur-sm rounded-md px-3 py-1.5 ring-1 ring-foreground/5">
+        <div className="absolute bottom-14 left-4 z-40 text-xs text-muted-foreground bg-background/80 backdrop-blur-sm rounded-md px-3 py-1.5 ring-1 ring-foreground/5">
           Drag between agent handles to create relationships.
         </div>
       )}
@@ -430,7 +431,7 @@ function AgentCanvas({ onAgentClick }: { onAgentClick?: (agent: Agent) => void }
           render={
             <button
               type="button"
-              className="absolute top-4 right-4 size-8 rounded-lg bg-background/80 backdrop-blur-sm ring-1 ring-foreground/5 flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-accent transition-colors animate-[fade-up_300ms_ease-out_both]"
+              className="absolute top-4 right-4 z-40 size-8 rounded-lg bg-background/80 backdrop-blur-sm ring-1 ring-foreground/5 flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-accent transition-colors animate-[fade-up_300ms_ease-out_both]"
               style={{ animationDelay: "200ms" }}
               onClick={() => router.push(`/w/${slug}/agents/new`)}
             />

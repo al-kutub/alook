@@ -371,7 +371,7 @@ export class TaskService {
     if (!cancelled) return null;
 
     if (activeTask.status === "dispatched" || activeTask.status === "running") {
-      await taskQueries.createTask(this.db, {
+      const killTask = await taskQueries.createTask(this.db, {
         agentId: activeTask.agentId,
         runtimeId: activeTask.runtimeId,
         workspaceId,
@@ -380,6 +380,16 @@ export class TaskService {
         type: TASK_TYPES.KILL_TASK,
         context: { target_task_id: activeTask.id },
       });
+
+      const runtime = await queries.runtime.getAgentRuntime(this.db, activeTask.runtimeId);
+      if (runtime) {
+        broadcastToDaemon(runtime.daemonId, {
+          type: "daemon.kill",
+          workspaceId,
+          taskId: killTask.id,
+          targetTaskId: activeTask.id,
+        }).catch(() => {});
+      }
     }
 
     await messageQueries.createMessage(this.db, {
@@ -496,10 +506,13 @@ export class TaskService {
     }
 
     try {
-      await broadcastToDaemon(runtime.daemonId, {
+      const { sent } = await broadcastToDaemon(runtime.daemonId, {
         type: "daemon.tasks",
         tasks: payloads,
       });
+      if (sent === 0) {
+        await taskQueries.revertDispatchedToQueued(this.db, task.id, workspaceId);
+      }
     } catch {
       await taskQueries.revertDispatchedToQueued(this.db, task.id, workspaceId);
     }

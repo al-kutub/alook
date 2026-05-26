@@ -6,6 +6,11 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const contentDir = join(__dirname, "..", "src", "content");
 const publicDir = join(__dirname, "..", "public");
 
+if (!existsSync(contentDir)) {
+  console.log("✓ Blog asset validation skipped (no content directory).");
+  process.exit(0);
+}
+
 const errors: string[] = [];
 
 const mdxFiles = readdirSync(contentDir).filter((f) => f.endsWith(".mdx"));

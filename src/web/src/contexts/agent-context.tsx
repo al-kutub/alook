@@ -73,6 +73,10 @@ export function useAgentContext() {
   return ctx;
 }
 
+export function useAgentContextSafe() {
+  return useContext(AgentContext);
+}
+
 export function AgentProvider({
   workspaceId,
   children,

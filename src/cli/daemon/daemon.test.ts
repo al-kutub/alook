@@ -149,6 +149,9 @@ vi.mock("fs", () => ({
   readdirSync: (...args: any[]) => mockReaddirSync(...args),
   statSync: (...args: any[]) => mockStatSync(...args),
   unlinkSync: (...args: any[]) => mockUnlinkSync(...args),
+  realpathSync: vi.fn((p: string) => p),
+  readFileSync: vi.fn(() => ""),
+  writeFileSync: vi.fn(),
 }));
 
 const mockReaddir = vi.fn(async () => [] as string[]);
@@ -586,7 +589,7 @@ describe("daemon shutdown", () => {
   it("clears poll interval before calling deregister", async () => {
     await startDaemon();
 
-    expect(intervalTimers.length).toBe(3); // pollTimer + heartbeatTimer + sweepTimer
+    expect(intervalTimers.length).toBe(4); // pollTimer + heartbeatTimer + sweepTimer + skillScannerTimer
     const pollTimer = intervalTimers[0];
 
     const deregisterMock = mockClientInstance.deregister;
@@ -609,7 +612,7 @@ describe("daemon shutdown", () => {
     await shutdownHandler!();
 
     expect(clearedTimers).toContain(pollTimer);
-    expect(deregisterCalledAt).toBe(3); // After clearing all 3 timers (poll + heartbeat + sweep)
+    expect(deregisterCalledAt).toBe(4); // After clearing all 4 timers (poll + heartbeat + sweep + skillScanner)
   });
 
   it("deregisters each workspace with correct token on shutdown", async () => {
