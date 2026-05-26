@@ -76,17 +76,16 @@ export function StudioOnboardingClient({
   // WebSocket for runtime registration events
   const handleWsMessage = useCallback((msg: WsMessage) => {
     const currentWsId = workspaceIdRef.current;
-    const extra = msg as WsMessage & { workspaceId?: string; payload?: { status?: string } };
     if (msg.type === "runtime.registered") {
       setMachineRegistered(true);
-      const eventWsId = extra.workspaceId;
+      const eventWsId = msg.workspaceId;
       if (eventWsId && !currentWsId) {
         setWorkspaceId(eventWsId);
         listRuntimes(eventWsId).then(setRuntimes).catch(() => {});
       } else if (currentWsId) {
         listRuntimes(currentWsId).then(setRuntimes).catch(() => {});
       }
-    } else if (msg.type === "runtime.status" && extra.payload?.status === "online") {
+    } else if (msg.type === "runtime.status" && msg.status === "online") {
       setMachineRegistered(true);
       const wsId = workspaceIdRef.current;
       if (wsId) {
