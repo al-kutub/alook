@@ -35,24 +35,21 @@ export async function POST(req: NextRequest) {
     return writeJSON({ error: "token already used" }, 409);
   }
 
-  // Resolve workspace: use token's workspace, find existing, or create new
+  // Resolve workspace: use token's workspace or create new
+  // Never reuse an existing workspace — if the token has no workspace_id,
+  // the user explicitly triggered "New workspace" or is a first-time user.
   let workspaceId = mt.workspaceId;
   if (!workspaceId) {
-    const existing = await queries.workspace.listWorkspaces(db, mt.userId);
-    if (existing.length > 0) {
-      workspaceId = existing[0].id;
-    } else {
-      const ws = await queries.workspace.createWorkspace(db, {
-        name: "Personal",
-        slug: generateWorkspaceSlug(),
-      });
-      await queries.member.createMember(db, {
-        workspaceId: ws.id,
-        userId: mt.userId,
-        role: "owner",
-      });
-      workspaceId = ws.id;
-    }
+    const ws = await queries.workspace.createWorkspace(db, {
+      name: "Personal",
+      slug: generateWorkspaceSlug(),
+    });
+    await queries.member.createMember(db, {
+      workspaceId: ws.id,
+      userId: mt.userId,
+      role: "owner",
+    });
+    workspaceId = ws.id;
   }
 
   // Use hostname as daemonId — must match what the daemon uses (os.hostname())
@@ -87,21 +84,19 @@ export async function POST(req: NextRequest) {
     invalidate(cacheKeys.allRuntimes(workspaceId)),
   ]);
 
-  // Notify the web UI
-  try {
-    await broadcastToUser(mt.userId, {
-      type: "runtime.registered",
-      daemonId,
-      hostname,
-      workspaceId,
-    });
-  } catch (err) {
+  // Notify the web UI (fire-and-forget to avoid blocking the response)
+  broadcastToUser(mt.userId, {
+    type: "runtime.registered",
+    daemonId,
+    hostname,
+    workspaceId,
+  }).catch((err) => {
     log.warn("broadcast after activation failed", {
       userId: mt.userId,
       daemonId,
       err: err instanceof Error ? err.message : String(err),
     });
-  }
+  });
 
   return writeJSON({
     daemon_id: daemonId,
