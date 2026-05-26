@@ -42,71 +42,6 @@ function generateUniqueHandleFromSet(
   return fallback;
 }
 
-type LinkInstruction = { fromLeader: string; toLeader: string };
-
-const SCENARIO_LINK_INSTRUCTIONS: Record<string, Record<string, LinkInstruction>> = {
-  "software-dev": {
-    researcher: {
-      fromLeader: "Delegate technical research: what to investigate (API, library, architecture pattern), what decision it informs, and what format/depth you need back. Include relevant file paths or code pointers.",
-      toLeader: "Report with: Status, technical summary, evidence (file paths, doc URLs, code snippets), recommendation for implementation, and confidence level. Flag anything you couldn't verify from source.",
-    },
-    engineer: {
-      fromLeader: "Delegate coding tasks with: clear requirement, relevant file paths, existing patterns to follow, expected behavior, and test expectations. Include context from researcher findings if relevant.",
-      toLeader: "Report with: Status, files changed with descriptions, test results (pass/fail), self-review findings, and concerns about correctness or edge cases.",
-    },
-  },
-  "content-research": {
-    researcher: {
-      fromLeader: "Delegate content research: topic/claim to investigate, target content format (article, report, social), depth needed (quick check vs. deep dive), and any specific sources to check.",
-      toLeader: "Report with: Status, key facts for the writer, organized source list (URL, date, reliability), verification gaps, angle suggestion, and per-claim confidence levels.",
-    },
-    assistant: {
-      fromLeader: "Delegate content operations: what content to format/publish, which platform, deadline, and any style/formatting requirements.",
-      toLeader: "Report with: Status, what was done (formatted, published, submitted), next step (awaiting review, scheduled for X), and any blockers (platform issues, access problems).",
-    },
-  },
-  "sales-outreach": {
-    researcher: {
-      fromLeader: "Delegate prospect research: target criteria, market/industry focus, what intelligence is needed, and how it will be used (outreach, pitch, proposal).",
-      toLeader: "Report with: Status, prospect list with context and suggested angles, market signals, source reliability, and confidence levels.",
-    },
-    assistant: {
-      fromLeader: "Delegate outreach tasks: who to contact, messaging angle, follow-up cadence, and desired outcome.",
-      toLeader: "Report with: Status, emails sent/scheduled, responses received, pipeline updates, and deals needing attention.",
-    },
-  },
-  "customer-support": {
-    assistant: {
-      fromLeader: "Delegate support tasks: customer issue summary, urgency level, prior interaction context, and resolution approach.",
-      toLeader: "Report with: Status, response drafted/sent, issue resolution status, follow-up schedule, and recurring patterns flagged.",
-    },
-  },
-};
-
-const DEFAULT_LINK_INSTRUCTIONS: Record<string, LinkInstruction> = {
-  researcher: {
-    fromLeader: "Delegate research tasks with: clear question, decision context, scope boundary, and expected output format.",
-    toLeader: "Report findings with: Status (DONE/BLOCKED/NEEDS_CONTEXT), summary, evidence with sources, recommendation, and confidence level.",
-  },
-  engineer: {
-    fromLeader: "Delegate coding tasks with: clear requirement, relevant context, and expected behavior.",
-    toLeader: "Report results with: Status (DONE/BLOCKED/NEEDS_CONTEXT), files changed, tests run + results, self-review findings, and concerns.",
-  },
-  assistant: {
-    fromLeader: "Delegate operational tasks with: action needed, target person/system, deadline, and tone guidance.",
-    toLeader: "Report results with: Status (DONE/BLOCKED/NEEDS_CONTEXT), action taken, next step, and escalation flags.",
-  },
-};
-
-function getLinkInstructions(scenario: string | undefined, role: string): LinkInstruction {
-  if (scenario && SCENARIO_LINK_INSTRUCTIONS[scenario]?.[role]) {
-    return SCENARIO_LINK_INSTRUCTIONS[scenario][role];
-  }
-  return DEFAULT_LINK_INSTRUCTIONS[role] || {
-    fromLeader: `Collaborate with this team member.`,
-    toLeader: `Report results back to the leader.`,
-  };
-}
 
 export const POST = withAuth(async (req: NextRequest, ctx) => {
   const ws = await withWorkspaceMember(req, ctx);
@@ -221,14 +156,19 @@ export const POST = withAuth(async (req: NextRequest, ctx) => {
   const createdLinks = [];
 
   for (const specialist of specialists) {
-    const instructions = getLinkInstructions(body.scenario, specialist.role);
+    const memberPayload = body.members.find((m) => m.name === specialist.name);
+    if (!memberPayload?.relationship) continue;
+
+    const leaderMention = `[@ id="${leaderAgent.id}" label="${leaderAgent.name}"]`;
+    const specMention = `[@ id="${specialist.id}" label="${specialist.name}"]`;
+    const linkText = `${leaderMention} → ${specMention}: ${memberPayload.relationship.leaderSees}\n\n${specMention} → ${leaderMention}: ${memberPayload.relationship.memberSees}`;
 
     try {
       const link = await queries.agentLink.create(db, {
         workspaceId: ws.workspaceId,
         sourceAgentId: leaderAgent.id,
         targetAgentId: specialist.id,
-        instruction: `${instructions.fromLeader}\n${instructions.toLeader}`,
+        instruction: linkText,
       });
       createdLinks.push(link);
     } catch {
