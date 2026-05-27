@@ -664,7 +664,7 @@ export function CalendarEventSheet({
       <PropertyRow icon={<RepeatIcon className="size-3.5" />}>
         {!repeatEnabled ? (
           <Select
-            value={null}
+            value=""
             onValueChange={(val) => {
               if (!val) return;
               if (val === "__custom__") {
