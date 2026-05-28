@@ -457,3 +457,133 @@ describe("task failure and retry", () => {
     expect(data.error).toBe("only failed tasks can be retried")
   })
 })
+
+describe("task progress reporting", () => {
+  let progressTaskId: string
+
+  beforeAll(async () => {
+    const convRes = await tokenRequest(
+      `/api/conversations?workspace_id=${seed.workspaceId}`,
+      seed.machineToken,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ agent_id: seed.agentId }),
+      },
+    )
+    const { id: convId } = await convRes.json() as { id: string }
+
+    const msgRes = await tokenRequest(
+      `/api/conversations/${convId}/messages?workspace_id=${seed.workspaceId}`,
+      seed.machineToken,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ content: "Progress test" }),
+      },
+    )
+    const msgData = await msgRes.json() as { task?: { id: string } | null }
+    if (msgData.task) {
+      progressTaskId = msgData.task.id
+    }
+
+    await tokenRequest(`/api/daemon/tasks/poll`, seed.machineToken, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ daemon_id: seed.daemonId, max_tasks: 1 }),
+    })
+    await tokenRequest(`/api/daemon/tasks/${progressTaskId}/start`, seed.machineToken, { method: "POST" })
+  })
+
+  it("POST /api/daemon/tasks/:id/progress returns ok", async () => {
+    const res = await tokenRequest(
+      `/api/daemon/tasks/${progressTaskId}/progress`,
+      seed.machineToken,
+      { method: "POST" },
+    )
+    expect(res.status).toBe(200)
+    const data = await res.json() as { status: string }
+    expect(data.status).toBe("ok")
+  })
+
+  it("rejects unauthenticated progress request", async () => {
+    const res = await fetch(
+      `${process.env.APP_URL || "http://localhost:3000"}/api/daemon/tasks/${progressTaskId}/progress`,
+      { method: "POST" },
+    )
+    expect(res.status).toBe(401)
+  })
+
+  it("cleanup: complete progress task", async () => {
+    await tokenRequest(`/api/daemon/tasks/${progressTaskId}/complete`, seed.machineToken, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ output: "done", session_id: "sess_progress" }),
+    })
+  })
+})
+
+describe("task supersede", () => {
+  let supersedeTaskId: string
+
+  beforeAll(async () => {
+    const convRes = await tokenRequest(
+      `/api/conversations?workspace_id=${seed.workspaceId}`,
+      seed.machineToken,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ agent_id: seed.agentId }),
+      },
+    )
+    const { id: convId } = await convRes.json() as { id: string }
+
+    const msgRes = await tokenRequest(
+      `/api/conversations/${convId}/messages?workspace_id=${seed.workspaceId}`,
+      seed.machineToken,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ content: "Supersede test" }),
+      },
+    )
+    const msgData = await msgRes.json() as { task?: { id: string } | null }
+    if (msgData.task) {
+      supersedeTaskId = msgData.task.id
+    }
+
+    // Keep polling until our specific task is dispatched
+    for (let attempt = 0; attempt < 5; attempt++) {
+      const pollRes = await tokenRequest(`/api/daemon/tasks/poll`, seed.machineToken, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ daemon_id: seed.daemonId, max_tasks: 10 }),
+      })
+      const pollData = await pollRes.json() as { tasks: Array<{ id: string }> }
+      if (pollData.tasks.some(t => t.id === supersedeTaskId)) break
+      await new Promise(r => setTimeout(r, 200))
+    }
+    await tokenRequest(`/api/daemon/tasks/${supersedeTaskId}/start`, seed.machineToken, { method: "POST" })
+  })
+
+  it("POST /api/daemon/tasks/:id/supersede marks task as superseded", async () => {
+    const res = await tokenRequest(
+      `/api/daemon/tasks/${supersedeTaskId}/supersede`,
+      seed.machineToken,
+      { method: "POST" },
+    )
+    expect(res.status).toBe(200)
+    const data = await res.json() as Record<string, unknown>
+    expect(data.status).toBe("superseded")
+    expect(data.id).toBe(supersedeTaskId)
+  })
+
+  it("superseding an already superseded task returns 400", async () => {
+    const res = await tokenRequest(
+      `/api/daemon/tasks/${supersedeTaskId}/supersede`,
+      seed.machineToken,
+      { method: "POST" },
+    )
+    expect(res.status).toBe(400)
+  })
+})
