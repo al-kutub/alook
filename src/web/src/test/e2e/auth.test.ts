@@ -1,7 +1,6 @@
 import { describe, it, expect, beforeAll } from "vitest"
 import { randomUUID } from "crypto"
-import { signUp, signIn, sessionRequest } from "@alook/test-utils"
-import { sql } from "@alook/test-utils"
+import { signUp, signIn, sessionRequest, sql } from "@alook/test-utils"
 
 const APP_URL = process.env.APP_URL ?? "http://localhost:3000"
 

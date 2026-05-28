@@ -1,9 +1,6 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest"
 import { randomUUID } from "crypto"
-import { seedTestData, cleanupTestData, type TestSeed } from "@alook/test-utils"
-import { tokenRequest } from "@alook/test-utils"
-import { sql, sqlQuery } from "@alook/test-utils"
-import { postEmail, postEmailRaw } from "@alook/test-utils"
+import { seedTestData, cleanupTestData, type TestSeed, tokenRequest, sql, sqlQuery, postEmail, postEmailRaw } from "@alook/test-utils"
 
 let seed: TestSeed
 

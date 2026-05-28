@@ -31,10 +31,9 @@ function getDb(): Database.Database {
   return _db
 }
 
-export function sql(query: string): string {
+export function sql(query: string): void {
   const db = getDb()
   db.exec(query)
-  return ""
 }
 
 export function sqlQuery<T = Record<string, unknown>>(query: string): T[] {
