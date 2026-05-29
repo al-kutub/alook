@@ -304,6 +304,10 @@
    ╰───────────────────────╯
 */
 
+.typewriter-wrapper {
+  container-type: size;
+}
+
 .typewriter-visual {
   position: relative;
   display: flex;
@@ -797,6 +801,20 @@
   .typewriter-scene {
     transform: scale(0.62) !important;
   }
+}
+
+/* Scale all hero content proportionally when container height is constrained */
+@container (max-height: 680px) {
+  .hero-scalable { zoom: 0.9; }
+}
+@container (max-height: 580px) {
+  .hero-scalable { zoom: 0.78; }
+}
+@container (max-height: 480px) {
+  .hero-scalable { zoom: 0.65; }
+}
+@container (max-height: 380px) {
+  .hero-scalable { zoom: 0.52; }
 }
 
 /* ── Sonner toast: close button only on hover ── */

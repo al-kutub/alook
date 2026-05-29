@@ -68,7 +68,7 @@ export function HeroSection({ isLoggedIn }: { isLoggedIn: boolean }) {
   return (
     <section
       ref={sectionRef}
-      className="hero-section relative flex min-h-screen items-center justify-center overflow-hidden"
+      className="hero-section relative flex h-screen items-center justify-center overflow-hidden"
       style={{ backgroundColor: "var(--landing-bg)" }}
     >
       {/* Paper noise */}
@@ -81,9 +81,9 @@ export function HeroSection({ isLoggedIn }: { isLoggedIn: boolean }) {
         }}
       />
 
-      <div className="hero-content relative z-10 mx-auto flex w-full max-w-4xl flex-col items-center px-4 sm:px-6">
+      <div className="hero-content relative z-10 mx-auto flex w-full max-w-4xl flex-col items-center px-4 sm:px-6 py-8 max-h-full">
         {/* Brand */}
-        <div className="hero-brand mb-6 flex items-center gap-1.5" style={{ opacity: 0 }}>
+        <div className="hero-brand mb-6 flex shrink-0 items-center gap-1.5" style={{ opacity: 0 }}>
           <Image src="/alook.svg" alt="Alook" width={32} height={32} />
           <span
             className="text-2xl tracking-tight"
@@ -97,8 +97,12 @@ export function HeroSection({ isLoggedIn }: { isLoggedIn: boolean }) {
           </span>
         </div>
 
+        {/* Scalable content zone — all content scales together on short viewports */}
+        <div className="typewriter-wrapper flex w-full shrink min-h-0 flex-col items-center" style={{ height: "clamp(192px, calc(100vh - 200px), 750px)" }}>
+        <div className="hero-scalable flex w-full flex-1 min-h-0 flex-col items-center">
+
         {/* Typewriter + Slogan wrapper */}
-        <div className="relative w-full h-105 sm:h-125 md:h-142.5">
+        <div className="relative w-full shrink min-h-0 flex-1">
           {/* Slogan — positioned at top of typewriter area */}
           <div className="absolute top-0 left-0 right-0 z-10 flex flex-col items-center pt-2">
             <h1
@@ -139,7 +143,7 @@ export function HeroSection({ isLoggedIn }: { isLoggedIn: boolean }) {
 
         {/* Clipboard copy widget */}
         <div
-          className="hero-clipboard relative mt-8 w-full max-w-lg cursor-pointer"
+          className="hero-clipboard relative mt-8 shrink-0 w-full max-w-lg cursor-pointer"
           style={{ opacity: 0 }}
           onClick={() => {
             navigator.clipboard.writeText(
@@ -222,7 +226,7 @@ export function HeroSection({ isLoggedIn }: { isLoggedIn: boolean }) {
         </div> */}
 
         {/* Community links */}
-        <div className="hero-providers mt-5 flex items-center justify-center gap-4" style={{ opacity: 0 }}>
+        <div className="hero-providers mt-5 shrink-0 flex items-center justify-center gap-4" style={{ opacity: 0 }}>
           <a
             href="https://github.com/alookai/alook"
             target="_blank"
@@ -262,7 +266,7 @@ export function HeroSection({ isLoggedIn }: { isLoggedIn: boolean }) {
         </div>
 
         {/* CTA */}
-        <div ref={ctaRef} className="mt-8 flex flex-wrap items-center justify-center gap-3" style={{ opacity: 0 }}>
+        <div ref={ctaRef} className="mt-8 shrink-0 flex flex-nowrap items-center justify-center gap-3" style={{ opacity: 0 }}>
           {/* <a
             href="https://github.com/alookai/alook"
             className="inline-flex items-center gap-2 px-6 py-2.5 text-sm transition-all duration-200 hover:opacity-80"
@@ -335,8 +339,11 @@ export function HeroSection({ isLoggedIn }: { isLoggedIn: boolean }) {
           </Link>
         </div>
 
+        </div>{/* end hero-scalable */}
+        </div>{/* end typewriter-wrapper */}
+
         <p
-          className="mt-4 sm:hidden text-center text-xs"
+          className="mt-4 shrink-0 sm:hidden text-center text-xs"
           style={{
             fontFamily: "var(--font-mono)",
             color: "var(--landing-text-muted)",
