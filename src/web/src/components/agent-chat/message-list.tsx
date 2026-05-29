@@ -261,7 +261,7 @@ export const MessageItem = memo(function MessageItem({
         );
       })() : !hasTaskStream ? (
         <div className={cn(
-          "group/msg flex flex-col justify-start min-w-0 overflow-hidden",
+          "group/msg flex flex-col justify-start min-w-0 overflow-x-clip",
           isFlagged && "bg-muted/30 rounded-lg px-2 -mx-2"
         )} data-message-id={msg.id} data-quote-source {...(msg.task_id ? { "data-task-id": msg.task_id } : {})}>
           {targetConvId && msg.role === "assistant" && msg.task_id && thinkingCount > 1 && (
