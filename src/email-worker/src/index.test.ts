@@ -589,6 +589,51 @@ describe("POST /send/agent", () => {
     expect(storedMime).toContain("Content-Transfer-Encoding: base64")
   })
 
+  it("fetches multiple attachments in parallel and skips missing objects", async () => {
+    mockGetAgent.mockResolvedValue({ id: "agent-1", workspaceId: "ws-1", emailHandle: "jarvis" })
+    const { env, send, put } = agentSendEnv()
+
+    const file1 = new TextEncoder().encode("content1")
+    const file2 = new TextEncoder().encode("content2")
+    const fetchOrder: string[] = []
+
+    ;((env.EMAIL_BUCKET as any).get as ReturnType<typeof vi.fn>) = vi.fn((key: string) => {
+      fetchOrder.push(key)
+      if (key === "emails/drafts/x/missing.txt") return Promise.resolve(null)
+      const content = key === "emails/drafts/x/a.txt" ? file1 : file2
+      return Promise.resolve({ arrayBuffer: () => Promise.resolve(content.buffer) })
+    })
+
+    const res = await handler.fetch(
+      makeAgentSendRequest({
+        agentId: "agent-1",
+        workspaceId: "ws-1",
+        to: "user@example.com",
+        subject: "Multi-attach",
+        htmlBody: "<p>Files</p>",
+        attachmentKeys: [
+          { key: "emails/drafts/x/a.txt", filename: "a.txt", contentType: "text/plain" },
+          { key: "emails/drafts/x/missing.txt", filename: "missing.txt", contentType: "text/plain" },
+          { key: "emails/drafts/x/b.txt", filename: "b.txt", contentType: "text/plain" },
+        ],
+      }),
+      env,
+    )
+
+    expect(res.status).toBe(200)
+    // All R2 fetches were initiated (parallel)
+    expect(fetchOrder).toHaveLength(3)
+    expect(fetchOrder).toContain("emails/drafts/x/a.txt")
+    expect(fetchOrder).toContain("emails/drafts/x/missing.txt")
+    expect(fetchOrder).toContain("emails/drafts/x/b.txt")
+
+    // Only non-null attachments included
+    const sendArg = send.mock.calls[0][0]
+    expect(sendArg.attachments).toHaveLength(2)
+    expect(sendArg.attachments[0].filename).toBe("a.txt")
+    expect(sendArg.attachments[1].filename).toBe("b.txt")
+  })
+
   it("returns 404 when agent not found in workspace", async () => {
     mockGetAgent.mockResolvedValue(null)
     const { env } = agentSendEnv()
