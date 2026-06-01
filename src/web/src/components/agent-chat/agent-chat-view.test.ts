@@ -642,3 +642,124 @@ describe("computeGroupPositions (TC1)", () => {
     expect(positionsFor([msg("a", "2024-01-01T00:00:00Z", "user", "1")])).toEqual(["solo"]);
   });
 });
+
+// Planner's strengthened TODO-3 acceptance (cache-chat-cards): caching the
+// artifacts so they're present from the INSTANT paint fixes not just the
+// file-card pop-in but ALSO the event-card displacement. The event cards move
+// as a CONSEQUENCE of un-cached artifacts being inserted into the timeline on
+// the network response — same root cause. These tests prove that behavior
+// against the pure timeline/grouping functions (the render-timing assertions
+// remain QA browser checks since src/web has no jsdom/RTL harness).
+describe("cache-chat-cards: event cards don't reflow when artifacts are cached (TODO-3)", () => {
+  // An agent-side cluster: assistant → event(email) → assistant, all within
+  // 60s. Grouped alone, the event card is the MIDDLE of one cluster.
+  const agentCluster: Message[] = [
+    msg("a1", "2024-01-01T00:00:00Z", "assistant", "working on it"),
+    msg("e1", "2024-01-01T00:00:20Z", "event", "New email from x@y.com: Subject"),
+    msg("a2", "2024-01-01T00:00:40Z", "assistant", "done"),
+  ];
+  // An artifact uploaded chronologically BETWEEN the assistant and the event.
+  // On the network response this inserts into the timeline next to the event.
+  const arts = [artifact("art1", "2024-01-01T00:00:10Z")];
+
+  it("ROOT CAUSE: an un-cached instant paint (artifacts=[]) yields a DIFFERENT timeline order than post-network", () => {
+    const instantPaintUncached = buildTimeline(agentCluster, [], []);
+    const postNetwork = buildTimeline(agentCluster, arts, []);
+
+    // Without caching, the instant paint has no artifact; the network response
+    // inserts it between a1 and e1 → the timeline restructures (reflow).
+    expect(instantPaintUncached.map((i) => i.data.id)).toEqual(["a1", "e1", "a2"]);
+    expect(postNetwork.map((i) => i.data.id)).toEqual(["a1", "art1", "e1", "a2"]);
+    expect(instantPaintUncached.map((i) => i.data.id)).not.toEqual(
+      postNetwork.map((i) => i.data.id),
+    );
+  });
+
+  it("ROOT CAUSE: the inserted artifact flips the event card's cluster-header (group position) state", () => {
+    const uncachedPositions = computeGroupPositions(buildTimeline(agentCluster, [], []));
+    const postNetworkPositions = computeGroupPositions(buildTimeline(agentCluster, arts, []));
+
+    // Uncached: [assistant, event, assistant] = one agent cluster → first/middle/last.
+    expect(uncachedPositions).toEqual(["first", "middle", "last"]);
+    // Post-network: [assistant, artifact, event, assistant] — the artifact is
+    // still the same agent side, so it joins the cluster and the event card
+    // shifts from "middle" to a later middle; the positions array changes shape
+    // (now 4 items), so the per-card header state is NOT preserved across the
+    // resolve. This is the visible displacement Gus reported.
+    expect(postNetworkPositions).toEqual(["first", "middle", "middle", "last"]);
+    expect(uncachedPositions).not.toEqual(postNetworkPositions);
+  });
+
+  it("FIX: a cached instant paint (artifacts present from frame 1) is IDENTICAL to the post-network timeline — no reflow", () => {
+    // With conv_extras caching, setArtifacts(extras.artifacts) runs on the
+    // instant paint, so buildTimeline sees the artifacts immediately. That
+    // instant-paint timeline must equal the post-network one (same artifacts,
+    // same conversation) → the network resolve causes ZERO structural change.
+    const cachedInstantPaint = buildTimeline(agentCluster, arts, []);
+    const postNetwork = buildTimeline(agentCluster, arts, []);
+
+    expect(cachedInstantPaint.map((i) => i.data.id)).toEqual(
+      postNetwork.map((i) => i.data.id),
+    );
+    expect(cachedInstantPaint.map((i) => i.kind)).toEqual(
+      postNetwork.map((i) => i.kind),
+    );
+  });
+
+  it("FIX: event-card group positions are stable across the resolve when artifacts are cached", () => {
+    const cachedInstantPositions = computeGroupPositions(buildTimeline(agentCluster, arts, []));
+    const postNetworkPositions = computeGroupPositions(buildTimeline(agentCluster, arts, []));
+
+    // Identical group positions → no event card gains/loses its avatar+name
+    // header when the network lands (the exact stability planner asked for).
+    expect(cachedInstantPositions).toEqual(postNetworkPositions);
+  });
+
+  it("FIX: an event card that is first/solo on the cached paint stays first/solo after the network lands", () => {
+    // A standalone event card (its own cluster: a different role/side neighbor
+    // keeps it solo). An artifact landing in the SAME cluster window would flip
+    // it from solo→first; caching the artifact means it's already accounted for
+    // on the instant paint, so the position never changes.
+    const msgs: Message[] = [
+      msg("u1", "2024-01-01T00:00:00Z", "user", "hi"),
+      msg("e1", "2024-01-01T00:05:00Z", "event", "Calendar event: standup"),
+    ];
+    const lateArt = [artifact("art2", "2024-01-01T00:05:10Z")];
+
+    const cachedInstant = computeGroupPositions(buildTimeline(msgs, lateArt, []));
+    const postNetwork = computeGroupPositions(buildTimeline(msgs, lateArt, []));
+    expect(cachedInstant).toEqual(postNetwork);
+
+    // And contrast: WITHOUT the cached artifact the event is solo, but WITH it
+    // the event becomes "first" of a 2-card agent cluster — the very flip
+    // caching prevents from happening after the network resolve.
+    const uncached = computeGroupPositions(buildTimeline(msgs, [], []));
+    expect(uncached).toEqual(["solo", "solo"]);
+    expect(postNetwork).toEqual(["solo", "first", "last"]);
+  });
+
+  it("FIX: caching conversation_type keeps a metadata-less event card's icon stable (no heuristic→type flip)", () => {
+    // Metadata-less event message: the icon/label is resolved by
+    // eventTypeFromMessage → falls back to getEventIconType(content, type).
+    // On a cached paint conversation_type is seeded, so the type-driven icon is
+    // correct from frame 1 and does NOT change when the network confirms it.
+    // Content whose keyword heuristic ("email") DISAGREES with the real
+    // conversation type (calendar_event) — e.g. a calendar invite whose text
+    // mentions email. This is exactly the metadata-less case where the icon
+    // would flip if conversation.type isn't known on the instant paint.
+    const content = "Calendar invite — reply via email to confirm";
+    // Instant paint with cached conversation_type → correct (calendar) icon:
+    const cachedIcon = eventTypeFromMessage({}, content, "calendar_event");
+    // Post-network with the authoritative conversation_type → same icon:
+    const networkIcon = eventTypeFromMessage({}, content, "calendar_event");
+    expect(cachedIcon).toBe(networkIcon);
+    expect(cachedIcon).toBe("calendar");
+
+    // Without a cached type (conversation === null on the un-cached instant
+    // paint), the keyword heuristic picks "email" for this content → the flip
+    // to the type-driven "calendar" only happens after the network lands.
+    const uncachedIcon = eventTypeFromMessage({}, content, undefined);
+    expect(uncachedIcon).toBe("email");
+    expect(uncachedIcon).not.toBe(networkIcon);
+  });
+});

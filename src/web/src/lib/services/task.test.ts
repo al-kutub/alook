@@ -332,7 +332,9 @@ describe("TaskService", () => {
   // ── completeTask ─────────────────────────────────────────────────
 
   describe("completeTask", () => {
-    it("creates assistant message from result.output", async () => {
+    it("does NOT create an assistant message or broadcast from result.output (A1)", async () => {
+      // A1: the agent owns its voice via `sync send-dm`. completeTask must no
+      // longer auto-extract the final output into a chat bubble.
       const task = {
         id: "t1",
         agentId: "a1",
@@ -351,12 +353,11 @@ describe("TaskService", () => {
         "sess-1"
       );
 
-      expect(messageQ.createMessage).toHaveBeenCalledWith({}, {
-        conversationId: "c1",
-        role: "assistant",
-        content: "Here is the answer",
-        taskId: "t1",
-      });
+      expect(messageQ.createMessage).not.toHaveBeenCalled();
+      expect(broadcastToUser).not.toHaveBeenCalled();
+      // lifecycle side-effects still run
+      expect(taskQ.completeTask).toHaveBeenCalled();
+      expect(agentQ.updateAgentStatus).toHaveBeenCalled();
     });
 
     it("does not create message when result has no output", async () => {

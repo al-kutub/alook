@@ -16,9 +16,41 @@ import {
   getLastOpenConversation,
   setLastOpenConversation,
   clearLastOpenForConversation,
+  getConvExtras,
+  setConvExtras,
+  clearConvExtras,
 } from "./chat-cache";
+import type { Artifact } from "@alook/shared";
 
 const WORKSPACE_ID = "ws_test";
+
+function makeArtifact(overrides: Partial<Artifact> = {}): Artifact {
+  return {
+    id: `art_${Math.random().toString(36).slice(2)}`,
+    conversation_id: "conv_1",
+    agent_id: "agent_a",
+    filename: "report.pdf",
+    content_type: "application/pdf",
+    size: 1024,
+    source: "agent",
+    created_at: new Date().toISOString(),
+    ...overrides,
+  };
+}
+
+function makeExtras(
+  overrides: Partial<Parameters<typeof setConvExtras>[1]> = {},
+): Parameters<typeof setConvExtras>[1] {
+  return {
+    artifacts: [makeArtifact()],
+    conversation_type: "agent_chat",
+    conversation_title: "My chat",
+    conversation_channel: "general",
+    conversation_created_at: "2024-01-01T00:00:00Z",
+    hasMoreArtifacts: false,
+    ...overrides,
+  };
+}
 
 function makeMessage(overrides: Partial<Message> = {}): Message {
   return {
@@ -307,6 +339,175 @@ describe("chat-cache", () => {
     });
   });
 
+  describe("conv_extras (card metadata)", () => {
+    it("set then get round-trips artifacts array + conversation metadata", async () => {
+      const arts = [
+        makeArtifact({ id: "a1", conversation_id: "conv_1" }),
+        makeArtifact({ id: "a2", conversation_id: "conv_1" }),
+      ];
+      await setConvExtras("conv_1", makeExtras({
+        artifacts: arts,
+        conversation_type: "email_notification",
+        conversation_title: "Re: bug",
+        conversation_channel: "inbox",
+        conversation_created_at: "2024-02-02T00:00:00Z",
+        hasMoreArtifacts: true,
+      }), WORKSPACE_ID);
+
+      const entry = await getConvExtras("conv_1", WORKSPACE_ID);
+      expect(entry).not.toBeNull();
+      expect(entry!.conversation_id).toBe("conv_1");
+      expect(entry!.artifacts.map((a) => a.id)).toEqual(["a1", "a2"]);
+      expect(entry!.conversation_type).toBe("email_notification");
+      expect(entry!.conversation_title).toBe("Re: bug");
+      expect(entry!.conversation_channel).toBe("inbox");
+      expect(entry!.conversation_created_at).toBe("2024-02-02T00:00:00Z");
+      expect(entry!.hasMoreArtifacts).toBe(true);
+      // updatedAt is stamped at write time.
+      expect(typeof entry!.updatedAt).toBe("number");
+    });
+
+    it("returns null for an unknown conversation", async () => {
+      await setConvExtras("conv_1", makeExtras(), WORKSPACE_ID);
+      expect(await getConvExtras("conv_other", WORKSPACE_ID)).toBeNull();
+    });
+
+    it("upserts — a second write replaces the row", async () => {
+      await setConvExtras("conv_1", makeExtras({
+        artifacts: [makeArtifact({ id: "a1" })],
+        conversation_type: "agent_chat",
+      }), WORKSPACE_ID);
+      await setConvExtras("conv_1", makeExtras({
+        artifacts: [makeArtifact({ id: "a2" }), makeArtifact({ id: "a3" })],
+        conversation_type: "calendar_event",
+      }), WORKSPACE_ID);
+
+      const entry = await getConvExtras("conv_1", WORKSPACE_ID);
+      expect(entry!.artifacts.map((a) => a.id)).toEqual(["a2", "a3"]);
+      expect(entry!.conversation_type).toBe("calendar_event");
+    });
+
+    it("clearConvExtras removes only the target row", async () => {
+      await setConvExtras("conv_1", makeExtras(), WORKSPACE_ID);
+      await setConvExtras("conv_2", makeExtras(), WORKSPACE_ID);
+
+      await clearConvExtras("conv_1", WORKSPACE_ID);
+
+      expect(await getConvExtras("conv_1", WORKSPACE_ID)).toBeNull();
+      expect(await getConvExtras("conv_2", WORKSPACE_ID)).not.toBeNull();
+    });
+
+    it("invalidateCache clears the conversation's conv_extras row", async () => {
+      await mergeCachedMessages("conv_1", [makeMessage({ id: "m1", conversation_id: "conv_1" })], false, WORKSPACE_ID);
+      await setConvExtras("conv_1", makeExtras(), WORKSPACE_ID);
+
+      await invalidateCache("conv_1", WORKSPACE_ID);
+
+      expect(await getConvExtras("conv_1", WORKSPACE_ID)).toBeNull();
+    });
+
+    it("evictLRU prunes conv_extras for evicted conversations", async () => {
+      const db = await openCacheDB(WORKSPACE_ID)!;
+      for (let i = 0; i < 5; i++) {
+        await db.put("messages", makeMessage({ id: `m_${i}`, conversation_id: `conv_${i}`, created_at: `2024-01-0${i + 1}T00:00:00Z` }));
+        await db.put("cache_meta", {
+          conversation_id: `conv_${i}`,
+          lastFetchedAt: Date.now(),
+          lastAccessedAt: i * 1000,
+          messageCount: 1,
+          newestMessageId: `m_${i}`,
+          hasMore: false,
+          serverMessageCount: 0,
+        });
+        await setConvExtras(`conv_${i}`, makeExtras(), WORKSPACE_ID);
+      }
+
+      await evictLRU(3);
+
+      // conv_0 + conv_1 (least recently accessed) are evicted → extras gone.
+      expect(await getConvExtras("conv_0", WORKSPACE_ID)).toBeNull();
+      expect(await getConvExtras("conv_1", WORKSPACE_ID)).toBeNull();
+      // The 3 survivors keep their extras.
+      expect(await getConvExtras("conv_2", WORKSPACE_ID)).not.toBeNull();
+      expect(await getConvExtras("conv_3", WORKSPACE_ID)).not.toBeNull();
+      expect(await getConvExtras("conv_4", WORKSPACE_ID)).not.toBeNull();
+    });
+
+    it("no-ops safely when the DB is unavailable (getDB returns null)", async () => {
+      // clearAllCache nulls the module's dbPromise; calling the accessors with
+      // NO workspaceId then hits the same `getDB() === null` branch the SSR
+      // guard (`indexedDB === undefined`) takes — getConvExtras resolves null,
+      // setConvExtras/clearConvExtras resolve without throwing.
+      await clearAllCache();
+      expect(await getConvExtras("conv_x")).toBeNull();
+      await expect(setConvExtras("conv_x", makeExtras())).resolves.toBeUndefined();
+      await expect(clearConvExtras("conv_x")).resolves.toBeUndefined();
+      openCacheDB(WORKSPACE_ID);
+    });
+
+    it("clearAllCache removes conv_extras", async () => {
+      await setConvExtras("conv_1", makeExtras(), WORKSPACE_ID);
+      await clearAllCache();
+      // Re-open the (now-deleted) DB; the previously cached row is gone.
+      openCacheDB(WORKSPACE_ID);
+      expect(await getConvExtras("conv_1", WORKSPACE_ID)).toBeNull();
+    });
+  });
+
+  describe("v3 → v4 migration", () => {
+    it("upgrades a v3 DB to v4, adding conv_extras and preserving existing stores", async () => {
+      const MIGRATE_WS = "ws_migrate_v4";
+      await clearAllCache();
+
+      // Build a v3-shaped DB by hand (messages + cache_meta + last_open, v3).
+      const v3 = await openDB(`alook-chat-cache-${MIGRATE_WS}`, 3, {
+        upgrade(db) {
+          const msgStore = db.createObjectStore("messages", { keyPath: ["conversation_id", "id"] });
+          msgStore.createIndex("by-conversation", "conversation_id", { unique: false });
+          msgStore.createIndex("by-created", ["conversation_id", "created_at"], { unique: false });
+          db.createObjectStore("cache_meta", { keyPath: "conversation_id" });
+          const lastOpenStore = db.createObjectStore("last_open", { keyPath: "key" });
+          lastOpenStore.createIndex("by-conversation", "conversation_id", { unique: false });
+        },
+      });
+      await v3.put("messages", makeMessage({ id: "m1", conversation_id: "conv_old", created_at: "2024-01-01T00:00:00Z" }));
+      await v3.put("cache_meta", {
+        conversation_id: "conv_old",
+        lastFetchedAt: 1,
+        lastAccessedAt: 1,
+        messageCount: 1,
+        newestMessageId: "m1",
+        hasMore: false,
+        serverMessageCount: 1,
+      });
+      expect(v3.version).toBe(3);
+      expect(v3.objectStoreNames.contains("conv_extras")).toBe(false);
+      v3.close();
+
+      // Open via production code path — upgrades to v4, adds conv_extras.
+      const db = await openCacheDB(MIGRATE_WS)!;
+      expect(db.version).toBe(4);
+      expect(db.objectStoreNames.contains("conv_extras")).toBe(true);
+      // Existing v3 stores untouched.
+      expect(db.objectStoreNames.contains("messages")).toBe(true);
+      expect(db.objectStoreNames.contains("cache_meta")).toBe(true);
+      expect(db.objectStoreNames.contains("last_open")).toBe(true);
+
+      const cached = await getCachedMessages("conv_old", MIGRATE_WS);
+      expect(cached).toHaveLength(1);
+      expect(cached![0].id).toBe("m1");
+      const meta = await getCacheMeta("conv_old", MIGRATE_WS);
+      expect(meta!.newestMessageId).toBe("m1");
+
+      // New store works after the migration.
+      await setConvExtras("conv_old", makeExtras(), MIGRATE_WS);
+      expect((await getConvExtras("conv_old", MIGRATE_WS))?.conversation_id).toBe("conv_old");
+
+      await clearAllCache();
+      openCacheDB(WORKSPACE_ID);
+    });
+  });
+
   describe("evictLRU", () => {
     it("keeps only the N most recently accessed conversations", async () => {
       const db = await openCacheDB(WORKSPACE_ID)!;
@@ -553,10 +754,12 @@ describe("chat-cache", () => {
       expect(v2.objectStoreNames.contains("last_open")).toBe(false);
       v2.close();
 
-      // Open via the production code path — should upgrade to v3.
+      // Open via the production code path — should upgrade to the current
+      // version (v4), running every intermediate migration branch in order.
       const db = await openCacheDB(MIGRATE_WS)!;
-      expect(db.version).toBe(3);
+      expect(db.version).toBe(4);
       expect(db.objectStoreNames.contains("last_open")).toBe(true);
+      expect(db.objectStoreNames.contains("conv_extras")).toBe(true);
 
       // Existing data is intact.
       const cached = await getCachedMessages("conv_old", MIGRATE_WS);

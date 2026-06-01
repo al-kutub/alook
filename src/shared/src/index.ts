@@ -145,6 +145,7 @@ export {
   UpdateAgentRequestSchema,
   CreateConversationRequestSchema,
   CreateMessageRequestSchema,
+  AgentDmRequestSchema,
   EmailAttachmentSchema,
   SendEmailRequestSchema,
   UpdateEmailStatusRequestSchema,
@@ -186,6 +187,7 @@ export type {
   DeregisterRequest,
   CompleteTaskRequest,
   FailTaskRequest,
+  AgentDmRequest,
   MessageItem,
   ReportMessagesRequest,
   CreateCalendarEventRequestInput,
@@ -249,6 +251,7 @@ export { isValidToken, isValidEmail } from "./utils/validation";
 export { isOnline, formatStatus } from "./utils/status";
 export { isUniqueConstraintError } from "./utils/db-errors";
 export { generateWorkspaceSlug } from "./utils/slug";
+export { truncateTitle } from "./utils/title";
 export { semverGte } from "./semver";
 export { resolveMode, cliCommand, daemonCommand, getBaseUrl } from "./mode";
 export type { AlookMode, ModeSignals, BaseUrlSignals } from "./mode";

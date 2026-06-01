@@ -103,6 +103,22 @@ describe("GET /api/conversations/[id]/init", () => {
     expect(body.cache_valid).toBe(false);
   });
 
+  it("preloads only error task messages for a running active task (drops thinking)", async () => {
+    m.getConversation.mockResolvedValue({ id: "c1", agentId: "a1", channel: null });
+    m.getActiveTaskByConversation.mockResolvedValue({ id: "t1", status: "running" });
+    m.listTaskMessages.mockResolvedValue([
+      { id: "tm1", seq: 1, type: "text", content: "working..." },
+      { id: "tm2", seq: 2, type: "error", content: "boom" },
+    ]);
+
+    const req = new NextRequest("http://localhost/api/conversations/c1/init");
+    const res = await GET(req, { params: { id: "c1" } });
+    const body = await res.json();
+
+    expect(res.status).toBe(200);
+    expect(body.task_messages).toEqual([{ id: "tm2" }]);
+  });
+
   it("returns cache_valid=true and null messages when client cache matches", async () => {
     m.getConversation.mockResolvedValue({ id: "c1", agentId: "a1", channel: null });
     m.getNewestMessageId.mockResolvedValue("m9");

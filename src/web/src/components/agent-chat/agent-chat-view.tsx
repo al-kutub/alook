@@ -43,6 +43,8 @@ import {
   mergeCachedMessages,
   getLastOpenConversation,
   setLastOpenConversation,
+  getConvExtras,
+  setConvExtras,
 } from "@/lib/chat-cache";
 import {
   createFastLoadGateState,
@@ -658,6 +660,19 @@ export function AgentChatView({
     [timeline],
   );
 
+  // The live error-surface (TaskStream) must attach to at most ONE message per
+  // active task — otherwise multiple `send-dm` replies sharing a taskId would
+  // each render the (errors-only) stream wrapper. Pick the LAST assistant
+  // message of the active task; MessageItem gates `hasTaskStream` on this id.
+  const activeTaskStreamMsgId = useMemo(() => {
+    if (!activeTask) return null;
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const m = messages[i];
+      if (m.role === "assistant" && m.task_id === activeTask.id) return m.id;
+    }
+    return null;
+  }, [messages, activeTask]);
+
   const handleArtifactClick = useCallback(
     (artifact: Artifact) => {
       if (isPreviewable(artifact)) {
@@ -713,6 +728,44 @@ export function AgentChatView({
   const fileInputRef = useRef<HTMLInputElement>(null);
   // TipTap composer imperative handle (focus / clear / isEmpty / anchor coords).
   const composerRef = useRef<ChatComposerHandle>(null);
+
+  // Persist a live-updated artifacts array to the cached card metadata so the
+  // next instant open includes it. Read-modify-write: reads the existing
+  // `conv_extras` row (which holds the conversation_type/title/channel/
+  // created_at from the last network write) and replaces only `artifacts`.
+  //
+  // Best-effort and fire-and-forget (review MEDIUM-2): if two updates race
+  // within the write window, the loser may write a momentarily-short list — NOT
+  // data loss, because the next `conversationInit` does a full-replace write of
+  // the authoritative server artifacts. We skip the write when no extras row
+  // exists yet (artifact arrived before the first network write) — the imminent
+  // network/post-task write lands the full row. Guarded on `loadConvIdRef` so a
+  // write never lands on a switched-away or not-yet-confirmed conversation.
+  const persistArtifactsToCache = useCallback(
+    (conversationId: string, nextArtifacts: Artifact[]) => {
+      if (loadConvIdRef.current !== conversationId) return;
+      getConvExtras(conversationId, workspaceId)
+        .then((extras) => {
+          if (!extras) return;
+          if (loadConvIdRef.current !== conversationId) return;
+          return setConvExtras(
+            conversationId,
+            {
+              artifacts: nextArtifacts,
+              conversation_type: extras.conversation_type,
+              conversation_title: extras.conversation_title,
+              conversation_channel: extras.conversation_channel,
+              conversation_created_at: extras.conversation_created_at,
+              hasMoreArtifacts: extras.hasMoreArtifacts,
+            },
+            workspaceId,
+          );
+        })
+        .catch(() => { });
+    },
+    [workspaceId],
+  );
+
   // Editor plain text + caret, reported up from the composer, drive the
   // slash-command popup (mentions are handled natively inside the composer).
   const [editorText, setEditorText] = useState("");
@@ -899,10 +952,54 @@ export function AgentChatView({
           setMessages(cached);
           setHasMore(cacheMeta.hasMore);
           setMessagesLoading(false);
+          // Paint the cards (artifacts + event-card icon/label) from cache in
+          // the same frame as the text, so they don't pop in after the network
+          // round-trip. Both pieces are overwritten by the authoritative
+          // network values in Phase B — this is purely a no-reflow first paint.
+          await paintExtrasFromCache(convId, cached);
           return { painted: true, cacheMeta };
         }
       }
       return { painted: false, cacheMeta };
+    }
+
+    // Apply the cached card metadata (artifacts + a provisional conversation
+    // stub) for `convId`. The stub exists only so `conversationType` resolves
+    // the event-card icon/label correctly on first paint; the network's
+    // `setConversation(data.conversation)` overwrites the whole stub afterward.
+    // `paintedMessages` is the just-painted cached message list, used to derive
+    // a `created_at` fallback so we never seed an empty string (which would
+    // flip the scroll heuristic's `!conversation.created_at` branch).
+    async function paintExtrasFromCache(
+      convId: string,
+      paintedMessages: Message[],
+    ): Promise<void> {
+      const extras = await getConvExtras(convId, workspaceId);
+      if (ignore || !extras) return;
+      setArtifacts(extras.artifacts);
+      const createdAt =
+        extras.conversation_created_at ||
+        paintedMessages[0]?.created_at ||
+        paintedMessages[paintedMessages.length - 1]?.created_at ||
+        "";
+      setConversation((prev) =>
+        // Seed the provisional stub only when no conversation is set yet, OR
+        // when the existing one is for a DIFFERENT conversation (a switch from
+        // A→B: replace A's stale stub with B's). Never clobber an authoritative
+        // conversation already fetched for THIS `convId` — `prev.id === convId`
+        // means the network landed first (or this is a same-conversation
+        // re-run, e.g. a scrollToTaskId change), so keep the real value.
+        prev && prev.id === convId
+          ? prev
+          : {
+              id: convId,
+              agent_id: agentId,
+              title: extras.conversation_title,
+              type: extras.conversation_type,
+              channel: extras.conversation_channel,
+              created_at: createdAt,
+            },
+      );
     }
 
     async function load() {
@@ -978,6 +1075,15 @@ export function AgentChatView({
                 // empty list instead of mixing conversation A's messages into B.
                 setMessages([]);
                 setMessagesLoading(true);
+                // Also clear the optimistically-painted cards from conversation
+                // A. With extras now seeding `artifacts` on the optimistic
+                // paint, a corrected conversation with no cache would otherwise
+                // keep showing A's artifact cards until Phase B responds. The
+                // provisional `conversation` stub is overwritten by Phase B's
+                // authoritative `setConversation(data.conversation)` (MEDIUM-3).
+                // When `res.painted` is true, paintFromCache already re-seeded
+                // the corrected conversation's own cards.
+                setArtifacts([]);
               }
             } else if (!optimisticConvId) {
               // Nothing painted yet — read the resolved conversation's cache.
@@ -1073,6 +1179,25 @@ export function AgentChatView({
             ).catch(() => { });
           }
           setArtifacts(data.artifacts);
+          // Persist the authoritative card metadata so the next open paints the
+          // artifact cards + correct event-card types instantly from cache.
+          // Guarded on the stale-closure ref (same as the message write above)
+          // so we never write extras for a switched-away conversation;
+          // fire-and-forget, off the critical path.
+          if (loadConvIdRef.current === convId) {
+            setConvExtras(
+              convId,
+              {
+                artifacts: data.artifacts,
+                conversation_type: data.conversation.type,
+                conversation_title: data.conversation.title,
+                conversation_channel: data.conversation.channel,
+                conversation_created_at: data.conversation.created_at,
+                hasMoreArtifacts: data.has_more_artifacts,
+              },
+              workspaceId,
+            ).catch(() => { });
+          }
           setFlaggedIds(new Set(data.flagged_message_ids));
           if (data.active_task) {
             setActiveTask(data.active_task);
@@ -1105,7 +1230,12 @@ export function AgentChatView({
                 workspaceId,
               ).catch(() => [] as TaskMessageResponse[]);
               if (ignore) return;
-              setTaskMessages(tmsgs);
+              // Errors-only: thinking is no longer rendered (replies arrive via
+              // `send-dm`); we keep only the live error channel.
+              const errorMsgs = tmsgs.filter((m) => m.type === "error");
+              setTaskMessages(errorMsgs);
+              // Advance the cursor past all fetched seqs (incl. dropped
+              // thinking) so the poll/WS don't reconsider them.
               if (tmsgs.length > 0) {
                 lastSeqRef.current = Math.max(...tmsgs.map((m) => m.seq));
               }
@@ -1133,6 +1263,24 @@ export function AgentChatView({
             data.has_more_messages,
             workspaceId,
           ).catch(() => { });
+          // Persist the card metadata from the chatInit fallback too (same
+          // shape as the conversationInit write above), guarded on the
+          // stale-closure ref. ChatInit's response carries the same
+          // `artifacts` + `conversation` + `has_more_artifacts` fields.
+          if (loadConvIdRef.current === data.conversation.id) {
+            setConvExtras(
+              data.conversation.id,
+              {
+                artifacts: data.artifacts,
+                conversation_type: data.conversation.type,
+                conversation_title: data.conversation.title,
+                conversation_channel: data.conversation.channel,
+                conversation_created_at: data.conversation.created_at,
+                hasMoreArtifacts: data.has_more_artifacts,
+              },
+              workspaceId,
+            ).catch(() => { });
+          }
           // This branch is reached only when `convId` is null — i.e. the SLOW
           // path's checkFreshness failed and we fell back to chatInit. chatInit
           // returns the server's current (latest-created) conversation, so this
@@ -1696,32 +1844,17 @@ export function AgentChatView({
         if (pollTaskIdRef.current !== taskId) return;
 
         try {
-          const [task, tmsgs] = await Promise.all([
-            getTask(taskId, workspaceId),
-            getTaskMessages(
-              taskId,
-              workspaceId,
-              lastSeqRef.current || undefined,
-            ),
-          ]);
+          // Thin status-only poll: fetch only task status/error as a resilience
+          // fallback for a dropped WebSocket. Replies arrive via `send-dm` ->
+          // `conversation.message`, and live errors via the `task.messages` WS
+          // (filtered to errors-only) — the poll no longer fetches task_messages.
+          const task = await getTask(taskId, workspaceId);
 
           // Re-check after await — a steering task may have started a new poll
           const isStale = pollTaskIdRef.current !== taskId;
 
           pollFailures.current = 0;
           setConnectionLost(false);
-
-          if (tmsgs.length > 0 && !isStale) {
-            setTaskMessages((prev) => {
-              const existingSeqs = new Set(prev.map((m) => m.seq));
-              const unique = tmsgs.filter((m) => !existingSeqs.has(m.seq));
-              return unique.length > 0 ? [...prev, ...unique] : prev;
-            });
-            lastSeqRef.current = Math.max(
-              ...tmsgs.map((m) => m.seq),
-              lastSeqRef.current,
-            );
-          }
 
           if (
             task.status === "completed" ||
@@ -1770,7 +1903,12 @@ export function AgentChatView({
                 null,
                 workspaceId,
               ).catch(() => { });
-              if (arts) setArtifacts(arts);
+              if (arts) {
+                setArtifacts(arts);
+                // Full-replace persist of the authoritative post-task artifacts
+                // so the cache stays consistent with what's rendered.
+                persistArtifactsToCache(conversationId, arts);
+              }
               setActiveTask(task);
             } catch {
               setActiveTask(task);
@@ -1856,11 +1994,20 @@ export function AgentChatView({
       ) {
         const incoming = msg.messages.filter((m) => m.seq > lastSeqRef.current);
         if (incoming.length > 0) {
-          setTaskMessages((prev) => {
-            const existingSeqs = new Set(prev.map((m) => m.seq));
-            const unique = incoming.filter((m) => !existingSeqs.has(m.seq));
-            return unique.length > 0 ? [...prev, ...unique] : prev;
-          });
+          // Thinking is no longer rendered — the reply lands via `send-dm`. Keep
+          // ONLY `type:"error"` items: they are a live error channel (opencode /
+          // codex emit them mid-run, sometimes without the task transitioning to
+          // failed) and dropping them would hide real failures.
+          const errorsOnly = incoming.filter((m) => m.type === "error");
+          if (errorsOnly.length > 0) {
+            setTaskMessages((prev) => {
+              const existingSeqs = new Set(prev.map((m) => m.seq));
+              const unique = errorsOnly.filter((m) => !existingSeqs.has(m.seq));
+              return unique.length > 0 ? [...prev, ...unique] : prev;
+            });
+          }
+          // Advance the cursor past every seq we've seen (incl. dropped
+          // thinking) so we never reconsider them.
           lastSeqRef.current = Math.max(
             ...incoming.map((m) => m.seq),
             lastSeqRef.current,
@@ -1976,12 +2123,20 @@ export function AgentChatView({
       ) {
         setArtifacts((prev) => {
           if (prev.some((a) => a.id === msg.artifact.id)) return prev;
-          return [...prev, msg.artifact];
+          const next = [...prev, msg.artifact];
+          // Persist the appended artifact to the cached card metadata so it
+          // renders instantly on the next open. Dedupe by id is handled above
+          // (we only reach here for a genuinely new artifact). Guarded inside
+          // `persistArtifactsToCache` on `loadConvIdRef`. The persist is an
+          // idempotent fire-and-forget read-modify-write, so the Strict-Mode
+          // dev double-invoke just writes the same row twice — harmless.
+          persistArtifactsToCache(msg.conversationId, next);
+          return next;
         });
       }
     });
   // eslint-disable-next-line react-hooks/exhaustive-deps -- activeChannelRef is a stable ref read inside the callback, not a reactive dep
-  }, [subscribeWs, conversation?.id, workspaceId, agentId]);
+  }, [subscribeWs, conversation?.id, workspaceId, agentId, persistArtifactsToCache]);
 
   useEffect(() => {
     return subscribeReconnect(() => {
@@ -2199,8 +2354,14 @@ export function AgentChatView({
         () => { },
       );
       if (message.attachment_ids && message.attachment_ids.length > 0) {
-        listArtifacts(conversation.id, workspaceId)
-          .then((arts) => setArtifacts(arts))
+        const convId = conversation.id;
+        listArtifacts(convId, workspaceId)
+          .then((arts) => {
+            setArtifacts(arts);
+            // Keep the cached card metadata consistent with the artifacts shown
+            // after a send-with-attachments refresh (full replace).
+            persistArtifactsToCache(convId, arts);
+          })
           .catch(() => { });
       }
       setActiveTask(task);
@@ -2710,6 +2871,7 @@ export function AgentChatView({
                     agents={agents}
                     artifacts={artifacts}
                     activeTask={activeTask}
+                    activeTaskStreamMsgId={activeTaskStreamMsgId}
                     taskMessages={taskMessages}
                     connectionLost={connectionLost}
                     conversationType={conversation?.type}
@@ -2741,9 +2903,13 @@ export function AgentChatView({
               );
             })}
 
-            {/* Show trace while task is in progress (no assistant message yet) */}
+            {/* Show trace while task is in progress (no assistant message yet).
+                Once a send-dm reply exists, the designated last message
+                (activeTaskStreamMsgId) owns the error surface — suppress this
+                standalone block then, so an error never renders twice (QA AC4). */}
             {activeTask &&
               activeTask.conversation_id === conversation?.id &&
+              activeTaskStreamMsgId == null &&
               !["completed", "failed", "cancelled", "superseded"].includes(
                 activeTask.status,
               ) && (

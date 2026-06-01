@@ -143,7 +143,9 @@ describe("buildPrompt", () => {
   it("adds DM_RESPONSE_NOTICE for user_dm_message tasks", () => {
     const task = makeTask("Fix the bug", "user_dm_message");
     const parsed = JSON.parse(buildPrompt(task));
-    expect(parsed.notice).toContain("final text response is visible to the user");
+    expect(parsed.notice).toContain("sync send-dm");
+    expect(parsed.notice).toContain("at milestones");
+    expect(parsed.notice).not.toContain("final text response is visible to the user");
   });
 
   it("adds CALENDAR_NOTICE for calendar_event tasks with no context", () => {

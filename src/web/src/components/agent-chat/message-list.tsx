@@ -18,11 +18,37 @@ import { useCopyToClipboard } from "@/hooks/use-copy-to-clipboard";
 const MENTION_ALLOWED_TAGS = { mention: ["data-agent-id"] };
 const MENTION_LITERAL_TAGS = ["mention"];
 
+/**
+ * Whether an assistant message renders its own body (text bubble or, for a
+ * runtime-error message, its RuntimeErrorBlock) — independent of the live error
+ * stream wrapper, which is ADDITIVE.
+ *
+ * The AC4 fix: a normal `send-dm` text reply must paint even when it's the
+ * message designated to carry the live error stream (`hasTaskStream`), so its
+ * text is never swallowed. The one exception is a runtime-error message: it IS
+ * the error and is already surfaced by the stream while live, so it only renders
+ * its own block when no stream owns it (`!hasTaskStream`) — avoiding a double
+ * error render.
+ */
+export function shouldRenderAssistantBody(opts: {
+  hasTaskStream: boolean;
+  isRuntimeError: boolean;
+}): boolean {
+  return !opts.hasTaskStream || !opts.isRuntimeError;
+}
+
 export interface MessageItemProps {
   msg: Message;
   agents: Agent[];
   artifacts: Artifact[];
   activeTask: Task | null;
+  /**
+   * Id of the single assistant message for the active task that should carry the
+   * live error-surface (TaskStream). When a task emits multiple `send-dm`
+   * replies, only this one (the last) gets the stream wrapper — the rest fall to
+   * the clean bubble path. Null when there's no active-task assistant message.
+   */
+  activeTaskStreamMsgId?: string | null;
   taskMessages: TaskMessageResponse[];
   connectionLost: boolean;
   conversationType?: string | null;
@@ -295,6 +321,7 @@ export const MessageItem = memo(function MessageItem({
   agents,
   artifacts,
   activeTask,
+  activeTaskStreamMsgId,
   taskMessages,
   connectionLost,
   conversationType,
@@ -326,6 +353,10 @@ export const MessageItem = memo(function MessageItem({
     msg.role === "assistant" &&
     msg.task_id === activeTask.id &&
     msg.conversation_id === activeTask.conversation_id &&
+    // Only the designated (last) assistant message of the active task carries
+    // the stream — so multiple `send-dm` replies don't each wrap it. When the
+    // parent didn't compute an id (legacy callers), fall back to per-message.
+    (activeTaskStreamMsgId == null || msg.id === activeTaskStreamMsgId) &&
     taskMessages.length > 0 &&
     !["completed", "cancelled", "superseded"].includes(activeTask.status);
 
@@ -489,7 +520,16 @@ export const MessageItem = memo(function MessageItem({
             {msg.content}
           </span>
         </div>
-      ) : !hasTaskStream ? (
+      ) : shouldRenderAssistantBody({
+          hasTaskStream,
+          isRuntimeError: msg.metadata?.error_source === "runtime",
+        }) ? (
+        // The agent's own send-dm text bubble renders even when this message is
+        // the one carrying the live error stream (hasTaskStream) — the error
+        // block above is ADDITIVE, not a replacement, so the reply text is never
+        // swallowed (QA AC4). A runtime-error message is the exception: it IS the
+        // error, surfaced by the TaskStream above while live, so it still only
+        // renders its own RuntimeErrorBlock when no stream owns it (!hasTaskStream).
         <div className="group/msg overflow-x-clip" data-message-id={msg.id} data-quote-source {...(msg.task_id ? { "data-task-id": msg.task_id } : {})}>
           <AgentRow groupPosition={groupPosition} agentName={agentName} config={agentAvatarConfig}>
             {msg.metadata?.error_source === "runtime" ? (

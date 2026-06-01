@@ -2,9 +2,9 @@ import type { Task, Attachment } from "./types.js";
 import { localISOString } from "./execenv/timeline.js";
 
 const DM_RESPONSE_NOTICE =
-  "IMPORTANT: Only your final text response is visible to the user." +
-  " Tool calls, intermediate reasoning, and mid-process outputs are NOT displayed." +
-  " Put all key information, answers, and conclusions in your final response — that is the only thing the user will read.";
+  "Reply with `alook sync send-dm` — that's the only thing the user sees;" +
+  " your task output and reasoning are not shown." +
+  " Talk to them at milestones like a colleague would, and don't end your turn without sending what they need.";
 
 const EMAIL_NOTICE =
   "This task was triggered automatically by an incoming email. There is no human in this session." +

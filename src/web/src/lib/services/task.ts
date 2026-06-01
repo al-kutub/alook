@@ -158,32 +158,12 @@ export class TaskService {
       throw new Error(`cannot complete task in '${status}' status`);
     }
 
-    const payload = parsed as Record<string, unknown>;
-    const output =
-      typeof payload?.output === "string" ? payload.output : "";
-
-    if (output) {
-      const msg = await messageQueries.createMessage(this.db, {
-        conversationId: task.conversationId,
-        role: "assistant",
-        content: output,
-        taskId,
-      });
-
-      try {
-        const conversation = await conversationQueries.getConversation(this.db, task.conversationId, workspaceId);
-        if (conversation) {
-          broadcastToUser(conversation.userId, {
-            type: "conversation.message",
-            conversationId: task.conversationId,
-            message: messageToResponse(msg),
-          }).catch(() => {});
-        }
-      } catch {
-        // non-critical: don't let broadcast failure block task lifecycle
-      }
-    }
-
+    // The agent owns its voice: the success reply bubble is now authored
+    // explicitly via `alook sync send-dm` (the agent-DM endpoint), NOT extracted
+    // from the task's final `output`. So completeTask no longer creates a
+    // `role:"assistant"` message — it only settles the task lifecycle. `output`
+    // is still persisted on the task row (in `result`) for debugging.
+    // (failTask still surfaces an error bubble — a failed run must not go silent.)
     await this.reconcileAgentStatus(task.agentId, task.workspaceId);
     return task;
   }

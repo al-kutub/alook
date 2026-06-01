@@ -82,11 +82,14 @@ export const POST = withAuth(async (req, ctx) => {
     !["completed", "failed", "cancelled", "superseded"].includes(resolvedActiveTask.status)
   ) {
     try {
+      // Errors-only: the chat no longer renders thinking/tool steps (replies
+      // arrive via `send-dm`). Preload only `type:"error"` rows so the live
+      // error surface survives a reload.
       const tmsgs = await queries.taskMessage.listTaskMessages(
         db,
         resolvedActiveTask.id,
       );
-      taskMessages = tmsgs.map(taskMessageToResponse);
+      taskMessages = tmsgs.filter((m) => m.type === "error").map(taskMessageToResponse);
     } catch {
       // non-critical — frontend will recover via polling
     }

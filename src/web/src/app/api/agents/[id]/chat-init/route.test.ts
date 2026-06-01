@@ -179,7 +179,7 @@ describe("POST /api/agents/[id]/chat-init", () => {
     expect(body.error).toBe("agent not found");
   });
 
-  it("includes active task and task messages when task is running", async () => {
+  it("preloads only error task messages for a running task (thinking is dropped)", async () => {
     const task = {
       id: "t1",
       agentId: "a1",
@@ -194,17 +194,13 @@ describe("POST /api/agents/[id]/chat-init", () => {
       completedAt: null,
       createdAt: "2024-01-01T00:00:00.000Z",
     };
-    const tmsg = {
-      id: "tm1",
-      taskId: "t1",
-      seq: 1,
-      type: "text",
-      content: "working...",
-    };
+    // A thinking row (dropped) and an error row (kept — the live error channel).
+    const textMsg = { id: "tm1", taskId: "t1", seq: 1, type: "text", content: "working..." };
+    const errMsg = { id: "tm2", taskId: "t1", seq: 2, type: "error", content: "boom" };
 
     setupDefaults();
     mockGetActiveTaskByConversation.mockResolvedValue(task);
-    mockListTaskMessages.mockResolvedValue([tmsg]);
+    mockListTaskMessages.mockResolvedValue([textMsg, errMsg]);
 
     const res = await POST(makeReq(), makeCtx());
     const body = await res.json();
@@ -212,7 +208,8 @@ describe("POST /api/agents/[id]/chat-init", () => {
     expect(body.active_task).not.toBeNull();
     expect(body.active_task.id).toBe("t1");
     expect(body.task_messages).toHaveLength(1);
-    expect(body.task_messages[0].seq).toBe(1);
+    expect(body.task_messages[0].seq).toBe(2);
+    expect(body.task_messages[0].type).toBe("error");
   });
 
   it("skips task messages for completed tasks", async () => {

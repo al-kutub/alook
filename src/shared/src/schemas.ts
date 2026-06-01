@@ -542,6 +542,15 @@ export const CreateMessageRequestSchema = z.object({
 });
 export type CreateMessageRequest = z.infer<typeof CreateMessageRequestSchema>;
 
+// Agent-authored DM: the agent's own `role:"assistant"` reply, posted via the
+// machine-token daemon route (`alook sync send-dm`). Unlike CreateMessageRequest
+// (a user send) this does NOT enqueue a task — it only delivers the message.
+export const AgentDmRequestSchema = z.object({
+  content: z.string().min(1, "content is required"),
+  task_id: z.string().optional(),
+});
+export type AgentDmRequest = z.infer<typeof AgentDmRequestSchema>;
+
 // ---------------------------------------------------------------------------
 // Email request schemas
 // ---------------------------------------------------------------------------
