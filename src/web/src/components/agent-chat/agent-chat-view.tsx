@@ -2764,17 +2764,12 @@ export function AgentChatView({
       {/* Input */}
       <div className="relative z-10 px-3 md:px-5 pt-3 pb-5 md:pb-6">
         <div className="mx-auto max-w-3xl relative">
-          {/* Social presence line — reads the agent, replaces the old status badge/glow. */}
+          {/* Social presence line — "{Name} is typing…" while this conversation
+              has a live task (dispatched / queued / running), else nothing. */}
           {conversation && (
             <PresenceLine
               agentFirstName={agentFirstName}
               taskStatus={isTaskActive ? activeTask?.status : null}
-              // Only "busy elsewhere" when THIS conversation has no task object at
-              // all. Right after this conversation's task settles, activeTask is
-              // still set (terminal status) but the workspace-wide
-              // activeTaskCounts lags — without this guard it would briefly flip
-              // to "on something, she'll see this" before the count catches up.
-              agentBusyElsewhere={!activeTask && (activeTaskCounts[agentId] ?? 0) > 0}
             />
           )}
           <div className="flex items-end gap-2">

@@ -3,26 +3,25 @@
 import { cn } from "@/lib/utils";
 
 /**
- * Social presence line above the composer. Reads the agent the way you'd read a
- * colleague in an IM thread — never the raw task lifecycle, never counts.
+ * Social presence line above the composer. Two states only:
+ *   this conversation has a live task (dispatched / queued / running)
+ *     → "{Name} is typing…" + dots
+ *   otherwise → nothing
  *
- *   generating (this conversation's task is running) → "{Name} is typing…" + dots
- *   busy        (queued here, or the agent is on other work) → "{Name}'s on something, she'll see this"
- *   idle        → nothing
- *
- * Copy is verbatim from Priya. No em dashes. Crossfades on change and gates the
- * typing-dot animation behind prefers-reduced-motion.
+ * No "on something" / busy-elsewhere copy (dropped per Gus). Crossfades on
+ * change and gates the typing-dot animation behind prefers-reduced-motion.
  */
 
-type Presence = "typing" | "busy" | "idle";
+type Presence = "typing" | "idle";
 
-function derivePresence(
-  taskStatus: string | null | undefined,
-  agentBusyElsewhere: boolean,
-): Presence {
-  if (taskStatus === "running") return "typing";
-  if (taskStatus === "queued" || taskStatus === "dispatched") return "busy";
-  if (agentBusyElsewhere) return "busy";
+function derivePresence(taskStatus: string | null | undefined): Presence {
+  if (
+    taskStatus === "running" ||
+    taskStatus === "queued" ||
+    taskStatus === "dispatched"
+  ) {
+    return "typing";
+  }
   return "idle";
 }
 
@@ -39,13 +38,11 @@ function TypingDots() {
 export function PresenceLine({
   agentFirstName,
   taskStatus,
-  agentBusyElsewhere = false,
 }: {
   agentFirstName: string;
   taskStatus: string | null | undefined;
-  agentBusyElsewhere?: boolean;
 }) {
-  const presence = derivePresence(taskStatus, agentBusyElsewhere);
+  const presence = derivePresence(taskStatus);
 
   // Reserve a fixed-height row so the composer never shifts as presence changes.
   // mb gives the line breathing room above the composer (it sat too close).
@@ -63,9 +60,6 @@ export function PresenceLine({
             <span>{agentFirstName} is typing</span>
             <TypingDots />
           </>
-        )}
-        {presence === "busy" && (
-          <span>{agentFirstName}&apos;s on something, she&apos;ll see this</span>
         )}
       </span>
     </div>
