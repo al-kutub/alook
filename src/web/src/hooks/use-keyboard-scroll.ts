@@ -2,6 +2,54 @@
 
 import { useEffect, type RefObject } from "react";
 
+export interface KeyboardScrollController {
+  handler: () => void;
+  cleanup: () => void;
+}
+
+/**
+ * Creates a resize handler that debounces scrollIntoView calls.
+ * Exported for testability — the hook wraps this with lifecycle management.
+ */
+export function createKeyboardScrollController(
+  getTarget: () => HTMLElement | null,
+  isFocused: boolean,
+): KeyboardScrollController {
+  let timeoutId: ReturnType<typeof setTimeout> | undefined;
+  const handler = () => {
+    if (!isFocused) return;
+    clearTimeout(timeoutId);
+    timeoutId = setTimeout(() => {
+      getTarget()?.scrollIntoView({ block: "end", behavior: "smooth" });
+    }, 300);
+  };
+  const cleanup = () => clearTimeout(timeoutId);
+  return { handler, cleanup };
+}
+
+/**
+ * Subscribes to visualViewport resize events and returns a cleanup function.
+ * Returns null if visualViewport is unavailable (SSR or unsupported browser).
+ * Exported for testability without React rendering.
+ */
+export function attachKeyboardScroll(
+  getTarget: () => HTMLElement | null,
+  isFocused: boolean,
+): (() => void) | null {
+  const vv =
+    typeof window !== "undefined" ? window.visualViewport : undefined;
+  if (!vv) return null;
+  const { handler, cleanup } = createKeyboardScrollController(
+    getTarget,
+    isFocused,
+  );
+  vv.addEventListener("resize", handler);
+  return () => {
+    vv.removeEventListener("resize", handler);
+    cleanup();
+  };
+}
+
 /**
  * On iOS Safari, the virtual keyboard can push the focused input off-screen
  * because the layout viewport doesn't always resize in sync with the visual
@@ -15,20 +63,7 @@ export function useKeyboardScroll(
   isFocused: boolean,
 ) {
   useEffect(() => {
-    const vv = window.visualViewport;
-    if (!vv) return;
-    let timeoutId: ReturnType<typeof setTimeout> | undefined;
-    const handleResize = () => {
-      if (!isFocused) return;
-      clearTimeout(timeoutId);
-      timeoutId = setTimeout(() => {
-        targetRef.current?.scrollIntoView({ block: "end", behavior: "smooth" });
-      }, 300);
-    };
-    vv.addEventListener("resize", handleResize);
-    return () => {
-      vv.removeEventListener("resize", handleResize);
-      clearTimeout(timeoutId);
-    };
+    const detach = attachKeyboardScroll(() => targetRef.current, isFocused);
+    return detach ?? undefined;
   }, [targetRef, isFocused]);
 }
