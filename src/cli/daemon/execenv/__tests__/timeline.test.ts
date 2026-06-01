@@ -162,6 +162,12 @@ describe("timeline", () => {
     expect(dt).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}[+-]\d{2}:\d{2}$/);
   });
 
+  it("localISOString(date) round-trips to the same instant", () => {
+    const result = _localISOString(new Date("2026-06-04T14:12:33Z"));
+    expect(result).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}[+-]\d{2}:\d{2}$/);
+    expect(Date.parse(result)).toBe(Date.parse("2026-06-04T14:12:33Z"));
+  });
+
   it("todayFilename returns YYYY-MM-DD.jsonl format", () => {
     const filename = _todayFilename();
     expect(filename).toMatch(/^\d{4}-\d{2}-\d{2}\.jsonl$/);

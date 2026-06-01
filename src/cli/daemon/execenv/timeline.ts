@@ -61,8 +61,7 @@ function recentFilenames(maxDays: number): string[] {
   return filenames;
 }
 
-function localISOString(): string {
-  const now = new Date();
+export function localISOString(now: Date = new Date()): string {
   const tzOffset = -now.getTimezoneOffset();
   const sign = tzOffset >= 0 ? "+" : "-";
   const absOffset = Math.abs(tzOffset);

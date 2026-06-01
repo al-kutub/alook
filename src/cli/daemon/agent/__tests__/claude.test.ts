@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { EventEmitter } from "events";
 import { Readable } from "stream";
+import { spawn } from "child_process";
 import type { AgentMessage } from "../../types.js";
 
 let currentMockProc: ReturnType<typeof createMockProc> | null = null;
@@ -240,16 +241,26 @@ describe("ClaudeBackend", () => {
 
   it("sets status to timeout when process is killed by timeout", async () => {
     vi.useFakeTimers();
+    const killSpy = vi.spyOn(process, "kill").mockImplementation(() => true);
     const session = backend.execute("hello", { cwd: "/tmp", timeout: 1000 });
     const mock = getMock();
 
     vi.advanceTimersByTime(1000);
-    expect(mock.proc.kill).toHaveBeenCalledWith("SIGTERM");
+    // Timeout now reaps the whole process group (negative pid), not just the leader.
+    expect(killSpy).toHaveBeenCalledWith(-12345, "SIGTERM");
 
     mock.proc.emit("close", null);
 
     const result = await session.result;
     expect(result.status).toBe("timeout");
+    killSpy.mockRestore();
     vi.useRealTimers();
+  });
+
+  it("TC8: spawns the CLI detached on POSIX so its group can be reaped", () => {
+    const session = backend.execute("hello", { cwd: "/tmp" });
+    expect(session.pid).toBe(12345);
+    const opts = vi.mocked(spawn).mock.calls.at(-1)![2] as Record<string, unknown>;
+    expect(opts.detached).toBe(process.platform !== "win32");
   });
 });

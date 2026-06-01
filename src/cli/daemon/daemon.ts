@@ -14,6 +14,7 @@ import { cmdPrefix } from "../lib/env.js";
 import { acquireDaemonPid, releaseDaemonPid } from "./pidfile.js";
 import { handleCliUpdate, isUpdating, readUpdateMarker, clearUpdateMarker } from "./update-handler.js";
 import { findRunningPidByTaskId, findRunningEntryByContextKey, updateEntry } from "./execenv/timeline.js";
+import { isAlive, killGraceMs } from "./kill-tree.js";
 import {
   writeKillIntent,
   readKillIntent,
@@ -868,6 +869,44 @@ async function handleFileRequest(
   }
 }
 
+/**
+ * Send SIGTERM to the session-runner `pid`, then verify it actually died and
+ * escalate to SIGKILL if not. Returns true if the signal was delivered, false
+ * if the target was already gone (ESRCH).
+ *
+ * Backstop only: the session-runner's own SIGTERM handler is what reaps the
+ * inner agent's process group. The verify window must EXCEED the session-runner
+ * grace (ALOOK_KILL_GRACE_MS) so the runner gets to group-kill the inner agent
+ * before we force-kill the runner — otherwise SIGKILLing the runner first could
+ * orphan the inner agent. Inner agents are spawned in their own detached group
+ * (agent/*.ts) so even a SIGKILLed runner does not leave the group un-reapable.
+ */
+async function killAndVerify(pid: number): Promise<boolean> {
+  try {
+    process.kill(pid, "SIGTERM");
+  } catch (e: unknown) {
+    if ((e as NodeJS.ErrnoException)?.code === "ESRCH") return false;
+    throw e;
+  }
+
+  // The verify window MUST exceed the session-runner's own group-kill grace, so
+  // the runner gets to reap the inner agent's group before we force-kill it.
+  // Enforce that invariant rather than trusting operators to keep the env vars
+  // ordered (see the doc comment above).
+  const verifyMs = Math.max(Number(process.env.ALOOK_KILL_VERIFY_MS) || 3000, killGraceMs() + 500);
+  const deadline = Date.now() + verifyMs;
+  while (Date.now() < deadline) {
+    if (!isAlive(pid)) return true;
+    await new Promise((r) => setTimeout(r, 100));
+  }
+
+  if (isAlive(pid)) {
+    log.warn(`session-runner pid=${pid} survived SIGTERM after ${verifyMs}ms — escalating to SIGKILL`);
+    try { process.kill(pid, "SIGKILL"); } catch { /* already gone */ }
+  }
+  return true;
+}
+
 async function handleTask(
   client: DaemonClient,
   config: DaemonConfig,
@@ -907,16 +946,16 @@ async function handleTask(
         expectedPid: pid,
       });
       try {
-        process.kill(pid, "SIGTERM");
-        await client.failTask(token, task.id, "killed");
-        log.info(`Kill task ${task.id}: sent SIGTERM to pid=${pid} for target=${targetTaskId}`);
-      } catch (e: unknown) {
-        if ((e as NodeJS.ErrnoException)?.code === "ESRCH") {
+        const delivered = await killAndVerify(pid);
+        if (delivered) {
+          await client.failTask(token, task.id, "killed");
+          log.info(`Kill task ${task.id}: terminated pid=${pid} for target=${targetTaskId}`);
+        } else {
           await client.failTask(token, task.id, "target process already exited");
           log.info(`Kill task ${task.id}: target pid=${pid} already exited`);
-        } else {
-          await client.failTask(token, task.id, `kill failed: ${e}`);
         }
+      } catch (e: unknown) {
+        await client.failTask(token, task.id, `kill failed: ${e}`);
       }
     } else {
       await client.failTask(token, task.id, "target not found in timeline");
@@ -968,14 +1007,14 @@ async function handleTask(
               successorTaskId: task.id,
             });
             try {
-              process.kill(predecessor.pid, "SIGTERM");
-              log.info(`Steering: sent SIGTERM to predecessor pid=${predecessor.pid}`);
+              const delivered = await killAndVerify(predecessor.pid);
+              log.info(
+                delivered
+                  ? `Steering: terminated predecessor pid=${predecessor.pid}`
+                  : `Steering: predecessor pid=${predecessor.pid} already exited`,
+              );
             } catch (e: unknown) {
-              if ((e as NodeJS.ErrnoException)?.code === "ESRCH") {
-                log.info(`Steering: predecessor pid=${predecessor.pid} already exited`);
-              } else {
-                log.warn(`Steering: kill failed for pid=${predecessor.pid}`, e);
-              }
+              log.warn(`Steering: kill failed for pid=${predecessor.pid}`, e);
             }
             // Wait for predecessor to stop (poll timeline for up to 15 seconds)
             const waitStart = Date.now();

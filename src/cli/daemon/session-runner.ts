@@ -19,6 +19,7 @@ import {
   findResumableSessionByContextKey,
 } from "./execenv/timeline.js";
 import { readKillIntent, clearKillIntent } from "./execenv/steering.js";
+import { killProcessTree } from "./kill-tree.js";
 import { buildPrompt } from "./prompt.js";
 import { createLogger } from "../lib/logger.js";
 
@@ -178,113 +179,11 @@ export async function runSession(input: SessionRunnerInput): Promise<void> {
     task,
   );
 
+  // --- State shared by the kill handler, hoisted so the SINGLE handler below
+  //     can see it whether the kill lands before or after the agent spawns. ---
   let killed = false;
-
-  // Early signal handler (before agent starts — no agentPid/flushTimer yet)
-  const earlyOnKill = async () => {
-    if (killed) return;
-    killed = true;
-    log.info(`killed by signal (messages=0, tools=0)`);
-
-    await cleanupAttachments(task.id);
-
-    const intent = readKillIntent(agentBaseDir, task.id);
-    clearKillIntent(agentBaseDir, task.id);
-
-    if (intent?.reason === "superseded") {
-      updateEntry(timelineDir, task.id, (entry) => {
-        entry.pid = null;
-        entry.status = "superseded";
-        entry.successor_task_id = intent.successorTaskId ?? null;
-        entry.supersede_reason = "superseded by newer task";
-      });
-      try {
-        await client.supersedeTask(token, task.id);
-      } catch { /* best-effort */ }
-    } else if (intent?.reason === "cancelled") {
-      updateEntry(timelineDir, task.id, (entry) => {
-        entry.pid = null;
-        entry.status = "cancelled";
-        entry.errmsg = "cancelled by user";
-      });
-      await reportToServer(
-        () => client.failTask(token, task.id, "cancelled by user"),
-        { taskId: task.id, type: "fail", payload: { error: "cancelled by user" }, token, serverURL, createdAt: new Date().toISOString() },
-        workspacesRoot,
-      );
-    } else {
-      updateEntry(timelineDir, task.id, (entry) => {
-        entry.pid = null;
-        entry.status = "killed";
-        entry.errmsg = "killed by signal";
-      });
-      await reportToServer(
-        () => client.failTask(token, task.id, "killed by signal"),
-        { taskId: task.id, type: "fail", payload: { error: "killed by signal" }, token, serverURL, createdAt: new Date().toISOString() },
-        workspacesRoot,
-      );
-    }
-
-    process.exit(1);
-  };
-  process.on("SIGTERM", earlyOnKill);
-  process.on("SIGINT", earlyOnKill);
-
-  // Download attachments before building prompt
-  const attachmentIds = (task.context?.attachment_ids as string[]) ?? [];
-  let attachments: Attachment[] | undefined;
-  if (attachmentIds.length > 0) {
-    log.info(`downloading ${attachmentIds.length} attachment(s)`);
-    try {
-      attachments = await downloadAttachments(client, token, task.workspaceId, task.id, attachmentIds);
-      log.info(`attachments ready (${attachments.length} file(s))`);
-    } catch (e) {
-      await cleanupAttachments(task.id);
-      const errMsg = `failed to download attachments: ${e}`;
-      log.error(errMsg);
-      updateEntry(timelineDir, task.id, (entry) => {
-        entry.pid = null;
-        entry.status = "failed";
-        entry.errmsg = errMsg;
-      });
-      await reportToServer(
-        () => client.failTask(token, task.id, errMsg),
-        { taskId: task.id, type: "fail", payload: { error: errMsg }, token, serverURL, createdAt: new Date().toISOString() },
-        workspacesRoot,
-      );
-      process.removeListener("SIGTERM", earlyOnKill);
-      process.removeListener("SIGINT", earlyOnKill);
-      return;
-    }
-  }
-
-  const prompt = buildPrompt(task, attachments);
-
-  const resumeSessionId = task.contextKey
-    ? findResumableSessionByContextKey(timelineDir, task.contextKey, provider) ?? undefined
-    : undefined;
-  if (resumeSessionId) {
-    log.info(`resuming session ${resumeSessionId} (context_key: ${task.contextKey})`);
-  }
-
-  const session = backend.execute(prompt, {
-    cwd: workDir,
-    model: model || undefined,
-    env,
-    timeout: agentTimeout,
-    resumeSessionId,
-  });
-
-  // Capture agent PID for signal handler
-  const agentPid = session.pid;
-
-  // Update timeline entry with session_id once agent starts
-  const earlySessionId = await session.sessionId;
-  log.info(`agent started (pid=${agentPid ?? "unknown"}, session=${earlySessionId})`);
-  log.info(JSON.stringify({ role: "user", type: "text", content: prompt }));
-  updateEntry(timelineDir, task.id, (entry) => {
-    entry.session_id = earlySessionId || null;
-  });
+  let agentPid: number | undefined;
+  let flushTimer: ReturnType<typeof setInterval> | undefined;
 
   // Message batching
   const pendingMessages: {
@@ -311,24 +210,23 @@ export async function runSession(input: SessionRunnerInput): Promise<void> {
     }
   };
 
-  const flushTimer = setInterval(flushMessages, FLUSH_INTERVAL_MS);
-
-  // --- Replace early signal handler with full one ---
-  process.removeListener("SIGTERM", earlyOnKill);
-  process.removeListener("SIGINT", earlyOnKill);
-
+  // --- Single SIGTERM/SIGINT handler, registered ONCE for the whole lifetime.
+  //     Every field it touches is guarded for the "not yet initialized" window
+  //     (kill arriving before the agent is spawned / batching has started). ---
   const onKill = async () => {
     if (killed) return;
     killed = true;
     log.info(`killed by signal (messages=${seq}, tools=${toolCount})`);
 
-    // 1. Kill the inner agent process
-    if (agentPid) {
-      try { process.kill(agentPid, "SIGTERM"); } catch { /* already dead */ }
+    // 1. Kill the inner agent process group (CLI + tool/MCP subprocesses),
+    //    escalating to SIGKILL if it ignores SIGTERM. No-op if not yet spawned.
+    if (agentPid !== undefined) {
+      log.info(`killing inner agent group (pid=${agentPid})`);
+      await killProcessTree(agentPid);
     }
 
     // 2. Flush any pending messages
-    clearInterval(flushTimer);
+    if (flushTimer) clearInterval(flushTimer);
     try { await flushMessages(); } catch { /* best-effort */ }
 
     // 3. Cleanup attachments
@@ -380,6 +278,83 @@ export async function runSession(input: SessionRunnerInput): Promise<void> {
   process.on("SIGTERM", onKill);
   process.on("SIGINT", onKill);
 
+  // Download attachments before building prompt
+  const attachmentIds = (task.context?.attachment_ids as string[]) ?? [];
+  let attachments: Attachment[] | undefined;
+  if (attachmentIds.length > 0) {
+    log.info(`downloading ${attachmentIds.length} attachment(s)`);
+    try {
+      attachments = await downloadAttachments(client, token, task.workspaceId, task.id, attachmentIds);
+      log.info(`attachments ready (${attachments.length} file(s))`);
+    } catch (e) {
+      await cleanupAttachments(task.id);
+      const errMsg = `failed to download attachments: ${e}`;
+      log.error(errMsg);
+      updateEntry(timelineDir, task.id, (entry) => {
+        entry.pid = null;
+        entry.status = "failed";
+        entry.errmsg = errMsg;
+      });
+      await reportToServer(
+        () => client.failTask(token, task.id, errMsg),
+        { taskId: task.id, type: "fail", payload: { error: errMsg }, token, serverURL, createdAt: new Date().toISOString() },
+        workspacesRoot,
+      );
+      // Leave onKill installed until the very end — no window where the pid is
+      // findable but unhandled. agentPid is still undefined, so onKill just reports.
+      process.removeListener("SIGTERM", onKill);
+      process.removeListener("SIGINT", onKill);
+      return;
+    }
+  }
+
+  // A kill may have arrived during attachment download (onKill set killed=true
+  // and called process.exit — but if exit hasn't flushed yet, don't spawn).
+  if (killed) return;
+
+  const prompt = buildPrompt(task, attachments);
+
+  const resumeSessionId = task.contextKey
+    ? findResumableSessionByContextKey(timelineDir, task.contextKey, provider) ?? undefined
+    : undefined;
+  if (resumeSessionId) {
+    log.info(`resuming session ${resumeSessionId} (context_key: ${task.contextKey})`);
+  }
+
+  const session = backend.execute(prompt, {
+    cwd: workDir,
+    model: model || undefined,
+    env,
+    timeout: agentTimeout,
+    resumeSessionId,
+  });
+
+  // Capture agent PID so the handler can reap it. backend.execute() spawns
+  // synchronously and returns immediately, so the only gap is the JS between
+  // the timeline write and here — closed by the re-check below.
+  agentPid = session.pid;
+
+  // If a kill landed while the agent was spawning, the handler ran with
+  // agentPid===undefined and killed nothing. Reap the freshly-spawned process
+  // now and exit before streaming starts.
+  if (killed) {
+    if (agentPid !== undefined) {
+      log.info(`kill landed during spawn — reaping inner agent group (pid=${agentPid})`);
+      await killProcessTree(agentPid);
+    }
+    process.exit(1);
+  }
+
+  // Update timeline entry with session_id once agent starts
+  const earlySessionId = await session.sessionId;
+  log.info(`agent started (pid=${agentPid ?? "unknown"}, session=${earlySessionId})`);
+  log.info(JSON.stringify({ role: "user", type: "text", content: prompt }));
+  updateEntry(timelineDir, task.id, (entry) => {
+    entry.session_id = earlySessionId || null;
+  });
+
+  flushTimer = setInterval(flushMessages, FLUSH_INTERVAL_MS);
+
   // Message inactivity timeout — kill hung agent if no messages arrive within the window
   const INACTIVITY_TIMEOUT_MS = messageInactivityTimeout ?? 5 * 60 * 1000;
   let inactivityTimedOut = false;
@@ -401,8 +376,10 @@ export async function runSession(input: SessionRunnerInput): Promise<void> {
       if (raceResult === "timeout") {
         inactivityTimedOut = true;
         log.warn(`message inactivity timeout (${INACTIVITY_TIMEOUT_MS / 1000}s) — killing agent`);
-        if (session.pid) {
-          try { process.kill(session.pid, "SIGTERM"); } catch { /* already dead */ }
+        if (session.pid !== undefined) {
+          // Reap the whole agent group, not just the leader, so MCP/tool
+          // subprocesses don't orphan on an inactivity timeout.
+          await killProcessTree(session.pid);
         }
         iter.return?.(undefined as never);
         break;
@@ -447,17 +424,13 @@ export async function runSession(input: SessionRunnerInput): Promise<void> {
 
     if (!killed) await flushMessages();
   } finally {
-    clearInterval(flushTimer);
-    process.removeListener("SIGTERM", onKill);
-    process.removeListener("SIGINT", onKill);
+    if (flushTimer) clearInterval(flushTimer);
   }
 
   if (killed) return;
 
-  // Re-register signal handlers for the duration of result awaiting
-  process.on("SIGTERM", onKill);
-  process.on("SIGINT", onKill);
-
+  // onKill stays installed across the result await so a kill landing here still
+  // reaps the inner agent group; removed only once the result resolves.
   const result = await session.result;
 
   // Remove signal handlers — normal completion takes over

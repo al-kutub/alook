@@ -223,18 +223,27 @@ describe("OpenCodeBackend", () => {
     expect(args[args.length - 1]).toBe("do things");
   });
 
+  it("TC8: spawns the CLI detached on POSIX so its group can be reaped", () => {
+    backend.execute("hello", { cwd: "/tmp" });
+    expect(lastSpawnArgs).toBeTruthy();
+    expect(lastSpawnArgs!.opts.detached).toBe(process.platform !== "win32");
+  });
+
   it("sets status to timeout when process is killed by timeout", async () => {
     vi.useFakeTimers();
+    const killSpy = vi.spyOn(process, "kill").mockImplementation(() => true);
     const session = backend.execute("hello", { cwd: "/tmp", timeout: 3000 });
     const mock = getMock();
 
     vi.advanceTimersByTime(3000);
-    expect(mock.proc.kill).toHaveBeenCalledWith("SIGTERM");
+    // Timeout now reaps the whole process group (negative pid), not just the leader.
+    expect(killSpy).toHaveBeenCalledWith(-12345, "SIGTERM");
 
     mock.proc.emit("close", null);
 
     const result = await session.result;
     expect(result.status).toBe("timeout");
+    killSpy.mockRestore();
     vi.useRealTimers();
   });
 

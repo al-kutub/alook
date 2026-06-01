@@ -73,6 +73,17 @@ vi.mock("./execenv/steering.js", () => ({
   clearKillIntent: (...args: any[]) => (mockClearKillIntent as any)(...args),
 }));
 
+// killProcessTree is exercised directly in kill-tree.test.ts. Here we stub it to
+// a synchronous group-SIGTERM so the handler tests can assert the kill via the
+// process.kill spy without waiting on the real SIGKILL grace loop.
+const mockKillProcessTree = vi.fn(async (pid: number) => {
+  try { process.kill(-pid, "SIGTERM"); } catch { /* */ }
+});
+vi.mock("./kill-tree.js", () => ({
+  killProcessTree: (...args: any[]) => (mockKillProcessTree as any)(...args),
+  isAlive: vi.fn(() => false),
+}));
+
 vi.mock("./prompt.js", () => ({
   buildPrompt: vi.fn((task: any) => task.prompt),
 }));
@@ -647,7 +658,38 @@ describe("session-runner runSession", () => {
     // Should have called process.exit(1)
     expect(exitSpy).toHaveBeenCalledWith(1);
 
+    // TC5: agent not yet spawned, so no process-tree kill is attempted.
+    expect(mockKillProcessTree).not.toHaveBeenCalled();
+
     exitSpy.mockRestore();
+  });
+
+  it("TC7: SIGTERM during sessionId negotiation reaps the freshly-spawned agent", async () => {
+    const exitSpy = vi.spyOn(process, "exit").mockImplementation((() => {}) as any);
+
+    const agentPid = 55555;
+    // sessionId never resolves on its own — the kill lands while we await it,
+    // after backend.execute() has already returned a live pid.
+    mockBackendExecute.mockReturnValue({
+      pid: agentPid,
+      messages: (async function* () { await new Promise<void>(() => {}); })(),
+      sessionId: new Promise<string>(() => {}),
+      result: new Promise(() => {}),
+    });
+
+    const sessionPromise = runSession(makeInput());
+    // Let execution reach the `await session.sessionId` suspension point.
+    await new Promise((r) => setTimeout(r, 50));
+
+    process.emit("SIGTERM", "SIGTERM");
+    await new Promise((r) => setTimeout(r, 50));
+
+    // The inner agent that was spawned must be reaped, not orphaned.
+    expect(mockKillProcessTree).toHaveBeenCalledWith(agentPid);
+    expect(exitSpy).toHaveBeenCalledWith(1);
+
+    exitSpy.mockRestore();
+    void sessionPromise;
   });
 
   it("gracefully cleans up on SIGTERM: kills agent, updates timeline to killed, calls failTask", async () => {
@@ -687,8 +729,8 @@ describe("session-runner runSession", () => {
     // Wait for cleanup to finish
     await new Promise((r) => setTimeout(r, 50));
 
-    // 1. Should have killed the inner agent process
-    expect(killSpy).toHaveBeenCalledWith(agentPid, "SIGTERM");
+    // 1. Should have reaped the inner agent's process group
+    expect(mockKillProcessTree).toHaveBeenCalledWith(agentPid);
 
     // 2. Timeline should be updated to "killed"
     const killCalls = mockUpdateEntry.mock.calls.filter((call: any[]) => {
@@ -1457,9 +1499,9 @@ describe("message inactivity timeout", () => {
       })(),
       sessionId: Promise.resolve("sess-hang"),
       result: new Promise<any>((resolve) => {
-        // Resolve when process.kill is called (simulating proc close after SIGTERM)
+        // Resolve when the agent group is signalled (proc close after SIGTERM).
         const interval = setInterval(() => {
-          if (killSpy.mock.calls.some((c) => c[0] === agentPid)) {
+          if (killSpy.mock.calls.some((c) => c[0] === -agentPid)) {
             clearInterval(interval);
             resolve({
               status: "timeout",
@@ -1476,8 +1518,8 @@ describe("message inactivity timeout", () => {
     // Use a very short inactivity timeout (100ms) for the test
     await runSession(makeInput({ messageInactivityTimeout: 100 }));
 
-    // Should have killed the hung agent process
-    expect(killSpy).toHaveBeenCalledWith(agentPid, "SIGTERM");
+    // Should have reaped the hung agent's process group
+    expect(mockKillProcessTree).toHaveBeenCalledWith(agentPid);
 
     // Should have failed the task with inactivity timeout error
     expect(mockClientInstance.failTask).toHaveBeenCalledWith(
@@ -1512,7 +1554,7 @@ describe("message inactivity timeout", () => {
       sessionId: Promise.resolve("sess-zero"),
       result: new Promise<any>((resolve) => {
         const interval = setInterval(() => {
-          if (killSpy.mock.calls.some((c) => c[0] === agentPid)) {
+          if (killSpy.mock.calls.some((c) => c[0] === -agentPid)) {
             clearInterval(interval);
             resolve({
               status: "timeout",
@@ -1528,7 +1570,7 @@ describe("message inactivity timeout", () => {
 
     await runSession(makeInput({ messageInactivityTimeout: 100 }));
 
-    expect(killSpy).toHaveBeenCalledWith(agentPid, "SIGTERM");
+    expect(mockKillProcessTree).toHaveBeenCalledWith(agentPid);
     expect(mockClientInstance.failTask).toHaveBeenCalledWith(
       "test_token",
       "t1",

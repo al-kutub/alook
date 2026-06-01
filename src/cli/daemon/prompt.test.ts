@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { buildPrompt } from "./prompt.js";
+import { localISOString } from "./execenv/timeline.js";
 import type { Task } from "./types.js";
 
 function makeTask(prompt: string, type = "user_dm_message"): Task {
@@ -37,9 +38,58 @@ describe("buildPrompt", () => {
 
   it("includes the task type in output", () => {
     const task = makeTask("Check inbox", "email_inbound");
+    const parsed = JSON.parse(buildPrompt(task));
+    expect(parsed.type).toBe("email_inbound");
+    expect(parsed.instruction).toBe("Check inbox");
     expect(buildPrompt(task)).toBe(
-      JSON.stringify({ type: "email_inbound", instruction: "Check inbox" }),
+      JSON.stringify({
+        type: "email_inbound",
+        received_at: parsed.received_at,
+        instruction: "Check inbox",
+      }),
     );
+  });
+
+  it("stamps received_at from createdAt, matching localISOString", () => {
+    const task = makeTask("Hi");
+    task.createdAt = "2026-06-04T14:12:33.000Z";
+    const parsed = JSON.parse(buildPrompt(task));
+    expect(parsed.received_at).toBe(localISOString(new Date(task.createdAt)));
+    // Round-trip to the same instant, avoiding brittle tz-string assertions on CI.
+    expect(new Date(parsed.received_at).getTime()).toBe(Date.parse(task.createdAt));
+  });
+
+  it("stamps received_at for every input source", () => {
+    for (const type of [
+      "user_dm_message",
+      "email_notification",
+      "calendar_event",
+      "issue_event",
+    ]) {
+      const parsed = JSON.parse(buildPrompt(makeTask("x", type)));
+      expect(typeof parsed.received_at).toBe("string");
+      expect(parsed.received_at).not.toBe("");
+    }
+  });
+
+  it("keeps calendar datetime (scheduled) distinct from received_at (arrival)", () => {
+    const task: Task = {
+      ...makeTask("scheduled task", "calendar_event"),
+      createdAt: "2026-06-04T14:12:33.000Z",
+      context: { datetime: "2026-06-10T09:00" },
+    };
+    const parsed = JSON.parse(buildPrompt(task));
+    expect(parsed.datetime).toBe("2026-06-10T09:00");
+    expect(parsed.received_at).toBe(localISOString(new Date("2026-06-04T14:12:33.000Z")));
+    expect(parsed.received_at).not.toBe(parsed.datetime);
+  });
+
+  it("falls back to a valid current time when createdAt is invalid", () => {
+    const task = makeTask("Hi");
+    task.createdAt = "";
+    const parsed = JSON.parse(buildPrompt(task));
+    expect(parsed.received_at).not.toBe("");
+    expect(Number.isNaN(Date.parse(parsed.received_at))).toBe(false);
   });
 
   it("adds EMAIL_NOTICE for email_notification tasks without context", () => {
