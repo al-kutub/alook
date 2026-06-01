@@ -23,6 +23,7 @@ import { SiGithub, SiGoogle } from "@icons-pack/react-simple-icons"
 import Image from "next/image"
 import { GradientBackground } from "@/components/gradient-background"
 import { resolveMode, DEV_PASSWORD } from "@alook/shared"
+import { captureRegistrationSource, sendRegistrationSource } from "@/lib/registration-source"
 
 const mode = resolveMode({
   nodeEnv: process.env.NODE_ENV,
@@ -48,6 +49,10 @@ function SignInForm({ postLoginUrl }: { postLoginUrl: string }) {
   const [code, setCode] = useState("")
   const [step, setStep] = useState<"email" | "code">("email")
   const [retryAfter, setRetryAfter] = useState<number | null>(null)
+
+  useEffect(() => {
+    captureRegistrationSource()
+  }, [])
 
   useEffect(() => {
     if (retryAfter == null) return
@@ -105,6 +110,7 @@ function SignInForm({ postLoginUrl }: { postLoginUrl: string }) {
         setError(error.message ?? "Invalid code")
         setCode("")
       } else {
+        sendRegistrationSource()
         window.location.href = postLoginUrl
         return
       }
@@ -135,6 +141,7 @@ function SignInForm({ postLoginUrl }: { postLoginUrl: string }) {
         return
       }
     }
+    sendRegistrationSource()
     window.location.href = postLoginUrl
   }
 
