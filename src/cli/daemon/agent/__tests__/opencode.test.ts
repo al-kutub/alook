@@ -27,6 +27,12 @@ vi.mock("child_process", () => ({
   }),
 }));
 
+vi.mock("../../kill-tree.js", () => ({
+  killProcessTree: vi.fn().mockResolvedValue(undefined),
+  killGraceMs: () => 2000,
+  isAlive: () => false,
+}));
+
 const tick = (ms = 15) => new Promise((r) => setTimeout(r, ms));
 
 async function collectMessages(
@@ -223,13 +229,20 @@ describe("OpenCodeBackend", () => {
     expect(args[args.length - 1]).toBe("do things");
   });
 
+  it("TC8: spawns the CLI detached on POSIX so its group can be reaped", () => {
+    backend.execute("hello", { cwd: "/tmp" });
+    expect(lastSpawnArgs).toBeTruthy();
+    expect(lastSpawnArgs!.opts.detached).toBe(process.platform !== "win32");
+  });
+
   it("sets status to timeout when process is killed by timeout", async () => {
     vi.useFakeTimers();
+    const killTree = await vi.importMock<typeof import("../../kill-tree.js")>("../../kill-tree.js");
     const session = backend.execute("hello", { cwd: "/tmp", timeout: 3000 });
     const mock = getMock();
 
     vi.advanceTimersByTime(3000);
-    expect(mock.proc.kill).toHaveBeenCalledWith("SIGTERM");
+    expect(killTree.killProcessTree).toHaveBeenCalledWith(12345);
 
     mock.proc.emit("close", null);
 

@@ -1610,13 +1610,29 @@ describe("daemon kill_task handling", () => {
     // Use short timeouts for KILL_TASK retry loop in tests
     process.env.ALOOK_KILL_TASK_MAX_WAIT_MS = "500";
     process.env.ALOOK_KILL_TASK_POLL_MS = "50";
+    // Short verify/grace windows so killAndVerify's SIGTERM→verify→SIGKILL loop
+    // is quick. (verifyMs is clamped to >= grace+500, so keep grace tiny too.)
+    process.env.ALOOK_KILL_GRACE_MS = "10";
+    process.env.ALOOK_KILL_VERIFY_MS = "100";
   });
 
   afterEach(() => {
     for (const t of intervalTimers) realClearInterval(t);
     delete process.env.ALOOK_KILL_TASK_MAX_WAIT_MS;
     delete process.env.ALOOK_KILL_TASK_POLL_MS;
+    delete process.env.ALOOK_KILL_GRACE_MS;
+    delete process.env.ALOOK_KILL_VERIFY_MS;
   });
+
+  // process.kill mock that simulates the target dying on SIGTERM: the delivery
+  // call succeeds, and the liveness probe (signal 0) reports it gone (ESRCH) so
+  // killAndVerify returns promptly without escalating to SIGKILL.
+  function mockKillTargetDies() {
+    return vi.spyOn(process, "kill").mockImplementation(((pid: number, sig: any) => {
+      if (sig === 0) { const e = Object.assign(new Error("ESRCH"), { code: "ESRCH" }); throw e; }
+      return true;
+    }) as any);
+  }
 
   function makeKillTask(targetTaskId: string) {
     return {
@@ -1654,7 +1670,7 @@ describe("daemon kill_task handling", () => {
   it("sends SIGTERM when target PID is found in timeline", async () => {
     setupKillTaskClaim("target_t1");
     mockFindRunningPidByTaskId.mockReturnValue(99999);
-    const mockKill = vi.spyOn(process, "kill").mockImplementation((() => {}) as any);
+    const mockKill = mockKillTargetDies();
 
     vi.mocked(loadCLIConfigForProfile).mockReturnValue({
       server_url: "",
@@ -1663,11 +1679,54 @@ describe("daemon kill_task handling", () => {
     mockClientInstance.register.mockResolvedValue({ runtimes: [{ id: "rt1" }] });
 
     await startDaemon();
-    await new Promise((r) => setTimeout(r, 50));
+    await new Promise((r) => setTimeout(r, 250));
 
     expect(mockKill).toHaveBeenCalledWith(99999, "SIGTERM");
     expect(mockClientInstance.failTask).toHaveBeenCalledWith("al_test_token", "kt1", "killed");
     expect(spawn).not.toHaveBeenCalled();
+
+    mockKill.mockRestore();
+  });
+
+  it("TC7: escalates to SIGKILL when the session-runner ignores SIGTERM", async () => {
+    setupKillTaskClaim("target_t1");
+    mockFindRunningPidByTaskId.mockReturnValue(66666);
+    // Target stays alive (signal 0 never throws) — it ignores SIGTERM, forcing
+    // killAndVerify to escalate to SIGKILL after the verify window.
+    const mockKill = vi.spyOn(process, "kill").mockImplementation((() => true) as any);
+
+    vi.mocked(loadCLIConfigForProfile).mockReturnValue({
+      server_url: "",
+      watched_workspaces: [{ id: "ws1", name: "Test WS", token: "al_test_token" }],
+    });
+    mockClientInstance.register.mockResolvedValue({ runtimes: [{ id: "rt1" }] });
+
+    await startDaemon();
+    await new Promise((r) => setTimeout(r, 800));
+
+    expect(mockKill).toHaveBeenCalledWith(66666, "SIGTERM");
+    expect(mockKill).toHaveBeenCalledWith(66666, "SIGKILL");
+    expect(mockClientInstance.failTask).toHaveBeenCalledWith("al_test_token", "kt1", "killed");
+
+    mockKill.mockRestore();
+  });
+
+  it("TC7: does not SIGKILL when the target exits on SIGTERM", async () => {
+    setupKillTaskClaim("target_t1");
+    mockFindRunningPidByTaskId.mockReturnValue(99999);
+    const mockKill = mockKillTargetDies();
+
+    vi.mocked(loadCLIConfigForProfile).mockReturnValue({
+      server_url: "",
+      watched_workspaces: [{ id: "ws1", name: "Test WS", token: "al_test_token" }],
+    });
+    mockClientInstance.register.mockResolvedValue({ runtimes: [{ id: "rt1" }] });
+
+    await startDaemon();
+    await new Promise((r) => setTimeout(r, 250));
+
+    expect(mockKill).toHaveBeenCalledWith(99999, "SIGTERM");
+    expect(mockKill).not.toHaveBeenCalledWith(99999, "SIGKILL");
 
     mockKill.mockRestore();
   });
@@ -1716,7 +1775,7 @@ describe("daemon kill_task handling", () => {
   it("does not call startTask for kill_tasks", async () => {
     setupKillTaskClaim("target_t1");
     mockFindRunningPidByTaskId.mockReturnValue(99999);
-    const mockKill = vi.spyOn(process, "kill").mockImplementation((() => {}) as any);
+    const mockKill = mockKillTargetDies();
 
     vi.mocked(loadCLIConfigForProfile).mockReturnValue({
       server_url: "",
@@ -1725,7 +1784,7 @@ describe("daemon kill_task handling", () => {
     mockClientInstance.register.mockResolvedValue({ runtimes: [{ id: "rt1" }] });
 
     await startDaemon();
-    await new Promise((r) => setTimeout(r, 50));
+    await new Promise((r) => setTimeout(r, 250));
 
     expect(mockClientInstance.startTask).not.toHaveBeenCalled();
 
@@ -1740,7 +1799,7 @@ describe("daemon kill_task handling", () => {
       if (callCount >= 3) return 88888;
       return null;
     });
-    const mockKill = vi.spyOn(process, "kill").mockImplementation((() => {}) as any);
+    const mockKill = mockKillTargetDies();
 
     vi.mocked(loadCLIConfigForProfile).mockReturnValue({
       server_url: "",
@@ -1749,7 +1808,7 @@ describe("daemon kill_task handling", () => {
     mockClientInstance.register.mockResolvedValue({ runtimes: [{ id: "rt1" }] });
 
     await startDaemon();
-    await new Promise((r) => setTimeout(r, 500));
+    await new Promise((r) => setTimeout(r, 700));
 
     expect(mockKill).toHaveBeenCalledWith(88888, "SIGTERM");
     expect(mockClientInstance.failTask).toHaveBeenCalledWith("al_test_token", "kt1", "killed");
@@ -1761,7 +1820,7 @@ describe("daemon kill_task handling", () => {
   it("searches correct timeline directory using agentId from task", async () => {
     setupKillTaskClaim("target_t1");
     mockFindRunningPidByTaskId.mockReturnValue(77777);
-    const mockKill = vi.spyOn(process, "kill").mockImplementation((() => {}) as any);
+    const mockKill = mockKillTargetDies();
 
     vi.mocked(loadCLIConfigForProfile).mockReturnValue({
       server_url: "",
@@ -2099,7 +2158,13 @@ describe("handleWsPush via WebSocket onMessage", () => {
     expect(capturedWsOnMessage).not.toBeNull();
 
     mockFindRunningPidByTaskId.mockReturnValue(77777);
-    const mockKill = vi.spyOn(process, "kill").mockImplementation((() => {}) as any);
+    process.env.ALOOK_KILL_VERIFY_MS = "100";
+    // SIGTERM delivery succeeds; liveness probe reports the target gone so the
+    // verify loop ends without escalation.
+    const mockKill = vi.spyOn(process, "kill").mockImplementation(((_pid: number, sig: any) => {
+      if (sig === 0) { throw Object.assign(new Error("ESRCH"), { code: "ESRCH" }); }
+      return true;
+    }) as any);
 
     capturedWsOnMessage!({
       type: "daemon.kill",
@@ -2113,6 +2178,7 @@ describe("handleWsPush via WebSocket onMessage", () => {
     expect(mockKill).toHaveBeenCalledWith(77777, "SIGTERM");
 
     mockKill.mockRestore();
+    delete process.env.ALOOK_KILL_VERIFY_MS;
   });
 
   it("handles daemon.meetings via WS push with Map lookup", async () => {

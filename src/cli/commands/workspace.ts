@@ -1,6 +1,8 @@
 import { Command } from "commander";
 import { readFileSync } from "fs";
+import { toAlookAddress } from "@alook/shared";
 import { APIClient } from "../lib/client.js";
+import { cmdPrefix } from "../lib/env.js";
 import { printJSON } from "../lib/output.js";
 import { resolveClientOpts } from "../lib/resolve-client.js";
 
@@ -19,7 +21,7 @@ function slugify(name: string): string {
 
 interface StudioResponse {
   studio: { name: string };
-  workspace: { id: string; name: string };
+  workspace: { id: string; name: string; slug: string };
   agents: Array<{ id: string; name: string; email_handle: string | null }>;
 }
 
@@ -68,7 +70,7 @@ export function workspaceCommand(): Command {
       }
 
       if (runtimes.length === 0) {
-        console.error("Error: No daemon registered. Run 'npx @alook/cli daemon start' first.");
+        console.error(`Error: No daemon registered. Run '${cmdPrefix()} daemon start' first.`);
         process.exit(1);
       }
 
@@ -80,7 +82,7 @@ export function workspaceCommand(): Command {
         const lastSeen = new Date(r.machineLastSeenAt.includes("Z") ? r.machineLastSeenAt : r.machineLastSeenAt + "Z").getTime();
         return now - lastSeen < OFFLINE_THRESHOLD_MS;
       });
-      const runtime = onlineRuntime || runtimes[0];
+      let runtime = onlineRuntime || runtimes[0];
 
       // Check if workspace already has agents — if so, create a new workspace
       let targetWorkspaceId = workspaceId;
@@ -94,6 +96,23 @@ export function workspaceCommand(): Command {
           targetWorkspaceId = newWs.id;
           targetClient = new APIClient(serverUrl, token, targetWorkspaceId);
           console.log(`Created workspace: ${newWs.name} (${newWs.id})`);
+
+          // Re-fetch runtimes scoped to the new workspace
+          try {
+            const newRuntimes = await targetClient.getJSON<RuntimeResponse[]>("/api/runtimes");
+            if (newRuntimes.length > 0) {
+              const newOnlineRuntime = newRuntimes.find((r) => {
+                if (!r.machineLastSeenAt) return false;
+                const lastSeen = new Date(r.machineLastSeenAt.includes("Z") ? r.machineLastSeenAt : r.machineLastSeenAt + "Z").getTime();
+                return now - lastSeen < OFFLINE_THRESHOLD_MS;
+              });
+              runtime = newOnlineRuntime || newRuntimes[0];
+            } else {
+              await targetClient.postJSON("/api/runtimes", { id: runtime.id });
+            }
+          } catch (err) {
+            console.warn(`Warning: could not refresh runtimes for new workspace: ${err instanceof Error ? err.message : err}`);
+          }
         }
       } catch (err) {
         console.warn(`Warning: could not check existing agents: ${err instanceof Error ? err.message : err}`);
@@ -120,9 +139,10 @@ export function workspaceCommand(): Command {
         console.log(`\nWorkspace initialized: ${res.studio.name || res.workspace.name}`);
         console.log("Agents created:");
         for (const agent of res.agents) {
-          const email = agent.email_handle ? `${agent.email_handle}@alook.ai` : "no email";
+          const email = agent.email_handle ? toAlookAddress(agent.email_handle) : "no email";
           console.log(`  - ${agent.name} (${email})`);
         }
+        console.log(`\n  Open: ${serverUrl}/w/${res.workspace.slug}`);
       } catch (err) {
         console.error(`Error: failed to create workspace: ${err instanceof Error ? err.message : err}`);
         process.exit(1);

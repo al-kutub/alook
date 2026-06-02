@@ -81,7 +81,6 @@ import {
 import {
   ArrowUp,
   BedDouble,
-  Box,
   FileText,
   Loader2,
   Mail,
@@ -549,6 +548,7 @@ export function AgentChatView({
   const { workspaceId, slug } = useWorkspace();
   const {
     agents,
+    runtimes,
     agentLinks,
     activeTaskCounts,
     subscribeWs,
@@ -561,6 +561,13 @@ export function AgentChatView({
     setAgentId: setChannelAgentId,
   } = useChannel();
   const agentId = propAgentId ?? (params.id as string);
+  // Resolve the conversation agent's runtime provider so runtime errors can be
+  // attributed to the runtime CLI (Claude Code / Codex / OpenCode) — issue #236.
+  const activeAgent = agents.find((a) => a.id === agentId);
+  const activeRuntime = activeAgent?.runtime_id
+    ? runtimes.find((r) => r.id === activeAgent.runtime_id)
+    : null;
+  const runtimeProvider = activeRuntime?.provider ?? null;
   const scrollToTaskId =
     propScrollToTaskId !== undefined
       ? propScrollToTaskId
@@ -597,9 +604,6 @@ export function AgentChatView({
   const [selectedArtifact, setSelectedArtifact] = useState<Artifact | null>(
     null,
   );
-  const [artifactSheetSource, setArtifactSheetSource] = useState<
-    "agent" | "issue" | null
-  >(null);
   const [emailSheetOpen, setEmailSheetOpen] = useState(false);
   const [selectedEmailId, setSelectedEmailId] = useState<string | null>(null);
   const [calendarEventSheetOpen, setCalendarEventSheetOpen] = useState(false);
@@ -686,23 +690,6 @@ export function AgentChatView({
     [agentArtifacts],
   );
 
-  const artifactSheetArtifacts = useMemo(
-    () =>
-      artifactSheetSource === "agent"
-        ? agentArtifacts
-        : artifactSheetSource === "issue"
-          ? (issueDetail?.artifacts ?? [])
-          : [],
-    [artifactSheetSource, agentArtifacts, issueDetail?.artifacts],
-  );
-  const {
-    versionMap: artifactSheetVersionMap,
-    duplicateFilenames: artifactSheetDuplicateFilenames,
-  } = useMemo(
-    () => computeArtifactVersions(artifactSheetArtifacts),
-    [artifactSheetArtifacts],
-  );
-
   const timeline = useMemo(
     () => buildTimeline(messages, agentArtifacts, napMarkers, conversation?.id),
     [messages, agentArtifacts, napMarkers, conversation?.id],
@@ -716,7 +703,6 @@ export function AgentChatView({
     (artifact: Artifact) => {
       if (isPreviewable(artifact)) {
         setSelectedArtifact(artifact);
-        setArtifactSheetSource("agent");
         setArtifactSheetOpen(true);
       } else {
         window.open(getArtifactUrl(artifact.id, workspaceId, true), "_blank");
@@ -729,7 +715,6 @@ export function AgentChatView({
     (artifact: Artifact) => {
       if (isPreviewable(artifact)) {
         setSelectedArtifact(artifact);
-        setArtifactSheetSource("issue");
         setArtifactSheetOpen(true);
       } else {
         window.open(getArtifactUrl(artifact.id, workspaceId, true), "_blank");
@@ -2804,6 +2789,7 @@ export function AgentChatView({
                       msg.role === "assistant" ? handleToggleFlag : undefined
                     }
                     groupPosition={pos ?? "solo"}
+                    provider={runtimeProvider}
                   />
                 </div>
               );
@@ -2820,6 +2806,7 @@ export function AgentChatView({
                     task={activeTask}
                     messages={taskMessages}
                     connectionLost={connectionLost}
+                    provider={runtimeProvider}
                   />
                 </div>
               )}
@@ -2910,24 +2897,6 @@ export function AgentChatView({
                           : `${agentName} is well-rested and ready to go`}
                     </TooltipContent>
                   </Tooltip>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => {
-                      setMenuOpen(false);
-                      setArtifactSheetSource("agent");
-                      setArtifactSheetOpen(true);
-                    }}
-                    className="relative w-full justify-start gap-2 rounded-md text-muted-foreground hover:text-foreground"
-                  >
-                    <Box className="size-3.5" />
-                    <span className="text-xs">Artifacts</span>
-                    {agentArtifacts.length > 0 && (
-                      <span className="ml-auto flex size-4 items-center justify-center rounded-full bg-primary text-[9px] font-medium text-primary-foreground">
-                        {agentArtifacts.length}
-                      </span>
-                    )}
-                  </Button>
                 </PopoverContent>
               </Popover>
             )}
@@ -3149,14 +3118,13 @@ export function AgentChatView({
           if (!v)
             setTimeout(() => {
               setSelectedArtifact(null);
-              setArtifactSheetSource(null);
             }, 300);
         }}
-        artifacts={artifactSheetArtifacts}
+        artifacts={selectedArtifact ? [selectedArtifact] : agentArtifacts}
         workspaceId={workspaceId}
         initialArtifact={selectedArtifact}
-        versionMap={artifactSheetVersionMap}
-        duplicateFilenames={artifactSheetDuplicateFilenames}
+        versionMap={versionMap}
+        duplicateFilenames={duplicateFilenames}
       />
 
       <EmailEventSheet

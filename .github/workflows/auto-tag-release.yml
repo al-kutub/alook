@@ -51,6 +51,43 @@ jobs:
 
       - name: Create GitHub Release
         if: steps.check.outputs.exists == 'false'
+        id: release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: gh release create "${{ steps.version.outputs.tag }}" --generate-notes --title "${{ steps.version.outputs.tag }}"
+        run: |
+          gh release create "${{ steps.version.outputs.tag }}" --generate-notes --title "${{ steps.version.outputs.tag }}"
+          RELEASE_URL="https://github.com/${{ github.repository }}/releases/tag/${{ steps.version.outputs.tag }}"
+          BODY=$(gh release view "${{ steps.version.outputs.tag }}" --json body -q .body)
+          echo "url=$RELEASE_URL" >> "$GITHUB_OUTPUT"
+          echo "body<<EOF" >> "$GITHUB_OUTPUT"
+          echo "$BODY" >> "$GITHUB_OUTPUT"
+          echo "EOF" >> "$GITHUB_OUTPUT"
+
+      - name: Notify Discord
+        if: steps.check.outputs.exists == 'false'
+        env:
+          DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          VERSION: ${{ steps.version.outputs.tag }}
+          BODY: ${{ steps.release.outputs.body }}
+          RELEASE_URL: ${{ steps.release.outputs.url }}
+        run: |
+          PAYLOAD=$(python3 -c "
+          import json, os
+          version = os.environ['VERSION']
+          body = os.environ.get('BODY', '')[:4096] or 'No changelog available'
+          release_url = os.environ['RELEASE_URL']
+          desc = f'{body}\n\n[View Release]({release_url})'
+          if len(desc) > 4096:
+              desc = desc[:4093] + '...'
+          payload = {
+            'embeds': [{
+              'title': f'\U0001f680 Alook {version} Released',
+              'description': desc,
+              'color': 3066993,
+              'url': release_url,
+              'footer': {'text': 'Alook CI/CD'},
+            }]
+          }
+          print(json.dumps(payload))
+          ")
+          curl -sf -H "Content-Type: application/json" -d "$PAYLOAD" "$DISCORD_WEBHOOK"

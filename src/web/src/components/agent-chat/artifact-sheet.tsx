@@ -75,13 +75,7 @@ export function ArtifactSheet({ open, onOpenChange, artifacts, workspaceId, init
                   variant="ghost"
                   size="icon-sm"
                   className="shrink-0 sm:hidden"
-                  onClick={() => {
-                    if (artifacts.length > 1) {
-                      setSelectedArtifact(null);
-                    } else {
-                      handleOpenChange(false);
-                    }
-                  }}
+                  onClick={() => handleOpenChange(false)}
                 >
                   <ArrowLeft className="size-4" />
                 </Button>

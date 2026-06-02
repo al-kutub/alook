@@ -1,4 +1,5 @@
 import type { Task, Attachment } from "./types.js";
+import { localISOString } from "./execenv/timeline.js";
 
 const DM_RESPONSE_NOTICE =
   "IMPORTANT: Only your final text response is visible to the user." +
@@ -38,7 +39,17 @@ function buildDmNotice(name: string, email: string): string {
 }
 
 export function buildPrompt(task: Task, attachments?: Attachment[]): string {
-  const obj: Record<string, unknown> = { type: task.type, instruction: task.prompt };
+  // The arrival time of this info (when the message/task was created server-side).
+  // Lets a resumed agent reason about elapsed wall-clock time between turns.
+  const createdAt = new Date(task.createdAt);
+  const receivedAt = Number.isNaN(createdAt.getTime())
+    ? localISOString()
+    : localISOString(createdAt);
+  const obj: Record<string, unknown> = {
+    type: task.type,
+    received_at: receivedAt,
+    instruction: task.prompt,
+  };
   if (task.type === "user_dm_message") {
     obj.notice = DM_RESPONSE_NOTICE;
   }

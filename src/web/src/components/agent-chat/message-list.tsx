@@ -8,6 +8,7 @@ import { Streamdown } from "streamdown";
 import { highlightMentions } from "@/lib/highlight-mentions";
 import { TaskStream } from "@/components/task-stream";
 import { HistoricalTaskThinking } from "@/components/agent-chat/historical-task-thinking";
+import { RuntimeErrorBlock } from "@/components/agent-chat/runtime-error-block";
 import { FileText, Calendar, CircleDot, Mail, Flag, Copy, Check } from "lucide-react";
 
 import { getEventIconType, type GroupPosition } from "@/components/agent-chat/agent-chat-view";
@@ -39,6 +40,8 @@ export interface MessageItemProps {
   isFlagged?: boolean;
   onToggleFlag?: (messageId: string) => void;
   groupPosition?: GroupPosition;
+  /** Provider of the conversation's agent runtime, used to attribute runtime errors (issue #236). */
+  provider?: string | null;
 }
 
 function EventMessageIcon({ content, conversationType }: { content: string; conversationType?: string | null }) {
@@ -136,6 +139,7 @@ export const MessageItem = memo(function MessageItem({
   isFlagged,
   onToggleFlag,
   groupPosition = "solo",
+  provider,
 }: MessageItemProps) {
   const { copy, copied } = useCopyToClipboard();
 
@@ -213,6 +217,7 @@ export const MessageItem = memo(function MessageItem({
             messages={taskMessages}
             connectionLost={connectionLost}
             onRetry={onRetry}
+            provider={provider}
           />
           {isTaskDone && actionButtons}
         </div>
@@ -275,11 +280,20 @@ export const MessageItem = memo(function MessageItem({
           isFlagged && "bg-muted/30 rounded-lg px-2 -mx-2"
         )} data-message-id={msg.id} data-quote-source {...(msg.task_id ? { "data-task-id": msg.task_id } : {})}>
           {targetConvId && msg.role === "assistant" && msg.task_id && thinkingCount > 1 && (
-            <HistoricalTaskThinking taskId={msg.task_id} thinkingCount={thinkingCount - 1} workspaceId={workspaceId} />
+            <HistoricalTaskThinking taskId={msg.task_id} thinkingCount={thinkingCount - 1} workspaceId={workspaceId} provider={provider} />
           )}
-          <div className="markdown max-w-full min-w-0 px-1 py-1 text-base text-foreground">
-            <Streamdown controls={{ code: { copy: true, download: false }, table: { copy: true, download: false, fullscreen: true } }} linkSafety={{ enabled: false }} allowedTags={MENTION_ALLOWED_TAGS} literalTagContent={MENTION_LITERAL_TAGS} components={mentionComponents}>{highlightMentions(msg.content, agents)}</Streamdown>
-          </div>
+          {msg.metadata?.error_source === "runtime" ? (
+            <div className="px-1 py-1">
+              <RuntimeErrorBlock
+                provider={(msg.metadata.provider as string | null | undefined) ?? provider}
+                message={msg.content}
+              />
+            </div>
+          ) : (
+            <div className="markdown max-w-full min-w-0 px-1 py-1 text-base text-foreground">
+              <Streamdown controls={{ code: { copy: true, download: false }, table: { copy: true, download: false, fullscreen: true } }} linkSafety={{ enabled: false }} allowedTags={MENTION_ALLOWED_TAGS} literalTagContent={MENTION_LITERAL_TAGS} components={mentionComponents}>{highlightMentions(msg.content, agents)}</Streamdown>
+            </div>
+          )}
           {actionButtons}
         </div>
       ) : null}

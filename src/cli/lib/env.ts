@@ -1,4 +1,8 @@
-import { resolveMode, cliCommand } from "@alook/shared";
+import { resolveMode, cliCommand, getBaseUrl } from "@alook/shared";
+
+export function getServerUrl(): string {
+  return getBaseUrl({ serverUrl: process.env.ALOOK_SERVER_URL });
+}
 
 export function isDev(): boolean {
   return resolveMode({

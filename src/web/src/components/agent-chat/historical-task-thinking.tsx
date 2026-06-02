@@ -27,10 +27,13 @@ export function HistoricalTaskThinking({
   taskId,
   thinkingCount,
   workspaceId,
+  provider,
 }: {
   taskId: string;
   thinkingCount: number;
   workspaceId: string;
+  /** Provider of the conversation's agent runtime, used to attribute runtime errors (issue #236). */
+  provider?: string | null;
 }) {
   const [messages, setMessages] = useState<TaskMessageResponse[]>([]);
   const [loading, setLoading] = useState(false);
@@ -57,6 +60,7 @@ export function HistoricalTaskThinking({
       thinkingCountHint={thinkingCount}
       onExpandThinking={fetchMessages}
       thinkingLoading={loading}
+      provider={provider}
     />
   );
 }

@@ -112,6 +112,50 @@ describe("buildInstructionContent", () => {
   });
 });
 
+describe("buildInstructionContent memory & format", () => {
+  it("renders the Memory section with index / what-to-memorize / what-not-to-memorize sub-headings", () => {
+    const content = buildInstructionContent(makeTask());
+    expect(content).toContain("## Memory");
+    expect(content).toContain("### memory.md — your memory index");
+    expect(content).toContain("### What to memorize");
+    expect(content).toContain("### What NOT to memorize");
+    // memory.md must NOT instruct recording time-sensitive in-progress state (that's the Timeline's job)
+    expect(content).toContain("Context Timeline already records");
+  });
+
+  it("preserves the load-bearing memory facts (memory.md, experiences/, 140-char threshold)", () => {
+    const content = buildInstructionContent(makeTask());
+    expect(content).toContain("memory.md");
+    expect(content).toContain("experiences/");
+    expect(content).toContain("140 chars");
+  });
+
+  it("no longer emits the legacy big-boss separator", () => {
+    const content = buildInstructionContent(
+      makeTask({ agent: { name: "test", instructions: "Follow these rules" } }),
+    );
+    expect(content).toContain("## BIG BOSS Instructions");
+    expect(content).toContain("Follow these rules");
+    expect(content).not.toContain("---- big boss out ---");
+  });
+
+  it("includes the email quick reference when an email handle is configured", () => {
+    const content = buildInstructionContent(
+      makeTask({ agent: { name: "test", instructions: "", emailHandle: "myagent" } }),
+    );
+    expect(content).toContain("### Email command quick reference");
+    expect(content).toContain("email pull --email_id <EMAIL_ID>");
+  });
+
+  it("always renders the email section (every agent has an email)", () => {
+    const content = buildInstructionContent(
+      makeTask({ agent: { name: "test", instructions: "" } }),
+    );
+    expect(content).toContain("### Email command quick reference");
+    expect(content).toContain("email pull --email_id <EMAIL_ID>");
+  });
+});
+
 describe("contentHash", () => {
   it("returns consistent hex string for same input", () => {
     const h1 = contentHash("hello world");

@@ -4,6 +4,7 @@ import { Readable } from "stream";
 import type { AgentMessage } from "../../types.js";
 
 let currentMockProc: ReturnType<typeof createMockProc> | null = null;
+let lastSpawnOpts: Record<string, unknown> | null = null;
 
 function createMockProc() {
   const stdinWrites: string[] = [];
@@ -27,10 +28,17 @@ function createMockProc() {
 }
 
 vi.mock("child_process", () => ({
-  spawn: vi.fn(() => {
+  spawn: vi.fn((_cmd: string, _args: string[], opts: Record<string, unknown>) => {
+    lastSpawnOpts = opts;
     currentMockProc = createMockProc();
     return currentMockProc.proc;
   }),
+}));
+
+vi.mock("../../kill-tree.js", () => ({
+  killProcessTree: vi.fn().mockResolvedValue(undefined),
+  killGraceMs: () => 2000,
+  isAlive: () => false,
 }));
 
 async function collectMessages(
@@ -112,6 +120,7 @@ describe("CodexBackend", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     currentMockProc = null;
+    lastSpawnOpts = null;
     backend = new CodexBackend("/usr/bin/codex");
   });
 
@@ -966,16 +975,23 @@ describe("CodexBackend", () => {
 
   it("timeout kills process and sets status to timeout", async () => {
     vi.useFakeTimers();
+    const killTree = await vi.importMock<typeof import("../../kill-tree.js")>("../../kill-tree.js");
     const session = backend.execute("hello", { cwd: "/tmp", timeout: 5000 });
     const mock = getMock();
 
     vi.advanceTimersByTime(5000);
-    expect(mock.proc.kill).toHaveBeenCalledWith("SIGTERM");
+    expect(killTree.killProcessTree).toHaveBeenCalledWith(12345);
 
     mock.proc.emit("close", null);
 
     const result = await session.result;
     expect(result.status).toBe("timeout");
     vi.useRealTimers();
+  });
+
+  it("TC8: spawns the CLI detached on POSIX so its group can be reaped", () => {
+    const session = backend.execute("hello", { cwd: "/tmp" });
+    expect(session.pid).toBe(12345);
+    expect(lastSpawnOpts!.detached).toBe(process.platform !== "win32");
   });
 });

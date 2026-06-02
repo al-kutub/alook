@@ -1,6 +1,6 @@
 "use client"
 
-import { Suspense, useEffect, useState } from "react"
+import { Suspense, useEffect, useState, useRef } from "react"
 import { useSearchParams, useRouter } from "next/navigation"
 import { authClient, useSession } from "@/lib/auth-client"
 import { Button } from "@/components/ui/button"
@@ -9,7 +9,7 @@ import { Input } from "@/components/ui/input"
 import { Field, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field"
 import { GradientBackground } from "@/components/gradient-background"
 
-type Step = "code" | "approve" | "done" | "denied"
+type Step = "loading" | "code" | "approve" | "done" | "denied"
 
 export default function DeviceAuthPage() {
   return (
@@ -24,10 +24,12 @@ function DeviceAuthPageInner() {
   const router = useRouter()
   const { data: session, isPending } = useSession()
 
-  const [userCode, setUserCode] = useState(searchParams.get("user_code") || "")
-  const [step, setStep] = useState<Step>("code")
+  const urlCode = searchParams.get("user_code") || ""
+  const [userCode, setUserCode] = useState(urlCode)
+  const [step, setStep] = useState<Step>(urlCode ? "loading" : "code")
   const [error, setError] = useState("")
   const [loading, setLoading] = useState(false)
+  const autoVerified = useRef(false)
 
   useEffect(() => {
     if (!isPending && !session) {
@@ -37,13 +39,26 @@ function DeviceAuthPageInner() {
   }, [isPending, session, router, userCode])
 
   useEffect(() => {
-    if (step === "done") {
-      const timer = setTimeout(() => {
-        router.push("/workspaces?auto")
-      }, 2000)
-      return () => clearTimeout(timer)
+    if (!urlCode || !session || autoVerified.current) return
+    autoVerified.current = true
+
+    async function autoVerify() {
+      try {
+        const res = await authClient.device({ query: { user_code: urlCode.trim() } })
+        if (res.error) {
+          setError(res.error.error_description || "Invalid or expired code")
+          setStep("code")
+        } else {
+          setStep("approve")
+        }
+      } catch {
+        setError("Failed to verify code")
+        setStep("code")
+      }
     }
-  }, [step, router])
+
+    autoVerify()
+  }, [urlCode, session])
 
   async function handleVerifyCode(e: React.FormEvent) {
     e.preventDefault()
@@ -103,6 +118,11 @@ function DeviceAuthPageInner() {
             <FieldGroup>
               <div className="flex flex-col items-center gap-2 text-center">
                 <h1 className="text-2xl font-bold">Authorize Device</h1>
+                {step === "loading" && (
+                  <p className="text-sm text-muted-foreground">
+                    Verifying...
+                  </p>
+                )}
                 {step === "code" && (
                   <p className="text-sm text-muted-foreground">
                     Enter the code shown on your terminal
@@ -116,6 +136,12 @@ function DeviceAuthPageInner() {
               </div>
 
               {error && <FieldError>{error}</FieldError>}
+
+              {step === "loading" && (
+                <div className="flex justify-center py-4">
+                  <div className="h-6 w-6 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+                </div>
+              )}
 
               {step === "code" && (
                 <form onSubmit={handleVerifyCode}>
@@ -160,8 +186,9 @@ function DeviceAuthPageInner() {
 
               {step === "done" && (
                 <div className="text-center space-y-2">
+                  <p className="text-sm font-medium text-green-600">✓ Device authorized</p>
                   <p className="text-sm text-muted-foreground">
-                    Device authorized successfully. Redirecting...
+                    You can close this tab. The CLI will continue automatically.
                   </p>
                 </div>
               )}

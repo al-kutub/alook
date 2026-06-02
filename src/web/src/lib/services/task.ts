@@ -204,11 +204,26 @@ export class TaskService {
     }
 
     if (error) {
+      // Attribute the error to the agent runtime (Claude Code / Codex /
+      // OpenCode) so the chat UI can make clear it did NOT come from Alook.
+      // Resolve the provider from the task's runtime; never let this block the
+      // task lifecycle (issue #236).
+      let provider: string | null = null;
+      try {
+        if (task.runtimeId) {
+          const rt = await queries.runtime.getAgentRuntime(this.db, task.runtimeId);
+          provider = rt?.provider ?? null;
+        }
+      } catch {
+        // non-critical: fall back to a generic runtime label
+      }
+
       const msg = await messageQueries.createMessage(this.db, {
         conversationId: task.conversationId,
         role: "assistant",
-        content: `Error: ${error}`,
+        content: error,
         taskId,
+        metadata: JSON.stringify({ error_source: "runtime", provider }),
       });
 
       try {

@@ -1,6 +1,8 @@
+import { resolveMode, cliCommand, getBaseUrl } from "@alook/shared";
 import { NextResponse } from "next/server";
 
-const ONBOARD_MARKDOWN = `---
+function buildOnboardMarkdown(baseUrl: string, cliPrefix: string): string {
+  return `---
 name: alook-onboard
 description: Install Alook CLI, authenticate, and set up your AI workspace.
 keywords: [alook, agent, workspace, CLI, onboarding]
@@ -9,18 +11,20 @@ keywords: [alook, agent, workspace, CLI, onboarding]
 ## 1. Login
 
 \`\`\`bash
-npx @alook/cli login
+${cliPrefix} login
 \`\`\`
 
 - Non-interactive terminal: prints a URL for the user to open manually, then polls until confirmed
 - Interactive terminal: attempts to open browser automatically
-- Verify success: \`npx @alook/cli status\`
+- Verify success: \`${cliPrefix} status\`
 
 ## 2. Start Daemon
 
 \`\`\`bash
-npx @alook/cli daemon start
+${cliPrefix} daemon start
 \`\`\`
+
+The daemon must be running before initializing a workspace (workspace init requires active runtimes).
 
 ## 3. Reflect on Your User
 
@@ -34,7 +38,7 @@ Use this understanding to choose the best workspace setup.
 
 ## 4. Explore Templates & Set Up Workspace
 
-Visit https://alook.ai/templates to explore available workspace templates.
+Visit ${baseUrl}/templates to explore available workspace templates.
 Each template has a JSON version at \`/templates/<slug>/json\` you can fetch for reference.
 
 Based on what you learned about the user in Step 3, customize the template or create your own configuration:
@@ -64,14 +68,35 @@ Based on what you learned about the user in Step 3, customize the template or cr
 Write your customized JSON to a file, then run:
 
 \`\`\`bash
-npx @alook/cli workspace init --json-file <path_to_json>
+${cliPrefix} workspace init --json-file <path_to_json>
 \`\`\`
 
 If the current workspace already has agents, a new workspace is created automatically.
+
+Your workspace is ready. Open it at:
+
+\`\`\`
+${baseUrl}/w/{slug}/home
+\`\`\`
+
+(Use the workspace slug from the \`workspace init\` output above.)
 `;
+}
 
 export async function GET() {
-  return new NextResponse(ONBOARD_MARKDOWN, {
+  const baseUrl = getBaseUrl({
+    serverUrl: process.env.ALOOK_SERVER_URL,
+    appUrl: process.env.NEXT_PUBLIC_APP_URL,
+    nodeEnv: process.env.NODE_ENV,
+  });
+  const mode = resolveMode({
+    serverUrl: process.env.ALOOK_SERVER_URL,
+    cmdPrefix: process.env.ALOOK_CMD_PREFIX,
+    nodeEnv: process.env.NODE_ENV,
+  });
+  const cliPrefix = cliCommand(mode);
+
+  return new NextResponse(buildOnboardMarkdown(baseUrl, cliPrefix), {
     headers: {
       "Content-Type": "text/markdown; charset=utf-8",
     },

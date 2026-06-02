@@ -7,11 +7,10 @@ import type { TaskMessageResponse } from "@alook/shared";
 import type { TaskApi as Task } from "@alook/shared";
 import {
   ChevronRight,
-  AlertCircle,
-  RotateCw,
   Loader2,
 } from "lucide-react";
 import { Streamdown } from "streamdown";
+import { RuntimeErrorBlock } from "@/components/agent-chat/runtime-error-block";
 
 /* ── Grouped stream items ── */
 
@@ -127,6 +126,7 @@ export function TaskStream({
   thinkingCountHint,
   onExpandThinking,
   thinkingLoading,
+  provider,
 }: {
   task: Task;
   messages: TaskMessageResponse[];
@@ -135,8 +135,9 @@ export function TaskStream({
   thinkingCountHint?: number;
   onExpandThinking?: () => void;
   thinkingLoading?: boolean;
+  /** Provider of the conversation's agent runtime, used to attribute runtime errors (issue #236). */
+  provider?: string | null;
 }) {
-  const [retrying, setRetrying] = useState(false);
   const allItems = useMemo(() => groupMessages(messages), [messages]);
   const isRunning = task.status !== "completed" && task.status !== "failed" && task.status !== "cancelled" && task.status !== "superseded";
 
@@ -233,39 +234,23 @@ export function TaskStream({
         </div>
       )}
 
-      {/* Stream error messages */}
+      {/* Stream error messages — attributed to the agent runtime (issue #236) */}
       {errorItems.length > 0 && (
         <div className="space-y-1 mt-1">
           {errorItems.map((item) => (
-            <p key={item.id} className="text-sm text-destructive flex items-start gap-1.5 min-w-0">
-              <AlertCircle className="size-3.5 shrink-0 mt-0.5" />
-              <span className="wrap-anywhere">{item.content}</span>
-            </p>
+            <RuntimeErrorBlock key={item.id} provider={provider} message={item.content} />
           ))}
         </div>
       )}
 
-      {/* Task-level error display */}
+      {/* Task-level error display — attributed to the agent runtime (issue #236) */}
       {task.status === "failed" && task.error && (
-        <div className="flex items-start gap-2 mt-2 max-w-full overflow-hidden">
-          <p className="text-sm text-destructive flex items-start gap-1.5 min-w-0">
-            <AlertCircle className="size-3.5 shrink-0 mt-0.5" />
-            <span className="wrap-anywhere">{task.error}</span>
-          </p>
-          {onRetry && (
-            <button
-              type="button"
-              onClick={async () => {
-                setRetrying(true);
-                try { await onRetry(); } finally { setRetrying(false); }
-              }}
-              disabled={retrying}
-              className="shrink-0 text-xs text-muted-foreground hover:text-foreground transition-colors cursor-pointer disabled:opacity-50 flex items-center gap-1"
-            >
-              {retrying ? <Loader2 className="size-3 animate-spin" /> : <RotateCw className="size-3" />}
-              Retry
-            </button>
-          )}
+        <div className="mt-2">
+          <RuntimeErrorBlock
+            provider={provider}
+            message={task.error}
+            onRetry={onRetry}
+          />
         </div>
       )}
 

@@ -426,7 +426,60 @@ describe("TaskService", () => {
   // ── failTask ─────────────────────────────────────────────────────
 
   describe("failTask", () => {
-    it("creates error message when error is non-empty", async () => {
+    it("creates a runtime-attributed error message with the resolved provider (TC6)", async () => {
+      const task = {
+        id: "t1",
+        agentId: "a1",
+        workspaceId: "w1",
+        conversationId: "c1",
+        runtimeId: "rt1",
+        status: "failed",
+      };
+      taskQ.failTask.mockResolvedValue(task);
+      taskQ.countRunningTasks.mockResolvedValue(0);
+      agentQ.updateAgentStatus.mockResolvedValue(undefined);
+      runtimeQ.getAgentRuntime.mockResolvedValue({ id: "rt1", provider: "claude" });
+
+      await service.failTask("t1", "w1", "Not logged in · Please run /login");
+
+      expect(runtimeQ.getAgentRuntime).toHaveBeenCalledWith({}, "rt1");
+      expect(messageQ.createMessage).toHaveBeenCalledWith({}, {
+        conversationId: "c1",
+        role: "assistant",
+        content: "Not logged in · Please run /login",
+        taskId: "t1",
+        metadata: JSON.stringify({ error_source: "runtime", provider: "claude" }),
+      });
+    });
+
+    it("still attributes the message with provider:null when the runtime can't be resolved (TC7)", async () => {
+      const task = {
+        id: "t1",
+        agentId: "a1",
+        workspaceId: "w1",
+        conversationId: "c1",
+        runtimeId: "rt1",
+        status: "failed",
+      };
+      taskQ.failTask.mockResolvedValue(task);
+      taskQ.countRunningTasks.mockResolvedValue(0);
+      agentQ.updateAgentStatus.mockResolvedValue(undefined);
+      // Lookup throws — must not block the task lifecycle.
+      runtimeQ.getAgentRuntime.mockRejectedValue(new Error("db down"));
+
+      await expect(service.failTask("t1", "w1", "boom")).resolves.toBeTruthy();
+
+      expect(messageQ.createMessage).toHaveBeenCalledWith({}, {
+        conversationId: "c1",
+        role: "assistant",
+        content: "boom",
+        taskId: "t1",
+        metadata: JSON.stringify({ error_source: "runtime", provider: null }),
+      });
+      expect(agentQ.updateAgentStatus).toHaveBeenCalled();
+    });
+
+    it("attributes with provider:null when the task has no runtimeId", async () => {
       const task = {
         id: "t1",
         agentId: "a1",
@@ -440,11 +493,13 @@ describe("TaskService", () => {
 
       await service.failTask("t1", "w1", "something went wrong");
 
+      expect(runtimeQ.getAgentRuntime).not.toHaveBeenCalled();
       expect(messageQ.createMessage).toHaveBeenCalledWith({}, {
         conversationId: "c1",
         role: "assistant",
-        content: "Error: something went wrong",
+        content: "something went wrong",
         taskId: "t1",
+        metadata: JSON.stringify({ error_source: "runtime", provider: null }),
       });
     });
 
@@ -512,8 +567,9 @@ describe("TaskService", () => {
       expect(messageQ.createMessage).toHaveBeenCalledWith({}, {
         conversationId: "c1",
         role: "assistant",
-        content: "Error: something went wrong",
+        content: "something went wrong",
         taskId: "t1",
+        metadata: JSON.stringify({ error_source: "runtime", provider: null }),
       });
       expect(messageQ.createMessage).toHaveBeenCalledWith({}, {
         conversationId: "c1",

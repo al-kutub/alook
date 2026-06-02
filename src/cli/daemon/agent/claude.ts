@@ -2,6 +2,7 @@ import { spawn, type ChildProcess } from "child_process";
 import { createInterface } from "readline";
 import type { AgentBackend, AgentSession } from "./index.js";
 import type { ExecOptions, AgentMessage, AgentResult } from "../types.js";
+import { killProcessTree } from "../kill-tree.js";
 
 export class ClaudeBackend implements AgentBackend {
   name = "claude";
@@ -35,6 +36,10 @@ export class ClaudeBackend implements AgentBackend {
       env: { ...process.env, ...options.env },
       shell: process.platform === "win32",
       windowsHide: true,
+      // POSIX: own process group (pgid === pid) so the session-runner can reap
+      // the CLI *and* its tool/MCP subprocesses via a group kill. No unref() —
+      // we keep the handle for stdio streaming and the result promise.
+      detached: process.platform !== "win32",
     });
 
     if (!proc.pid) {
@@ -49,7 +54,8 @@ export class ClaudeBackend implements AgentBackend {
     if (options.timeout) {
       timeoutTimer = setTimeout(() => {
         timedOut = true;
-        proc.kill("SIGTERM");
+        // Reap the whole group (CLI + tool/MCP subprocesses), not just the leader.
+        if (proc.pid !== undefined) void killProcessTree(proc.pid);
       }, options.timeout);
     }
 

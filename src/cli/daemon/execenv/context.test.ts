@@ -71,13 +71,13 @@ describe("buildInstructionContent email tool injection", () => {
     expect(content).toContain("Re:");
   });
 
-  it("omits send-email docs when agent has no email handle", () => {
+  it("still includes send-email docs when agent has no explicit email handle (every agent has email)", () => {
     const task = makeTask({
       agent: { name: "test", instructions: "do stuff" },
     });
     const content = buildInstructionContent(task);
 
-    expect(content).not.toContain("email send --to");
+    expect(content).toContain("email send --to");
   });
 
   it("includes owner email in opening line when user email is provided", () => {
@@ -100,32 +100,17 @@ describe("buildInstructionContent email tool injection", () => {
     expect(content).not.toContain("owner and creator");
   });
 
-  it("omits email tool section when agent has no email handle", () => {
-    const task = makeTask({
-      agent: { name: "test", instructions: "do stuff" },
-    });
-    const content = buildInstructionContent(task);
-
-    expect(content).not.toContain("## Email Tools");
-    expect(content).not.toContain("email pull");
-  });
-
-  it("omits email tool section when emailHandle is null", () => {
-    const task = makeTask({
-      agent: { name: "test", instructions: "do stuff", emailHandle: null },
-    });
-    const content = buildInstructionContent(task);
-
-    expect(content).not.toContain("## Email Tools");
-  });
-
-  it("omits email tool section when emailHandle is empty string", () => {
-    const task = makeTask({
-      agent: { name: "test", instructions: "do stuff", emailHandle: "" },
-    });
-    const content = buildInstructionContent(task);
-
-    expect(content).not.toContain("## Email Tools");
+  it("always renders the email section regardless of emailHandle (absent / null / empty)", () => {
+    // Every agent has an email, so the email docs always render — no gating on emailHandle.
+    for (const agent of [
+      { name: "test", instructions: "do stuff" },
+      { name: "test", instructions: "do stuff", emailHandle: null },
+      { name: "test", instructions: "do stuff", emailHandle: "" },
+    ]) {
+      const content = buildInstructionContent(makeTask({ agent }));
+      expect(content).toContain("### Email command quick reference");
+      expect(content).toContain("email pull");
+    }
   });
 
   it("does not include --agent_id in CLI examples and shows auto-detect note", () => {

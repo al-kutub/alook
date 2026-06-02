@@ -1,6 +1,6 @@
 import { nanoid } from "nanoid"
 import PostalMime from "postal-mime"
-import { createDb, queries, parseEmailHandle, DEV_WEB_URL, createLogger, buildMimeMessage, extractAttachmentMeta } from "@alook/shared"
+import { createDb, queries, parseEmailHandle, toAlookAddress, DEV_WEB_URL, createLogger, buildMimeMessage, extractAttachmentMeta } from "@alook/shared"
 import { decrypt } from "@alook/shared/crypto"
 import { WorkerMailer, type AuthType } from "worker-mailer"
 
@@ -80,7 +80,7 @@ export default {
     }
 
     await env.SEND_EMAIL.send({
-      from: "no-reply@alook.ai",
+      from: toAlookAddress("no-reply"),
       to: body.to,
       subject: body.subject,
       html: body.html ?? "",
@@ -129,26 +129,27 @@ export default {
       if (!agent.emailHandle) {
         return Response.json({ error: "agent has no email handle configured" }, { status: 400 })
       }
-      fromAddress = `${agent.emailHandle}@alook.ai`
+      fromAddress = toAlookAddress(agent.emailHandle)
     }
 
     const htmlBody = body.htmlBody ?? ""
     const attachmentKeys = body.attachmentKeys ?? []
 
-    // Fetch attachment content from R2
-    const attachments: { disposition: "attachment"; filename: string; type: string; raw: ArrayBuffer; base64: string }[] = []
-    for (const att of attachmentKeys) {
-      const obj = await env.EMAIL_BUCKET.get(att.key)
-      if (!obj) continue
-      const raw = await obj.arrayBuffer()
-      attachments.push({
-        disposition: "attachment" as const,
-        filename: att.filename,
-        type: att.contentType,
-        raw,
-        base64: arrayBufferToBase64(raw),
+    // Fetch attachment content from R2 in parallel
+    const attachments = (await Promise.all(
+      attachmentKeys.map(async (att) => {
+        const obj = await env.EMAIL_BUCKET.get(att.key)
+        if (!obj) return null
+        const raw = await obj.arrayBuffer()
+        return {
+          disposition: "attachment" as const,
+          filename: att.filename,
+          type: att.contentType,
+          raw,
+          base64: arrayBufferToBase64(raw),
+        }
       })
-    }
+    )).filter((a): a is NonNullable<typeof a> => a !== null)
 
     if (useCustomSmtp && customAccount) {
       const secret = env.ENCRYPTION_KEY
