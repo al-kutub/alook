@@ -1,4 +1,4 @@
-import { eq, and, gt, asc, count, inArray, notInArray } from "drizzle-orm";
+import { eq, and, gt, asc, notInArray } from "drizzle-orm";
 import { taskMessage, agentTaskQueue } from "../schema";
 import type { Database } from "../index";
 
@@ -73,59 +73,3 @@ export async function listTaskMessagesSince(
 export async function deleteTaskMessages(db: Database, taskId: string) {
   await db.delete(taskMessage).where(eq(taskMessage.taskId, taskId));
 }
-
-const SQLITE_MAX_PARAMS = 999;
-const FIXED_PARAMS = 2; // workspaceId + type filter value ("text")
-
-export async function countTextMessagesByTaskIds(
-  db: Database,
-  taskIds: string[],
-  workspaceId: string
-): Promise<Array<{ taskId: string; count: number }>> {
-  if (taskIds.length === 0) return [];
-
-  const chunkSize = SQLITE_MAX_PARAMS - FIXED_PARAMS;
-
-  if (taskIds.length <= chunkSize) {
-    const rows = await db
-      .select({
-        taskId: taskMessage.taskId,
-        count: count(taskMessage.id),
-      })
-      .from(taskMessage)
-      .innerJoin(agentTaskQueue, eq(taskMessage.taskId, agentTaskQueue.id))
-      .where(
-        and(
-          inArray(taskMessage.taskId, taskIds),
-          eq(agentTaskQueue.workspaceId, workspaceId),
-          eq(taskMessage.type, "text")
-        )
-      )
-      .groupBy(taskMessage.taskId);
-    return rows.map((r) => ({ taskId: r.taskId, count: r.count }));
-  }
-
-  const results: Array<{ taskId: string; count: number }> = [];
-  for (let i = 0; i < taskIds.length; i += chunkSize) {
-    const chunk = taskIds.slice(i, i + chunkSize);
-    const rows = await db
-      .select({
-        taskId: taskMessage.taskId,
-        count: count(taskMessage.id),
-      })
-      .from(taskMessage)
-      .innerJoin(agentTaskQueue, eq(taskMessage.taskId, agentTaskQueue.id))
-      .where(
-        and(
-          inArray(taskMessage.taskId, chunk),
-          eq(agentTaskQueue.workspaceId, workspaceId),
-          eq(taskMessage.type, "text")
-        )
-      )
-      .groupBy(taskMessage.taskId);
-    results.push(...rows.map((r) => ({ taskId: r.taskId, count: r.count })));
-  }
-
-  return results;
-}
-

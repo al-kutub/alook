@@ -7,33 +7,25 @@ import { RuntimeErrorBlock } from "@/components/agent-chat/runtime-error-block";
 
 /* ── Grouped stream items ── */
 
-interface TextItem {
-  kind: "text";
-  id: string;
-  content: string;
-}
-
 interface ErrorItem {
   kind: "error";
   id: string;
   content: string;
 }
 
-type StreamItem = TextItem | ErrorItem;
-
 function itemKey(msg: TaskMessageResponse): string {
   return msg.id || `seq-${msg.seq}`;
 }
 
-function groupMessages(messages: TaskMessageResponse[]): StreamItem[] {
-  const items: StreamItem[] = [];
+// Only `type:"error"` task_messages ever reach TaskStream now — the chat no
+// longer renders intermediate text/thinking (replies arrive via `send-dm`), and
+// the WS/init paths filter to errors-only before this component sees them.
+function groupMessages(messages: TaskMessageResponse[]): ErrorItem[] {
+  const items: ErrorItem[] = [];
 
   for (const msg of messages) {
-    const key = itemKey(msg);
-    if (msg.type === "text") {
-      items.push({ kind: "text", id: key, content: msg.content });
-    } else if (msg.type === "error") {
-      items.push({ kind: "error", id: key, content: msg.content || msg.output });
+    if (msg.type === "error") {
+      items.push({ kind: "error", id: itemKey(msg), content: msg.content || msg.output });
     }
   }
 
@@ -63,8 +55,7 @@ export function TaskStream({
   /** Provider of the conversation's agent runtime, used to attribute runtime errors (issue #236). */
   provider?: string | null;
 }) {
-  const allItems = useMemo(() => groupMessages(messages), [messages]);
-  const errorItems = allItems.filter((i): i is ErrorItem => i.kind === "error");
+  const errorItems = useMemo(() => groupMessages(messages), [messages]);
 
   // Nothing to show unless the stream surfaced an error, the task failed, or
   // the connection dropped — the successful reply is rendered as a bubble.
