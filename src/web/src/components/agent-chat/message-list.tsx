@@ -11,7 +11,7 @@ import { RuntimeErrorBlock } from "@/components/agent-chat/runtime-error-block";
 import { AnimatedAvatar, type AvatarConfig } from "@/components/avatar";
 import { FileText, Calendar, CircleDot, Mail, Flag, Copy, Check, ChevronRight } from "lucide-react";
 
-import { eventTypeFromMessage, type GroupPosition } from "@/components/agent-chat/agent-chat-view";
+import { eventTypeFromMessage, type GroupPosition } from "@/components/agent-chat/chat-message-utils";
 import { toast } from "sonner";
 import { useCopyToClipboard } from "@/hooks/use-copy-to-clipboard";
 
