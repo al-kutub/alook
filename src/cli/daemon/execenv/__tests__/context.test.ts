@@ -154,6 +154,15 @@ describe("buildInstructionContent memory & format", () => {
     expect(content).toContain("### Email command quick reference");
     expect(content).toContain("email pull --email_id <EMAIL_ID>");
   });
+
+  it("renders the Talking to the user block instructing send-dm", () => {
+    const content = buildInstructionContent(
+      makeTask({ agent: { name: "test", instructions: "", emailHandle: "myagent" } }),
+    );
+    expect(content).toContain("### Talking to the user");
+    expect(content).toContain("texting a colleague");
+    expect(content).toContain("sync send-dm");
+  });
 });
 
 describe("contentHash", () => {

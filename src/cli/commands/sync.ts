@@ -8,7 +8,7 @@ import { resolveClientOpts } from "../lib/resolve-client.js";
 import { guessContentType } from "../lib/file-utils.js";
 
 export function syncCommand(): Command {
-  const cmd = new Command("sync").description("File sync utilities");
+  const cmd = new Command("sync").description("Sync info with the user (files, messages)");
 
   cmd
     .command("upload-artifact")
@@ -49,6 +49,57 @@ export function syncCommand(): Command {
         printJSON(result);
       } catch (err) {
         console.error(`Error uploading artifact: ${(err as Error).message}`);
+        process.exit(1);
+      }
+    });
+
+  cmd
+    .command("send-dm")
+    .description("Send a message to the user in the current conversation (the agent's voice)")
+    .option("--agent_id <id>", "Agent ID")
+    .option("--conversation_id <id>", "Conversation ID (defaults to $ALOOK_CONVERSATION_ID)")
+    .option("--message <text>", "Message body")
+    .option("--message-file <path>", "Read message body from a file")
+    .action(async (opts, command) => {
+      if (opts.message && opts.messageFile) {
+        console.error("Error: --message and --message-file are mutually exclusive");
+        process.exit(1);
+      }
+
+      let content: string;
+      if (opts.messageFile) {
+        try {
+          content = readFileSync(opts.messageFile, "utf-8");
+        } catch (err) {
+          console.error(`Error: cannot read file "${opts.messageFile}": ${(err as Error).message}`);
+          process.exit(1);
+        }
+      } else {
+        content = opts.message ?? "";
+      }
+      if (!content.trim()) {
+        console.error("Error: --message or --message-file is required (and must not be empty)");
+        process.exit(1);
+      }
+
+      const conversationId = opts.conversation_id || process.env.ALOOK_CONVERSATION_ID;
+      if (!conversationId) {
+        console.error("Error: no conversation id (set --conversation_id or $ALOOK_CONVERSATION_ID)");
+        process.exit(1);
+      }
+
+      const agentId = resolveAgentId(opts);
+      const { serverUrl, token, workspaceId } = resolveClientOpts(command, { agentId });
+      const client = new APIClient(serverUrl, token, workspaceId);
+
+      try {
+        const result = await client.postJSON<Record<string, unknown>>(
+          `/api/daemon/conversations/${encodeURIComponent(conversationId)}/messages`,
+          { content, task_id: process.env.ALOOK_TASK_ID || undefined }
+        );
+        printJSON(result);
+      } catch (err) {
+        console.error(`Error sending message: ${(err as Error).message}`);
         process.exit(1);
       }
     });

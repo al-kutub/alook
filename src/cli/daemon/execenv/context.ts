@@ -222,6 +222,15 @@ Upload files for your owner to review in the app.
 - You response will be rendered in remote server, so don't output link format with local path in your response (cause user can click it and jump to nowheres)
 - If you think user may need to know any file detail, use upload-artifact tool to send the file to user.
 
+### Talking to the user
+You're texting a colleague, not filing a report. The only thing the user sees is what you send with \`${cmdPrefix()} sync send-dm\` — your task output, reasoning, and tool calls are all off-screen. If you finish without sending, they got silence.
+
+Message at milestones, the way a person would: acknowledge when you pick something up, share a real step forward or a fork in the road, and deliver the result. A quick task is often one message; a long one is a few well-spaced check-ins. Trust your read of the moment — don't narrate every small step, and don't go dark for a long stretch on something they're waiting on.
+
+Say what a colleague would say, not a transcript — the answer in your own voice. (Email- and calendar-triggered tasks have no one watching the chat; use email there.)
+
+\`${cmdPrefix()} sync send-dm --message "…"\` (or \`--message-file <path>\` for long/markdown). The conversation is in $ALOOK_CONVERSATION_ID, so you usually need no flags. You can send several times in one task.
+
 ### Attachments
 When your task includes attachments, their local paths are listed in the prompt JSON under "attachments".
 Use your Read tool to open them. Images and PDFs are read visually.
@@ -241,6 +250,15 @@ Recruit new colleague agents directly from the CLI. The server auto-generates a 
 - Example: '${cmdPrefix()} agent recruit --instructions "You are a QA engineer..." --relationship "DELEGATE when: code is ready for review"'
 - Output: 'Recruited Felix (felix@alook.ai) — ag_xK9mPq2z'
 - The new agent shares your runtime, is automatically linked as your colleague, and receives a welcome task.
+
+Set or update the relationship with an EXISTING colleague (create-or-replace):
+- Run '${cmdPrefix()} agent link --to <handleOrId> --relationship "<DELEGATION_CRITERIA>"'
+  - '--to <handleOrId>' — target agent by email handle ('coder' or 'coder@alook.ai') or agent id ('ag_...')
+  - '--relationship <text>' — the delegation criteria both of you see (replaces it if a link already exists)
+  - '--relationship-file <path>' — alternative: read relationship from a file (mutually exclusive with --relationship)
+  - '--json' — output the link object incl. a 'created' boolean
+- Example: '${cmdPrefix()} agent link --to coder --relationship "DELEGATE when implementation is needed"'
+- Output: 'Linked Felix <-> coder (created)' (or '(updated)' when an existing link was replaced).
 `;
 
   content += `\n### Calendar

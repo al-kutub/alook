@@ -10,7 +10,6 @@ import {
   taskToResponse,
   taskMessageToResponse,
 } from "@/lib/api/responses";
-import { TaskService } from "@/lib/services/task";
 
 const MESSAGE_LIMIT = 20;
 const ARTIFACT_LIMIT = 50;
@@ -48,13 +47,12 @@ export const GET = withAuth(async (req, ctx) => {
     cacheValid = idMatches && countMatches;
   }
 
-  const [messagesResult, artifacts, buffered, activeTask, flaggedMessageIds, hasMoreConversations] =
+  const [messagesResult, artifacts, activeTask, flaggedMessageIds, hasMoreConversations] =
     await Promise.all([
       queries.message.listMessages(db, id, { limit: MESSAGE_LIMIT }),
       queries.artifact.listArtifactsByConversation(db, id, ws.workspaceId, {
         limit: ARTIFACT_LIMIT,
       }).catch(() => [] as Awaited<ReturnType<typeof queries.artifact.listArtifactsByConversation>>),
-      queries.message.listBufferedMessages(db, id).catch(() => [] as Awaited<ReturnType<typeof queries.message.listBufferedMessages>>),
       queries.task.getActiveTaskByConversation(db, id, ws.workspaceId).catch(() => null),
       queries.messageFlag.listFlaggedMessageIds(db, ctx.userId, ws.workspaceId, id).catch(() => [] as string[]),
       queries.conversation.hasPreviousConversations(
@@ -69,57 +67,23 @@ export const GET = withAuth(async (req, ctx) => {
 
   const { messages, has_more: hasMoreMessages } = messagesResult;
 
-  // Orphaned-buffer recovery
-  let resolvedActiveTask = activeTask;
-  let resolvedBuffered = buffered;
-  if (resolvedBuffered.length > 0 && !resolvedActiveTask) {
-    try {
-      const taskService = new TaskService(db);
-      const dispatched = await taskService.dispatchNextBufferedMessage(id, ws.workspaceId);
-      if (dispatched) {
-        resolvedActiveTask = dispatched;
-        resolvedBuffered = await queries.message.listBufferedMessages(db, id);
-      }
-    } catch {
-      // non-critical
-    }
-  }
-
   let taskMessages: unknown[] = [];
-  if (
-    resolvedActiveTask &&
-    !["completed", "failed", "cancelled", "superseded"].includes(resolvedActiveTask.status)
-  ) {
+  if (activeTask) {
     try {
-      const tmsgs = await queries.taskMessage.listTaskMessages(db, resolvedActiveTask.id);
+      // Errors-only: the chat no longer renders thinking/tool steps (replies
+      // arrive via `send-dm`). We preload only `type:"error"` rows for the active
+      // task so a live error survives a reload while the run is still active.
+      // (A run that ended in error is settled to status:"failed" by the daemon and
+      // re-surfaces via its persisted assistant error message, not through here.)
+      // Filters type==="error" + scopes by workspace in SQL.
+      const tmsgs = await queries.taskMessage.listTaskErrorMessages(
+        db,
+        activeTask.id,
+        ws.workspaceId,
+      );
       taskMessages = tmsgs.map(taskMessageToResponse);
     } catch {
       // non-critical
-    }
-  }
-
-  const thinkingCounts: Record<string, number> = {};
-  if (messages.length > 0) {
-    const taskIds = [
-      ...new Set(
-        messages
-          .filter((m) => m.role === "assistant" && m.taskId)
-          .map((m) => m.taskId!)
-      ),
-    ];
-    if (taskIds.length > 0) {
-      try {
-        const rows = await queries.taskMessage.countTextMessagesByTaskIds(
-          db,
-          taskIds,
-          ws.workspaceId
-        );
-        for (const row of rows) {
-          thinkingCounts[row.taskId] = row.count;
-        }
-      } catch {
-        // non-critical
-      }
     }
   }
 
@@ -130,10 +94,8 @@ export const GET = withAuth(async (req, ctx) => {
     has_more_conversations: hasMoreConversations,
     has_more_artifacts: artifacts.length >= ARTIFACT_LIMIT,
     artifacts: artifacts.map(queries.artifact.artifactToResponse),
-    buffered_messages: resolvedBuffered.map(messageToResponse),
     flagged_message_ids: flaggedMessageIds,
-    thinking_counts: thinkingCounts,
-    active_task: resolvedActiveTask ? taskToResponse(resolvedActiveTask) : null,
+    active_task: activeTask ? taskToResponse(activeTask) : null,
     task_messages: taskMessages,
     cache_valid: cacheValid,
     message_count: serverMessageCount,

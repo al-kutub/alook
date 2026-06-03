@@ -1,5 +1,5 @@
 import { openDB, type IDBPDatabase } from "idb";
-import type { Message } from "@alook/shared";
+import type { Message, Artifact } from "@alook/shared";
 
 export interface CacheMeta {
   conversation_id: string;
@@ -42,6 +42,41 @@ export interface LastOpenEntry {
   updatedAt: number;
 }
 
+/**
+ * Per-conversation "card metadata" — the non-message data the chat timeline
+ * needs to paint its cards (file/artifact cards + the event-card icon/label)
+ * WITHOUT waiting on the network. Mirrors how `messages` + `cache_meta` already
+ * power the instant text paint.
+ *
+ * The two pieces the network currently gates:
+ *   - `artifacts`: the full per-conversation artifacts array (full server set,
+ *     full-replace on every load — never merged, never the write authority).
+ *   - the lightweight `conversation_*` fields: at minimum `conversation_type`,
+ *     which drives the event-card icon/label on first paint for metadata-less
+ *     event messages (the ones whose type would otherwise re-resolve from
+ *     `conversation.type` only after the network lands).
+ *
+ * Cached values are only ever RENDERED; every load still fetches the
+ * authoritative `artifacts` + `conversation` and overwrites this row, so the
+ * worst case is a one-frame stale card that reconciles — never data loss (same
+ * guarantee as the message cache).
+ */
+export interface ConvExtrasEntry {
+  conversation_id: string;
+  artifacts: Artifact[];
+  conversation_type: string;
+  conversation_title: string;
+  conversation_channel: string;
+  // Server `conversation.created_at`. Seeded into the provisional conversation
+  // stub on the instant paint so the scroll heuristic
+  // (`agent-chat-view.tsx`, `wasScrolledToBottom`) reads a real value rather
+  // than an empty string (which would flip its `!conversation.created_at`
+  // branch and alter scroll behavior during the optimistic window).
+  conversation_created_at: string;
+  hasMoreArtifacts: boolean;
+  updatedAt: number;
+}
+
 interface ChatCacheDB {
   messages: {
     key: [string, string];
@@ -62,9 +97,13 @@ interface ChatCacheDB {
       "by-conversation": string;
     };
   };
+  conv_extras: {
+    key: string;
+    value: ConvExtrasEntry;
+  };
 }
 
-const DB_VERSION = 3;
+const DB_VERSION = 4;
 const MAX_CONVERSATIONS = 50;
 
 let dbPromise: Promise<IDBPDatabase<ChatCacheDB>> | null = null;
@@ -97,6 +136,16 @@ export function openCacheDB(workspaceId: string): Promise<IDBPDatabase<ChatCache
         const lastOpenStore = db.createObjectStore("last_open", { keyPath: "key" });
         lastOpenStore.createIndex("by-conversation", "conversation_id", { unique: false });
       }
+      if (oldVersion < 4) {
+        // v3 → v4: per-conversation card metadata (artifacts + conversation
+        // type/title/channel/created_at). Existing `messages`/`cache_meta`/
+        // `last_open` stores are untouched; this store starts empty, so the
+        // first open of any conversation is a clean cache miss (today's
+        // behavior — text paints, cards pop in after the network), then it
+        // populates and subsequent opens paint cards instantly. Keyed by
+        // `conversation_id` (single-row lookup), no index needed.
+        db.createObjectStore("conv_extras", { keyPath: "conversation_id" });
+      }
     },
   });
 
@@ -117,9 +166,7 @@ export async function getCachedMessages(conversationId: string, workspaceId?: st
     const messages = await db.getAllFromIndex("messages", "by-conversation", conversationId);
     if (messages.length === 0) return null;
 
-    const filtered = messages.filter(
-      (m) => m.status !== "buffered" && !m.id.startsWith("temp-")
-    );
+    const filtered = messages.filter((m) => !m.id.startsWith("temp-"));
 
     filtered.sort((a, b) => {
       const cmp = a.created_at.localeCompare(b.created_at);
@@ -164,7 +211,7 @@ export async function getCachedMessagesBefore(
     const allInRange = await db.getAllFromIndex("messages", "by-created", range);
 
     const filtered = allInRange.filter((m) => {
-      if (m.status === "buffered" || m.id.startsWith("temp-")) return false;
+      if (m.id.startsWith("temp-")) return false;
       if (m.created_at === beforeCreatedAt && m.id >= beforeId) return false;
       return true;
     });
@@ -204,9 +251,7 @@ export async function mergeCachedMessages(
   try {
     const db = await p;
 
-    const validMessages = messages.filter(
-      (m) => m.status !== "buffered" && !m.id.startsWith("temp-")
-    );
+    const validMessages = messages.filter((m) => !m.id.startsWith("temp-"));
     if (validMessages.length === 0) return;
 
     const tx = db.transaction(["messages", "cache_meta"], "readwrite");
@@ -263,7 +308,7 @@ export async function appendCachedMessage(
   const p = getDB(workspaceId);
   if (!p) return;
 
-  if (message.status === "buffered" || message.id.startsWith("temp-")) return;
+  if (message.id.startsWith("temp-")) return;
 
   try {
     const db = await p;
@@ -412,16 +457,78 @@ export async function clearLastOpenForConversation(
   }
 }
 
+/**
+ * Read the cached card metadata for a conversation. IndexedDB only, no network.
+ * Returns null on cache miss, error, or SSR (no indexedDB).
+ */
+export async function getConvExtras(
+  conversationId: string,
+  workspaceId?: string
+): Promise<ConvExtrasEntry | null> {
+  const p = getDB(workspaceId);
+  if (!p) return null;
+
+  try {
+    const db = await p;
+    return (await db.get("conv_extras", conversationId)) ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Upsert the card metadata for a conversation. Stamps `updatedAt` at write
+ * time. No-op when the DB is unavailable (SSR / private browsing). Callers
+ * should fire-and-forget (`.catch(() => {})`) — this is never on the critical
+ * render path, mirroring `mergeCachedMessages`.
+ */
+export async function setConvExtras(
+  conversationId: string,
+  entry: Omit<ConvExtrasEntry, "conversation_id" | "updatedAt">,
+  workspaceId?: string
+): Promise<void> {
+  const p = getDB(workspaceId);
+  if (!p) return;
+
+  try {
+    const db = await p;
+    await db.put("conv_extras", {
+      conversation_id: conversationId,
+      ...entry,
+      updatedAt: Date.now(),
+    });
+  } catch {
+    // Graceful degradation
+  }
+}
+
+/** Remove the cached card metadata for a single conversation. */
+export async function clearConvExtras(
+  conversationId: string,
+  workspaceId?: string
+): Promise<void> {
+  const p = getDB(workspaceId);
+  if (!p) return;
+
+  try {
+    const db = await p;
+    await db.delete("conv_extras", conversationId);
+  } catch {
+    // Graceful degradation
+  }
+}
+
 export async function invalidateCache(conversationId: string, workspaceId?: string): Promise<void> {
   const p = getDB(workspaceId);
   if (!p) return;
 
   try {
     const db = await p;
-    const tx = db.transaction(["messages", "cache_meta", "last_open"], "readwrite");
+    const tx = db.transaction(["messages", "cache_meta", "last_open", "conv_extras"], "readwrite");
     const msgStore = tx.objectStore("messages");
     const metaStore = tx.objectStore("cache_meta");
     const lastOpenStore = tx.objectStore("last_open");
+    const extrasStore = tx.objectStore("conv_extras");
 
     const keys = await msgStore.index("by-conversation").getAllKeys(conversationId);
     for (const key of keys) {
@@ -435,6 +542,10 @@ export async function invalidateCache(conversationId: string, workspaceId?: stri
     for (const key of lastOpenKeys) {
       await lastOpenStore.delete(key);
     }
+
+    // Drop the cached card metadata so an invalidated conversation doesn't
+    // render stale cards then wipe.
+    await extrasStore.delete(conversationId);
 
     await tx.done;
   } catch {
@@ -454,10 +565,11 @@ export async function evictLRU(maxConversations = MAX_CONVERSATIONS): Promise<vo
     allMeta.sort((a, b) => a.lastAccessedAt - b.lastAccessedAt);
     const toEvict = allMeta.slice(0, allMeta.length - maxConversations);
 
-    const tx = db.transaction(["messages", "cache_meta", "last_open"], "readwrite");
+    const tx = db.transaction(["messages", "cache_meta", "last_open", "conv_extras"], "readwrite");
     const msgStore = tx.objectStore("messages");
     const metaStore = tx.objectStore("cache_meta");
     const lastOpenStore = tx.objectStore("last_open");
+    const extrasStore = tx.objectStore("conv_extras");
 
     for (const meta of toEvict) {
       const keys = await msgStore.index("by-conversation").getAllKeys(meta.conversation_id);
@@ -472,6 +584,10 @@ export async function evictLRU(maxConversations = MAX_CONVERSATIONS): Promise<vo
       for (const key of lastOpenKeys) {
         await lastOpenStore.delete(key);
       }
+
+      // Prune the evicted conversation's card metadata in the same pass so no
+      // dangling artifacts/type row outlives its messages.
+      await extrasStore.delete(meta.conversation_id);
     }
 
     await tx.done;

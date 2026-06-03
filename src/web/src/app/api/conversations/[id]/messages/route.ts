@@ -1,6 +1,6 @@
 import { NextRequest } from "next/server";
 import { getCloudflareContext } from "@opennextjs/cloudflare"
-import { queries, TASK_TYPES, CreateMessageRequestSchema, parsePromptMentions } from "@alook/shared"
+import { queries, TASK_TYPES, CreateMessageRequestSchema, parsePromptMentions, truncateTitle } from "@alook/shared"
 import { getDb } from "@/lib/db"
 import { nanoid } from "nanoid";
 import { withAuth } from "@/lib/middleware/auth";
@@ -14,15 +14,6 @@ import { invalidate, cacheKeys } from "@/lib/cache";
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10 MB
 const MAX_FILES = 10;
-
-function truncateTitle(text: string, maxLen = 50): string {
-  const trimmed = text.replace(/\s+/g, " ").trim();
-  if (trimmed.length <= maxLen) return trimmed;
-  const cut = trimmed.slice(0, maxLen);
-  const lastSpace = cut.lastIndexOf(" ");
-  const title = lastSpace > 20 ? cut.slice(0, lastSpace) : cut;
-  return title + "...";
-}
 
 function sanitizeFilename(name: string): string {
   return name.replace(/[/\\]/g, "_").replace(/\.\./g, "_").slice(0, 255) || "file";

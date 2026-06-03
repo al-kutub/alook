@@ -9,9 +9,8 @@ const mockGetOrCreateAgentConversation = vi.fn();
 const mockHasPreviousConversations = vi.fn();
 const mockListMessages = vi.fn();
 const mockListArtifactsByConversation = vi.fn();
-const mockListBufferedMessages = vi.fn();
 const mockGetActiveTaskByConversation = vi.fn();
-const mockListTaskMessages = vi.fn();
+const mockListTaskErrorMessages = vi.fn();
 const mockArtifactToResponse = vi.fn((r: any) => ({
   id: r.id,
   conversation_id: r.conversationId,
@@ -39,8 +38,6 @@ vi.mock("@alook/shared", () => ({
     },
     message: {
       listMessages: (...args: unknown[]) => mockListMessages(...args),
-      listBufferedMessages: (...args: unknown[]) =>
-        mockListBufferedMessages(...args),
     },
     artifact: {
       listArtifactsByConversation: (...args: unknown[]) =>
@@ -53,8 +50,8 @@ vi.mock("@alook/shared", () => ({
         mockGetActiveTaskByConversation(...args),
     },
     taskMessage: {
-      listTaskMessages: (...args: unknown[]) =>
-        mockListTaskMessages(...args),
+      listTaskErrorMessages: (...args: unknown[]) =>
+        mockListTaskErrorMessages(...args),
     },
   },
 }));
@@ -69,13 +66,6 @@ vi.mock("@/lib/middleware/auth", () => ({
 
 vi.mock("@/lib/middleware/workspace", () => ({
   withWorkspaceMember: vi.fn(async () => ({ workspaceId: "w1" })),
-}));
-
-const mockDispatchNextBufferedMessage = vi.fn().mockResolvedValue(null);
-vi.mock("@/lib/services/task", () => ({
-  TaskService: vi.fn(() => ({
-    dispatchNextBufferedMessage: mockDispatchNextBufferedMessage,
-  })),
 }));
 
 vi.mock("@/lib/api/responses", () => ({
@@ -132,7 +122,6 @@ function setupDefaults() {
   mockHasPreviousConversations.mockResolvedValue(false);
   mockListMessages.mockResolvedValue({ messages: [], has_more: false });
   mockListArtifactsByConversation.mockResolvedValue([]);
-  mockListBufferedMessages.mockResolvedValue([]);
   mockGetActiveTaskByConversation.mockResolvedValue(null);
 }
 
@@ -162,7 +151,6 @@ describe("POST /api/agents/[id]/chat-init", () => {
     mockHasPreviousConversations.mockResolvedValue(false);
     mockListMessages.mockResolvedValue({ messages: [msg], has_more: false });
     mockListArtifactsByConversation.mockResolvedValue([artifact]);
-    mockListBufferedMessages.mockResolvedValue([]);
     mockGetActiveTaskByConversation.mockResolvedValue(null);
 
     const res = await POST(makeReq(), makeCtx());
@@ -174,7 +162,6 @@ describe("POST /api/agents/[id]/chat-init", () => {
     expect(body.messages[0].id).toBe("m1");
     expect(body.artifacts).toHaveLength(1);
     expect(body.artifacts[0].id).toBe("art1");
-    expect(body.buffered_messages).toEqual([]);
     expect(body.active_task).toBeNull();
     expect(body.task_messages).toEqual([]);
     expect(body.has_more_messages).toBe(false);
@@ -192,7 +179,7 @@ describe("POST /api/agents/[id]/chat-init", () => {
     expect(body.error).toBe("agent not found");
   });
 
-  it("includes active task and task messages when task is running", async () => {
+  it("preloads error task messages (workspace-scoped) for a running task", async () => {
     const task = {
       id: "t1",
       agentId: "a1",
@@ -207,17 +194,12 @@ describe("POST /api/agents/[id]/chat-init", () => {
       completedAt: null,
       createdAt: "2024-01-01T00:00:00.000Z",
     };
-    const tmsg = {
-      id: "tm1",
-      taskId: "t1",
-      seq: 1,
-      type: "text",
-      content: "working...",
-    };
+    // The query filters to type:"error" in SQL; the route maps what it returns.
+    const errMsg = { id: "tm2", taskId: "t1", seq: 2, type: "error", content: "boom" };
 
     setupDefaults();
     mockGetActiveTaskByConversation.mockResolvedValue(task);
-    mockListTaskMessages.mockResolvedValue([tmsg]);
+    mockListTaskErrorMessages.mockResolvedValue([errMsg]);
 
     const res = await POST(makeReq(), makeCtx());
     const body = await res.json();
@@ -225,34 +207,28 @@ describe("POST /api/agents/[id]/chat-init", () => {
     expect(body.active_task).not.toBeNull();
     expect(body.active_task.id).toBe("t1");
     expect(body.task_messages).toHaveLength(1);
-    expect(body.task_messages[0].seq).toBe(1);
+    expect(body.task_messages[0].seq).toBe(2);
+    expect(body.task_messages[0].type).toBe("error");
+    // Scoped to the active task and the authed workspace.
+    expect(mockListTaskErrorMessages).toHaveBeenCalledWith(
+      expect.anything(),
+      "t1",
+      "w1",
+    );
   });
 
-  it("skips task messages for completed tasks", async () => {
-    const task = {
-      id: "t1",
-      agentId: "a1",
-      runtimeId: "r1",
-      conversationId: "c1",
-      workspaceId: "w1",
-      prompt: "do stuff",
-      status: "completed",
-      priority: 0,
-      dispatchedAt: null,
-      startedAt: null,
-      completedAt: "2024-01-01T00:01:00.000Z",
-      createdAt: "2024-01-01T00:00:00.000Z",
-    };
-
+  it("does not query task errors when there is no active task", async () => {
+    // A run that ended in error is settled to status:"failed" and re-surfaces via
+    // its persisted assistant error message (not through this preload).
     setupDefaults();
-    mockGetActiveTaskByConversation.mockResolvedValue(task);
+    mockGetActiveTaskByConversation.mockResolvedValue(null);
 
     const res = await POST(makeReq(), makeCtx());
     const body = await res.json();
 
-    expect(body.active_task.id).toBe("t1");
+    expect(body.active_task).toBeNull();
     expect(body.task_messages).toEqual([]);
-    expect(mockListTaskMessages).not.toHaveBeenCalled();
+    expect(mockListTaskErrorMessages).not.toHaveBeenCalled();
   });
 
   it("sets has_more_messages true when messages reach limit", async () => {
@@ -316,7 +292,6 @@ describe("POST /api/agents/[id]/chat-init", () => {
     expect(res.status).toBe(200);
     expect(body.messages).toEqual([]);
     expect(body.artifacts).toEqual([]);
-    expect(body.buffered_messages).toEqual([]);
     expect(body.active_task).toBeNull();
     expect(body.has_more_messages).toBe(false);
   });

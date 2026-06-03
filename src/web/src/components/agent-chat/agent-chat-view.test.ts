@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import type { Message, Artifact } from "@alook/shared";
-import { sortMessages, mergeMessages, buildTimeline, addBufferedIfNew, replaceOptimisticBuffered, getEventIconType, reorderArtifactsAfterAssistant, shouldPersistPointerForLoad, pointerRefreshTargetForTaskCreated } from "./agent-chat-view";
-import type { NapMarker } from "./agent-chat-view";
+import { sortMessages, mergeMessages, buildTimeline, computeGroupPositions, getEventIconType, eventTypeFromMessage, shouldPersistPointerForLoad, pointerRefreshTargetForTaskCreated } from "./chat-message-utils";
+import type { NapMarker } from "./chat-message-utils";
 
 function msg(id: string, created_at: string, role: "user" | "assistant" | "event" = "user", content = ""): Message {
   return { id, conversation_id: "conv1", role, content, task_id: null, attachment_ids: null, created_at };
@@ -215,6 +215,23 @@ describe("getEventIconType", () => {
   });
 });
 
+// Card type is metadata-driven first (robust if copy changes), content heuristic
+// only as a fallback when no resource id is present.
+describe("eventTypeFromMessage (metadata-driven)", () => {
+  it("uses the metadata resource id over the content heuristic", () => {
+    // Content says "email" but the metadata carries an issueId → issue wins.
+    expect(eventTypeFromMessage({ issueId: "iss_1" }, "email-ish text", null)).toBe("issue");
+    expect(eventTypeFromMessage({ emailId: "em_1" }, "no keywords here", null)).toBe("email");
+    expect(eventTypeFromMessage({ calendarEventId: "cal_1" }, "no keywords here", null)).toBe("calendar");
+  });
+
+  it("falls back to the content/conversation heuristic when metadata is absent", () => {
+    expect(eventTypeFromMessage(null, "Issue created: foo", "issue_event")).toBe("issue");
+    expect(eventTypeFromMessage(undefined, "New email from a@b.com: hi", "email_notification")).toBe("email");
+    expect(eventTypeFromMessage({}, "Standup reminder", "calendar_event")).toBe("calendar");
+  });
+});
+
 function artifact(id: string, created_at: string): Artifact {
   return {
     id,
@@ -242,8 +259,9 @@ describe("buildTimeline", () => {
     const naps: NapMarker[] = [];
 
     const result = buildTimeline(msgs, arts, naps);
-    // artifact is collected after user msg (no assistant to flush to), appended at end
-    expect(result.map((i) => i.data.id)).toEqual(["m1", "m3", "a1"]);
+    // Strictly chronological now (no artifact reorder): the file at 00:00:02
+    // sits between the two messages where it actually happened.
+    expect(result.map((i) => i.data.id)).toEqual(["m1", "a1", "m3"]);
   });
 
   it("places nap marker after messages at the same timestamp", () => {
@@ -367,8 +385,9 @@ describe("buildTimeline — conversation grouping", () => {
     const naps = [nap("nap-convA", "2024-01-01T12:00:00Z")];
 
     const result = buildTimeline(msgs, arts, naps, "convB");
-    // artifact collected after user msg, no assistant to flush to, appended at end of group
-    expect(result.map((i) => i.data.id)).toEqual(["a1", "a2", "art1", "nap-convA", "b1"]);
+    // Chronological within the conversation section: art1 at 01:00 sits between
+    // a1 (00:00) and a2 (02:00). No artifact reorder.
+    expect(result.map((i) => i.data.id)).toEqual(["a1", "art1", "a2", "nap-convA", "b1"]);
   });
 
   it("single conversation (no nap markers) behaves as before", () => {
@@ -436,251 +455,6 @@ describe("buildTimeline — conversation grouping", () => {
     const result = buildTimeline(msgs, [], naps, "convB");
     // orphan x1 is placed before the first nap marker
     expect(result.map((i) => i.data.id)).toEqual(["a1", "x1", "nap-convA", "b1"]);
-  });
-});
-
-describe("reorderArtifactsAfterAssistant", () => {
-  it("basic reorder: user → artifact → assistant becomes user → assistant → artifact", () => {
-    const items = [
-      { kind: "message" as const, data: msg("m1", "2024-01-01T00:00:00Z", "user") },
-      { kind: "artifact" as const, data: artifact("a1", "2024-01-01T00:01:00Z") },
-      { kind: "message" as const, data: msg("m2", "2024-01-01T00:02:00Z", "assistant") },
-    ];
-    const result = reorderArtifactsAfterAssistant(items);
-    expect(result.map((i) => i.data.id)).toEqual(["m1", "m2", "a1"]);
-  });
-
-  it("multiple turns: each turn reorders independently", () => {
-    const items = [
-      { kind: "message" as const, data: msg("m1", "2024-01-01T00:00:00Z", "user") },
-      { kind: "artifact" as const, data: artifact("a1", "2024-01-01T00:01:00Z") },
-      { kind: "message" as const, data: msg("m2", "2024-01-01T00:02:00Z", "assistant") },
-      { kind: "message" as const, data: msg("m3", "2024-01-01T00:03:00Z", "user") },
-      { kind: "artifact" as const, data: artifact("a2", "2024-01-01T00:04:00Z") },
-      { kind: "message" as const, data: msg("m4", "2024-01-01T00:05:00Z", "assistant") },
-    ];
-    const result = reorderArtifactsAfterAssistant(items);
-    expect(result.map((i) => i.data.id)).toEqual(["m1", "m2", "a1", "m3", "m4", "a2"]);
-  });
-
-  it("no assistant message (running task): artifact stays in place", () => {
-    const items = [
-      { kind: "message" as const, data: msg("m1", "2024-01-01T00:00:00Z", "user") },
-      { kind: "artifact" as const, data: artifact("a1", "2024-01-01T00:01:00Z") },
-    ];
-    const result = reorderArtifactsAfterAssistant(items);
-    expect(result.map((i) => i.data.id)).toEqual(["m1", "a1"]);
-  });
-
-  it("no artifacts to reorder: unchanged", () => {
-    const items = [
-      { kind: "message" as const, data: msg("m1", "2024-01-01T00:00:00Z", "user") },
-      { kind: "message" as const, data: msg("m2", "2024-01-01T00:01:00Z", "assistant") },
-    ];
-    const result = reorderArtifactsAfterAssistant(items);
-    expect(result.map((i) => i.data.id)).toEqual(["m1", "m2"]);
-  });
-
-  it("artifact between two assistants (no user between): stays in place", () => {
-    const items = [
-      { kind: "message" as const, data: msg("m1", "2024-01-01T00:00:00Z", "assistant") },
-      { kind: "artifact" as const, data: artifact("a1", "2024-01-01T00:01:00Z") },
-      { kind: "message" as const, data: msg("m2", "2024-01-01T00:02:00Z", "assistant") },
-    ];
-    const result = reorderArtifactsAfterAssistant(items);
-    expect(result.map((i) => i.data.id)).toEqual(["m1", "a1", "m2"]);
-  });
-
-  it("event messages stay in place", () => {
-    const items = [
-      { kind: "message" as const, data: msg("m1", "2024-01-01T00:00:00Z", "user") },
-      { kind: "message" as const, data: msg("e1", "2024-01-01T00:01:00Z", "event", "Email sent to alice@example.com") },
-      { kind: "message" as const, data: msg("e2", "2024-01-01T00:01:30Z", "event", "Issue created: Bug") },
-      { kind: "message" as const, data: msg("m2", "2024-01-01T00:02:00Z", "assistant") },
-    ];
-    const result = reorderArtifactsAfterAssistant(items);
-    expect(result.map((i) => i.data.id)).toEqual(["m1", "e1", "e2", "m2"]);
-  });
-
-  it("mixed events + artifacts: events stay, artifacts move after assistant", () => {
-    const items = [
-      { kind: "message" as const, data: msg("m1", "2024-01-01T00:00:00Z", "user") },
-      { kind: "message" as const, data: msg("e1", "2024-01-01T00:01:00Z", "event", "Email sent") },
-      { kind: "artifact" as const, data: artifact("a1", "2024-01-01T00:01:30Z") },
-      { kind: "artifact" as const, data: artifact("a2", "2024-01-01T00:01:45Z") },
-      { kind: "message" as const, data: msg("m2", "2024-01-01T00:02:00Z", "assistant") },
-    ];
-    const result = reorderArtifactsAfterAssistant(items);
-    expect(result.map((i) => i.data.id)).toEqual(["m1", "e1", "m2", "a1", "a2"]);
-  });
-
-  it("nap markers are never relocated", () => {
-    const items = [
-      { kind: "message" as const, data: msg("m1", "2024-01-01T00:00:00Z", "user") },
-      { kind: "nap" as const, data: nap("nap-1", "2024-01-01T00:01:00Z") },
-      { kind: "artifact" as const, data: artifact("a1", "2024-01-01T00:01:30Z") },
-      { kind: "message" as const, data: msg("m2", "2024-01-01T00:02:00Z", "assistant") },
-    ];
-    const result = reorderArtifactsAfterAssistant(items);
-    expect(result.map((i) => i.data.id)).toEqual(["m1", "nap-1", "m2", "a1"]);
-  });
-
-  it("conversation grouping path: reordering works within grouped conversations", () => {
-    const msgs = [
-      { ...msgInConv("m1", "2024-01-01T00:00:00Z", "convA"), role: "user" as const },
-      { ...msgInConv("m2", "2024-01-01T02:00:00Z", "convA"), role: "assistant" as const },
-      { ...msgInConv("m3", "2024-01-02T00:00:00Z", "convB"), role: "user" as const },
-      { ...msgInConv("m4", "2024-01-02T02:00:00Z", "convB"), role: "assistant" as const },
-    ];
-    const arts = [
-      artifactInConv("a1", "2024-01-01T01:00:00Z", "convA"),
-      artifactInConv("a2", "2024-01-02T01:00:00Z", "convB"),
-    ];
-    const naps = [nap("nap-convA", "2024-01-01T12:00:00Z")];
-
-    const result = buildTimeline(msgs, arts, naps, "convB");
-    const ids = result.map((i) => i.data.id);
-    expect(ids).toEqual(["m1", "m2", "a1", "nap-convA", "m3", "m4", "a2"]);
-  });
-
-  it("follow-up buffer pattern: user → user → artifact → assistant reorders correctly", () => {
-    const items = [
-      { kind: "message" as const, data: msg("m1", "2024-01-01T00:00:00Z", "user") },
-      { kind: "message" as const, data: msg("m2", "2024-01-01T00:00:30Z", "user") },
-      { kind: "artifact" as const, data: artifact("a1", "2024-01-01T00:01:00Z") },
-      { kind: "message" as const, data: msg("m3", "2024-01-01T00:02:00Z", "assistant") },
-    ];
-    const result = reorderArtifactsAfterAssistant(items);
-    expect(result.map((i) => i.data.id)).toEqual(["m1", "m2", "m3", "a1"]);
-  });
-
-  it("empty timeline returns empty array", () => {
-    expect(reorderArtifactsAfterAssistant([])).toEqual([]);
-  });
-
-  it("artifact before any user message stays in place", () => {
-    const items = [
-      { kind: "artifact" as const, data: artifact("a1", "2024-01-01T00:00:00Z") },
-      { kind: "message" as const, data: msg("m1", "2024-01-01T00:01:00Z", "user") },
-      { kind: "message" as const, data: msg("m2", "2024-01-01T00:02:00Z", "assistant") },
-    ];
-    const result = reorderArtifactsAfterAssistant(items);
-    expect(result.map((i) => i.data.id)).toEqual(["a1", "m1", "m2"]);
-  });
-
-  it("relative order preserved: user → artifact1 → artifact2 → assistant keeps artifact order", () => {
-    const items = [
-      { kind: "message" as const, data: msg("m1", "2024-01-01T00:00:00Z", "user") },
-      { kind: "artifact" as const, data: artifact("a1", "2024-01-01T00:01:00Z") },
-      { kind: "artifact" as const, data: artifact("a2", "2024-01-01T00:01:30Z") },
-      { kind: "message" as const, data: msg("m2", "2024-01-01T00:02:00Z", "assistant") },
-    ];
-    const result = reorderArtifactsAfterAssistant(items);
-    expect(result.map((i) => i.data.id)).toEqual(["m1", "m2", "a1", "a2"]);
-  });
-});
-
-describe("addBufferedIfNew", () => {
-  it("adds a new message when id is not present", () => {
-    const prev = [msg("m1", "2024-01-01T00:00:00Z")];
-    const incoming = msg("m2", "2024-01-02T00:00:00Z");
-    const result = addBufferedIfNew(prev, incoming);
-    expect(result).toHaveLength(2);
-    expect(result[1].id).toBe("m2");
-  });
-
-  it("returns the same array when id already exists", () => {
-    const prev = [msg("m1", "2024-01-01T00:00:00Z")];
-    const incoming = msg("m1", "2024-01-01T00:00:00Z");
-    const result = addBufferedIfNew(prev, incoming);
-    expect(result).toBe(prev);
-    expect(result).toHaveLength(1);
-  });
-
-  it("adds to empty array", () => {
-    const result = addBufferedIfNew([], msg("m1", "2024-01-01T00:00:00Z"));
-    expect(result).toHaveLength(1);
-  });
-});
-
-describe("replaceOptimisticBuffered", () => {
-  it("replaces optimistic message with real message (HTTP first)", () => {
-    const prev = [
-      msg("m1", "2024-01-01T00:00:00Z"),
-      msg("temp-123", "2024-01-02T00:00:00Z", "user", "hello"),
-    ];
-    const real = msg("real-abc", "2024-01-02T00:00:00Z", "user", "hello");
-    const result = replaceOptimisticBuffered(prev, "temp-123", real);
-    expect(result).toHaveLength(2);
-    expect(result[1].id).toBe("real-abc");
-    expect(result.find((m) => m.id === "temp-123")).toBeUndefined();
-  });
-
-  it("removes optimistic when WebSocket already delivered the real message (WS first — the race condition fix)", () => {
-    const real = msg("real-abc", "2024-01-02T00:00:00Z", "user", "hello");
-    const prev = [
-      msg("m1", "2024-01-01T00:00:00Z"),
-      msg("temp-123", "2024-01-02T00:00:00Z", "user", "hello"),
-      real,
-    ];
-    const result = replaceOptimisticBuffered(prev, "temp-123", real);
-    expect(result).toHaveLength(2);
-    expect(result.map((m) => m.id)).toEqual(["m1", "real-abc"]);
-    expect(result.find((m) => m.id === "temp-123")).toBeUndefined();
-  });
-
-  it("full race simulation: optimistic → WS add (skipped) → HTTP replace produces no duplicates", () => {
-    const optimisticId = "temp-1716000000000";
-    const optimistic = msg(optimisticId, "2024-01-02T00:00:00Z", "user", "follow-up");
-    const real = msg("PjddM86V1he-JYuedi9tY", "2024-01-02T00:00:00Z", "user", "follow-up");
-
-    let state: Message[] = [msg("m1", "2024-01-01T00:00:00Z")];
-
-    // Step 1: add optimistic
-    state = [...state, optimistic];
-    expect(state).toHaveLength(2);
-
-    // Step 2: WebSocket delivers real message — skipped because temp entry with same timestamp exists
-    state = addBufferedIfNew(state, real);
-    expect(state).toHaveLength(2);
-
-    // Step 3: HTTP response arrives, replaces optimistic
-    state = replaceOptimisticBuffered(state, optimisticId, real);
-    expect(state).toHaveLength(2);
-    expect(state.map((m) => m.id)).toEqual(["m1", "PjddM86V1he-JYuedi9tY"]);
-  });
-
-  it("full normal flow: optimistic → HTTP replace → WS ignored produces no duplicates", () => {
-    const optimisticId = "temp-1716000000000";
-    const optimistic = msg(optimisticId, "2024-01-02T00:00:00Z", "user", "follow-up");
-    const real = msg("server-id", "2024-01-02T00:00:00Z", "user", "follow-up");
-
-    let state: Message[] = [msg("m1", "2024-01-01T00:00:00Z")];
-
-    // Step 1: add optimistic
-    state = [...state, optimistic];
-
-    // Step 2: HTTP response arrives first, replaces optimistic
-    state = replaceOptimisticBuffered(state, optimisticId, real);
-    expect(state).toHaveLength(2);
-    expect(state[1].id).toBe("server-id");
-
-    // Step 3: WebSocket arrives late, dedup blocks it
-    state = addBufferedIfNew(state, real);
-    expect(state).toHaveLength(2);
-    expect(state.map((m) => m.id)).toEqual(["m1", "server-id"]);
-  });
-
-  it("handles multiple buffered messages — only the targeted optimistic is affected", () => {
-    const prev = [
-      msg("m1", "2024-01-01T00:00:00Z"),
-      msg("temp-100", "2024-01-02T00:00:00Z", "user", "first"),
-      msg("temp-200", "2024-01-03T00:00:00Z", "user", "second"),
-    ];
-    const real = msg("real-100", "2024-01-02T00:00:00Z", "user", "first");
-    const result = replaceOptimisticBuffered(prev, "temp-100", real);
-    expect(result).toHaveLength(3);
-    expect(result.map((m) => m.id)).toEqual(["m1", "real-100", "temp-200"]);
   });
 });
 
@@ -809,5 +583,183 @@ describe("pointerRefreshTargetForTaskCreated (TODO-2: WS-driven refresh scope)",
         task: { agent_id: "agent_a", channel: undefined, conversation_id: "conv_new" },
       }),
     ).toBe("conv_new");
+  });
+});
+
+// TC1 — grouping: same-role + <60s clusters into first/middle/last/solo;
+// event messages never group (stay null).
+describe("computeGroupPositions (TC1)", () => {
+  const positionsFor = (msgs: Message[]) =>
+    computeGroupPositions(buildTimeline(msgs, [], []));
+
+  it("groups three same-role messages within 60s as first/middle/last", () => {
+    const msgs = [
+      msg("a", "2024-01-01T00:00:00Z", "user", "1"),
+      msg("b", "2024-01-01T00:00:30Z", "user", "2"),
+      msg("c", "2024-01-01T00:00:50Z", "user", "3"),
+    ];
+    expect(positionsFor(msgs)).toEqual(["first", "middle", "last"]);
+  });
+
+  it("breaks a cluster when the gap exceeds 60s", () => {
+    const msgs = [
+      msg("a", "2024-01-01T00:00:00Z", "user", "1"),
+      msg("b", "2024-01-01T00:02:00Z", "user", "2"),
+    ];
+    expect(positionsFor(msgs)).toEqual(["solo", "solo"]);
+  });
+
+  it("breaks a cluster when the role changes", () => {
+    const msgs = [
+      msg("a", "2024-01-01T00:00:00Z", "user", "hi"),
+      msg("b", "2024-01-01T00:00:10Z", "assistant", "hello"),
+    ];
+    expect(positionsFor(msgs)).toEqual(["solo", "solo"]);
+  });
+
+  it("groups events into the agent cluster (assistant + event share one header)", () => {
+    const msgs = [
+      msg("a", "2024-01-01T00:00:00Z", "assistant", "1"),
+      msg("e", "2024-01-01T00:00:10Z", "event", "Email received"),
+      msg("c", "2024-01-01T00:00:20Z", "assistant", "2"),
+    ];
+    // assistant + event are all the AGENT side → one cluster (Slack/Discord
+    // model: a single avatar+name header, the rest continue in the gutter).
+    expect(positionsFor(msgs)).toEqual(["first", "middle", "last"]);
+  });
+
+  it("keeps user and agent as separate clusters", () => {
+    const msgs = [
+      msg("u", "2024-01-01T00:00:00Z", "user", "hi"),
+      msg("a", "2024-01-01T00:00:10Z", "assistant", "hello"),
+      msg("e", "2024-01-01T00:00:20Z", "event", "Email sent"),
+    ];
+    // user is its own side; assistant+event group together.
+    expect(positionsFor(msgs)).toEqual(["solo", "first", "last"]);
+  });
+
+  it("returns solo for a single message", () => {
+    expect(positionsFor([msg("a", "2024-01-01T00:00:00Z", "user", "1")])).toEqual(["solo"]);
+  });
+});
+
+// Planner's strengthened TODO-3 acceptance (cache-chat-cards): caching the
+// artifacts so they're present from the INSTANT paint fixes not just the
+// file-card pop-in but ALSO the event-card displacement. The event cards move
+// as a CONSEQUENCE of un-cached artifacts being inserted into the timeline on
+// the network response — same root cause. These tests prove that behavior
+// against the pure timeline/grouping functions (the render-timing assertions
+// remain QA browser checks since src/web has no jsdom/RTL harness).
+describe("cache-chat-cards: event cards don't reflow when artifacts are cached (TODO-3)", () => {
+  // An agent-side cluster: assistant → event(email) → assistant, all within
+  // 60s. Grouped alone, the event card is the MIDDLE of one cluster.
+  const agentCluster: Message[] = [
+    msg("a1", "2024-01-01T00:00:00Z", "assistant", "working on it"),
+    msg("e1", "2024-01-01T00:00:20Z", "event", "New email from x@y.com: Subject"),
+    msg("a2", "2024-01-01T00:00:40Z", "assistant", "done"),
+  ];
+  // An artifact uploaded chronologically BETWEEN the assistant and the event.
+  // On the network response this inserts into the timeline next to the event.
+  const arts = [artifact("art1", "2024-01-01T00:00:10Z")];
+
+  it("ROOT CAUSE: an un-cached instant paint (artifacts=[]) yields a DIFFERENT timeline order than post-network", () => {
+    const instantPaintUncached = buildTimeline(agentCluster, [], []);
+    const postNetwork = buildTimeline(agentCluster, arts, []);
+
+    // Without caching, the instant paint has no artifact; the network response
+    // inserts it between a1 and e1 → the timeline restructures (reflow).
+    expect(instantPaintUncached.map((i) => i.data.id)).toEqual(["a1", "e1", "a2"]);
+    expect(postNetwork.map((i) => i.data.id)).toEqual(["a1", "art1", "e1", "a2"]);
+    expect(instantPaintUncached.map((i) => i.data.id)).not.toEqual(
+      postNetwork.map((i) => i.data.id),
+    );
+  });
+
+  it("ROOT CAUSE: the inserted artifact flips the event card's cluster-header (group position) state", () => {
+    const uncachedPositions = computeGroupPositions(buildTimeline(agentCluster, [], []));
+    const postNetworkPositions = computeGroupPositions(buildTimeline(agentCluster, arts, []));
+
+    // Uncached: [assistant, event, assistant] = one agent cluster → first/middle/last.
+    expect(uncachedPositions).toEqual(["first", "middle", "last"]);
+    // Post-network: [assistant, artifact, event, assistant] — the artifact is
+    // still the same agent side, so it joins the cluster and the event card
+    // shifts from "middle" to a later middle; the positions array changes shape
+    // (now 4 items), so the per-card header state is NOT preserved across the
+    // resolve. This is the visible displacement Gus reported.
+    expect(postNetworkPositions).toEqual(["first", "middle", "middle", "last"]);
+    expect(uncachedPositions).not.toEqual(postNetworkPositions);
+  });
+
+  it("FIX: a cached instant paint (artifacts present from frame 1) is IDENTICAL to the post-network timeline — no reflow", () => {
+    // With conv_extras caching, setArtifacts(extras.artifacts) runs on the
+    // instant paint, so buildTimeline sees the artifacts immediately. That
+    // instant-paint timeline must equal the post-network one (same artifacts,
+    // same conversation) → the network resolve causes ZERO structural change.
+    const cachedInstantPaint = buildTimeline(agentCluster, arts, []);
+    const postNetwork = buildTimeline(agentCluster, arts, []);
+
+    expect(cachedInstantPaint.map((i) => i.data.id)).toEqual(
+      postNetwork.map((i) => i.data.id),
+    );
+    expect(cachedInstantPaint.map((i) => i.kind)).toEqual(
+      postNetwork.map((i) => i.kind),
+    );
+  });
+
+  it("FIX: event-card group positions are stable across the resolve when artifacts are cached", () => {
+    const cachedInstantPositions = computeGroupPositions(buildTimeline(agentCluster, arts, []));
+    const postNetworkPositions = computeGroupPositions(buildTimeline(agentCluster, arts, []));
+
+    // Identical group positions → no event card gains/loses its avatar+name
+    // header when the network lands (the exact stability planner asked for).
+    expect(cachedInstantPositions).toEqual(postNetworkPositions);
+  });
+
+  it("FIX: an event card that is first/solo on the cached paint stays first/solo after the network lands", () => {
+    // A standalone event card (its own cluster: a different role/side neighbor
+    // keeps it solo). An artifact landing in the SAME cluster window would flip
+    // it from solo→first; caching the artifact means it's already accounted for
+    // on the instant paint, so the position never changes.
+    const msgs: Message[] = [
+      msg("u1", "2024-01-01T00:00:00Z", "user", "hi"),
+      msg("e1", "2024-01-01T00:05:00Z", "event", "Calendar event: standup"),
+    ];
+    const lateArt = [artifact("art2", "2024-01-01T00:05:10Z")];
+
+    const cachedInstant = computeGroupPositions(buildTimeline(msgs, lateArt, []));
+    const postNetwork = computeGroupPositions(buildTimeline(msgs, lateArt, []));
+    expect(cachedInstant).toEqual(postNetwork);
+
+    // And contrast: WITHOUT the cached artifact the event is solo, but WITH it
+    // the event becomes "first" of a 2-card agent cluster — the very flip
+    // caching prevents from happening after the network resolve.
+    const uncached = computeGroupPositions(buildTimeline(msgs, [], []));
+    expect(uncached).toEqual(["solo", "solo"]);
+    expect(postNetwork).toEqual(["solo", "first", "last"]);
+  });
+
+  it("FIX: caching conversation_type keeps a metadata-less event card's icon stable (no heuristic→type flip)", () => {
+    // Metadata-less event message: the icon/label is resolved by
+    // eventTypeFromMessage → falls back to getEventIconType(content, type).
+    // On a cached paint conversation_type is seeded, so the type-driven icon is
+    // correct from frame 1 and does NOT change when the network confirms it.
+    // Content whose keyword heuristic ("email") DISAGREES with the real
+    // conversation type (calendar_event) — e.g. a calendar invite whose text
+    // mentions email. This is exactly the metadata-less case where the icon
+    // would flip if conversation.type isn't known on the instant paint.
+    const content = "Calendar invite — reply via email to confirm";
+    // Instant paint with cached conversation_type → correct (calendar) icon:
+    const cachedIcon = eventTypeFromMessage({}, content, "calendar_event");
+    // Post-network with the authoritative conversation_type → same icon:
+    const networkIcon = eventTypeFromMessage({}, content, "calendar_event");
+    expect(cachedIcon).toBe(networkIcon);
+    expect(cachedIcon).toBe("calendar");
+
+    // Without a cached type (conversation === null on the un-cached instant
+    // paint), the keyword heuristic picks "email" for this content → the flip
+    // to the type-driven "calendar" only happens after the network lands.
+    const uncachedIcon = eventTypeFromMessage({}, content, undefined);
+    expect(uncachedIcon).toBe("email");
+    expect(uncachedIcon).not.toBe(networkIcon);
   });
 });

@@ -121,7 +121,7 @@ function sanitizeFilename(name: string): string {
   return path.basename(name).replace(/[/\\]/g, "_").replace(/\.\./g, "_").slice(0, 255) || "file";
 }
 
-async function cleanupAttachments(taskId: string): Promise<void> {
+export async function cleanupAttachments(taskId: string): Promise<void> {
   try {
     await rm(path.join(ATTACHMENTS_BASE, taskId), { recursive: true, force: true });
   } catch {
@@ -129,7 +129,7 @@ async function cleanupAttachments(taskId: string): Promise<void> {
   }
 }
 
-async function downloadAttachments(
+export async function downloadAttachments(
   client: DaemonClient,
   token: string,
   workspaceId: string,
@@ -182,8 +182,12 @@ export async function runSession(input: SessionRunnerInput): Promise<void> {
   // --- State shared by the kill handler, hoisted so the SINGLE handler below
   //     can see it whether the kill lands before or after the agent spawns. ---
   let killed = false;
-  let agentPid: number | undefined = undefined;
-  let flushTimer: ReturnType<typeof setInterval> | undefined = undefined;
+  // Assigned once after the agent spawns (below) but READ earlier inside onKill;
+  // prefer-const can't see the closure read, so it must stay `let`.
+  // eslint-disable-next-line prefer-const
+  let agentPid: number | undefined;
+  // eslint-disable-next-line prefer-const
+  let flushTimer: ReturnType<typeof setInterval> | undefined;
 
   // Message batching
   const pendingMessages: {
@@ -312,7 +316,7 @@ export async function runSession(input: SessionRunnerInput): Promise<void> {
   // and called process.exit — but if exit hasn't flushed yet, don't spawn).
   if (killed) return;
 
-  const prompt = buildPrompt(task, attachments);
+  const prompt = input.promptOverride ?? buildPrompt(task, attachments);
 
   const resumeSessionId = task.contextKey
     ? findResumableSessionByContextKey(timelineDir, task.contextKey, provider) ?? undefined
@@ -351,6 +355,11 @@ export async function runSession(input: SessionRunnerInput): Promise<void> {
   log.info(JSON.stringify({ role: "user", type: "text", content: prompt }));
   updateEntry(timelineDir, task.id, (entry) => {
     entry.session_id = earlySessionId || null;
+    // Mark the agent as genuinely started so steering may supersede this run.
+    // Gate on a non-empty session id: codex resolves sessionId to "" if its
+    // thread/start handshake fails before completing — that is NOT a started
+    // agent, so leave the marker falsy and let the staleness path reap it.
+    if (earlySessionId) entry.agent_started = true;
   });
 
   flushTimer = setInterval(flushMessages, FLUSH_INTERVAL_MS);

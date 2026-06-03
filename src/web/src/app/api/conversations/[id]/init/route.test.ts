@@ -12,12 +12,10 @@ const m = {
   getActiveMessageCount: vi.fn(),
   listMessages: vi.fn(),
   listArtifactsByConversation: vi.fn(),
-  listBufferedMessages: vi.fn(),
   getActiveTaskByConversation: vi.fn(),
   listFlaggedMessageIds: vi.fn(),
   hasPreviousConversations: vi.fn(),
-  listTaskMessages: vi.fn(),
-  countTextMessagesByTaskIds: vi.fn(),
+  listTaskErrorMessages: vi.fn(),
 };
 
 vi.mock("@alook/shared", async () => {
@@ -33,7 +31,6 @@ vi.mock("@alook/shared", async () => {
         getNewestMessageId: (...a: unknown[]) => m.getNewestMessageId(...a),
         getActiveMessageCount: (...a: unknown[]) => m.getActiveMessageCount(...a),
         listMessages: (...a: unknown[]) => m.listMessages(...a),
-        listBufferedMessages: (...a: unknown[]) => m.listBufferedMessages(...a),
       },
       artifact: {
         listArtifactsByConversation: (...a: unknown[]) => m.listArtifactsByConversation(...a),
@@ -42,8 +39,7 @@ vi.mock("@alook/shared", async () => {
       task: { getActiveTaskByConversation: (...a: unknown[]) => m.getActiveTaskByConversation(...a) },
       messageFlag: { listFlaggedMessageIds: (...a: unknown[]) => m.listFlaggedMessageIds(...a) },
       taskMessage: {
-        listTaskMessages: (...a: unknown[]) => m.listTaskMessages(...a),
-        countTextMessagesByTaskIds: (...a: unknown[]) => m.countTextMessagesByTaskIds(...a),
+        listTaskErrorMessages: (...a: unknown[]) => m.listTaskErrorMessages(...a),
       },
     },
   };
@@ -64,17 +60,12 @@ vi.mock("@/lib/api/responses", () => ({
   taskToResponse: (t: any) => ({ id: t.id }),
   taskMessageToResponse: (tm: any) => ({ id: tm.id }),
 }));
-vi.mock("@/lib/services/task", () => ({
-  TaskService: function () { return { dispatchNextBufferedMessage: vi.fn().mockResolvedValue(null) }; },
-}));
-
 import { GET } from "./route";
 
 beforeEach(() => {
   vi.clearAllMocks();
   m.listMessages.mockResolvedValue({ messages: [], has_more: false });
   m.listArtifactsByConversation.mockResolvedValue([]);
-  m.listBufferedMessages.mockResolvedValue([]);
   m.getActiveTaskByConversation.mockResolvedValue(null);
   m.listFlaggedMessageIds.mockResolvedValue([]);
   m.hasPreviousConversations.mockResolvedValue(false);
@@ -110,6 +101,39 @@ describe("GET /api/conversations/[id]/init", () => {
     expect(body.messages).toEqual([{ id: "m1" }]);
     expect(body.has_more_messages).toBe(true);
     expect(body.cache_valid).toBe(false);
+  });
+
+  it("preloads error task messages (workspace-scoped) for a running active task", async () => {
+    m.getConversation.mockResolvedValue({ id: "c1", agentId: "a1", channel: null });
+    m.getActiveTaskByConversation.mockResolvedValue({ id: "t1", status: "running" });
+    // The query filters to type:"error" in SQL, so the route maps whatever it returns.
+    m.listTaskErrorMessages.mockResolvedValue([
+      { id: "tm2", seq: 2, type: "error", content: "boom" },
+    ]);
+
+    const req = new NextRequest("http://localhost/api/conversations/c1/init");
+    const res = await GET(req, { params: { id: "c1" } });
+    const body = await res.json();
+
+    expect(res.status).toBe(200);
+    expect(body.task_messages).toEqual([{ id: "tm2" }]);
+    // Scoped to the authed workspace and the active task.
+    expect(m.listTaskErrorMessages).toHaveBeenCalledWith(expect.anything(), "t1", "w1");
+  });
+
+  it("does not query task errors when there is no active task", async () => {
+    // A run that ended in error is settled to status:"failed" and re-surfaces via
+    // its persisted assistant error message (not through this preload).
+    m.getConversation.mockResolvedValue({ id: "c1", agentId: "a1", channel: null });
+    m.getActiveTaskByConversation.mockResolvedValue(null);
+
+    const req = new NextRequest("http://localhost/api/conversations/c1/init");
+    const res = await GET(req, { params: { id: "c1" } });
+    const body = await res.json();
+
+    expect(res.status).toBe(200);
+    expect(body.task_messages).toEqual([]);
+    expect(m.listTaskErrorMessages).not.toHaveBeenCalled();
   });
 
   it("returns cache_valid=true and null messages when client cache matches", async () => {

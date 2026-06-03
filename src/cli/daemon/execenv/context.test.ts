@@ -126,6 +126,18 @@ describe("buildInstructionContent email tool injection", () => {
     expect(content).toContain("The CLI auto-detects your identity from the environment");
   });
 
+  it("includes the Talking to the user (send-dm) guidance block", () => {
+    const task = makeTask({
+      agent: { name: "test", instructions: "", emailHandle: "handle" },
+    });
+    const content = buildInstructionContent(task);
+
+    expect(content).toContain("### Talking to the user");
+    expect(content).toContain("texting a colleague");
+    expect(content).toContain("npx @alook/cli sync send-dm");
+    expect(content).not.toContain("sync send-dm --agent_id");
+  });
+
   it("still includes big boss instructions alongside email tools", () => {
     const task = makeTask({
       agent: { name: "test", instructions: "Follow these rules", emailHandle: "myagent" },

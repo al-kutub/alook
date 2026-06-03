@@ -2,9 +2,9 @@ import type { Task, Attachment } from "./types.js";
 import { localISOString } from "./execenv/timeline.js";
 
 const DM_RESPONSE_NOTICE =
-  "IMPORTANT: Only your final text response is visible to the user." +
-  " Tool calls, intermediate reasoning, and mid-process outputs are NOT displayed." +
-  " Put all key information, answers, and conclusions in your final response — that is the only thing the user will read.";
+  "Reply with `alook sync send-dm` — that's the only thing the user sees;" +
+  " your task output and reasoning are not shown." +
+  " Talk to them at milestones like a colleague would, and don't end your turn without sending what they need.";
 
 const EMAIL_NOTICE =
   "This task was triggered automatically by an incoming email. There is no human in this session." +
@@ -38,9 +38,7 @@ function buildDmNotice(name: string, email: string): string {
   );
 }
 
-export function buildPrompt(task: Task, attachments?: Attachment[]): string {
-  // The arrival time of this info (when the message/task was created server-side).
-  // Lets a resumed agent reason about elapsed wall-clock time between turns.
+export function buildTaskObject(task: Task, attachments?: Attachment[]): Record<string, unknown> {
   const createdAt = new Date(task.createdAt);
   const receivedAt = Number.isNaN(createdAt.getTime())
     ? localISOString()
@@ -108,5 +106,20 @@ export function buildPrompt(task: Task, attachments?: Attachment[]): string {
       filename: a.filename,
     }));
   }
-  return JSON.stringify(obj);
+  return obj;
+}
+
+export function buildPrompt(task: Task, attachments?: Attachment[]): string {
+  return JSON.stringify(buildTaskObject(task, attachments));
+}
+
+export function buildMergedPrompt(tasks: Task[], attachmentsMap: Map<string, Attachment[]>): string {
+  const subTasks = tasks
+    .map((t) => buildTaskObject(t, attachmentsMap.get(t.id)))
+    .sort((a, b) => String(a.received_at).localeCompare(String(b.received_at)));
+  return JSON.stringify({
+    type: "merge_tasks",
+    notice: "These messages arrived simultaneously. Process each one completely.",
+    tasks: subTasks,
+  });
 }

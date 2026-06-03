@@ -462,6 +462,12 @@ export const UpdateAgentLinkRequestSchema = z.object({
 });
 export type UpdateAgentLinkRequestInput = z.infer<typeof UpdateAgentLinkRequestSchema>;
 
+export const UpsertAgentLinkRequestSchema = z.object({
+  target_agent_id: z.string().min(1, "target_agent_id is required"),
+  instruction: z.string(),
+});
+export type UpsertAgentLinkRequestInput = z.infer<typeof UpsertAgentLinkRequestSchema>;
+
 // ---------------------------------------------------------------------------
 // Whitelist request schema
 // ---------------------------------------------------------------------------
@@ -536,10 +542,14 @@ export const CreateMessageRequestSchema = z.object({
 });
 export type CreateMessageRequest = z.infer<typeof CreateMessageRequestSchema>;
 
-export const CreateBufferedMessageRequestSchema = z.object({
+// Agent-authored DM: the agent's own `role:"assistant"` reply, posted via the
+// machine-token daemon route (`alook sync send-dm`). Unlike CreateMessageRequest
+// (a user send) this does NOT enqueue a task — it only delivers the message.
+export const AgentDmRequestSchema = z.object({
   content: z.string().min(1, "content is required"),
+  task_id: z.string().min(1).optional(),
 });
-export type CreateBufferedMessageRequest = z.infer<typeof CreateBufferedMessageRequestSchema>;
+export type AgentDmRequest = z.infer<typeof AgentDmRequestSchema>;
 
 // ---------------------------------------------------------------------------
 // Email request schemas
