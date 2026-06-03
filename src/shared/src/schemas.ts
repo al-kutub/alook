@@ -547,7 +547,7 @@ export type CreateMessageRequest = z.infer<typeof CreateMessageRequestSchema>;
 // (a user send) this does NOT enqueue a task — it only delivers the message.
 export const AgentDmRequestSchema = z.object({
   content: z.string().min(1, "content is required"),
-  task_id: z.string().optional(),
+  task_id: z.string().min(1).optional(),
 });
 export type AgentDmRequest = z.infer<typeof AgentDmRequestSchema>;
 

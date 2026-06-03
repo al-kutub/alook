@@ -63,7 +63,7 @@ export async function getByPair(
   a: string,
   b: string,
 ) {
-  let [sourceAgentId, targetAgentId] = a > b ? [b, a] : [a, b];
+  const [sourceAgentId, targetAgentId] = a > b ? [b, a] : [a, b];
   const rows = await db
     .select()
     .from(agentLink)
@@ -96,7 +96,8 @@ export async function upsertByPair(
     const updated = await update(db, existing.id, data.workspaceId, {
       instruction: data.instruction,
     });
-    return { row: updated!, created: false };
+    if (!updated) return { row: existing, created: false };
+    return { row: updated, created: false };
   }
   const created = await create(db, data);
   return { row: created, created: true };

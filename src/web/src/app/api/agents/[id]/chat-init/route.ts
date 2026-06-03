@@ -74,10 +74,8 @@ export const POST = withAuth(async (req, ctx) => {
   const hasMoreConvs =
     hasMoreConvsResult.status === "fulfilled" ? hasMoreConvsResult.value : false;
 
-  const resolvedActiveTask = activeTask;
-
   let taskMessages: unknown[] = [];
-  if (resolvedActiveTask) {
+  if (activeTask) {
     try {
       // Errors-only: the chat no longer renders thinking/tool steps (replies
       // arrive via `send-dm`). We preload only `type:"error"` rows for the active
@@ -87,7 +85,7 @@ export const POST = withAuth(async (req, ctx) => {
       // Filters type==="error" + scopes by workspace in SQL.
       const tmsgs = await queries.taskMessage.listTaskErrorMessages(
         db,
-        resolvedActiveTask.id,
+        activeTask.id,
         ws.workspaceId,
       );
       taskMessages = tmsgs.map(taskMessageToResponse);
@@ -100,7 +98,7 @@ export const POST = withAuth(async (req, ctx) => {
     conversation: conversationToResponse(conversation),
     messages: messages.map(messageToResponse),
     artifacts: artifacts.map(queries.artifact.artifactToResponse),
-    active_task: resolvedActiveTask ? taskToResponse(resolvedActiveTask) : null,
+    active_task: activeTask ? taskToResponse(activeTask) : null,
     task_messages: taskMessages,
     has_more_messages: hasMoreMessages,
     has_more_conversations: hasMoreConvs,
