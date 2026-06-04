@@ -35,6 +35,27 @@ export function createAuth(env: Env) {
     baseURL: env.BETTER_AUTH_URL,
     database: env.DB,
     secret: env.BETTER_AUTH_SECRET,
+    databaseHooks: {
+      user: {
+        create: {
+          async after(user, ctx) {
+            if (!ctx) return
+            let method = "email_otp"
+            const path = ctx.path ?? ""
+            if (path.startsWith("/callback/") || path.startsWith("/oauth2/callback/")) {
+              method = path.split("/").pop() ?? "unknown"
+            }
+            ctx.setCookie("is_new_signup", method, {
+              maxAge: 60,
+              httpOnly: false,
+              path: "/",
+              sameSite: "lax",
+              secure: isProd,
+            })
+          },
+        },
+      },
+    },
     // Signed session-data cookie lets getSession() validate without hitting D1.
     // Fixes first-login 401 for newly-registered users: the just-written user row
     // may not yet be visible on a D1 read-replica, but the signed cookie carries

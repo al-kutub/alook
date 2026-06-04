@@ -237,3 +237,103 @@ describe("createAuth device authorization plugin", () => {
     expect(validateClient("")).toBe(false)
   })
 })
+
+describe("createAuth databaseHooks - signup tracking cookie", () => {
+  beforeEach(() => vi.clearAllMocks())
+
+  type HooksOptions = {
+    databaseHooks: {
+      user: {
+        create: {
+          after: (user: Record<string, unknown>, ctx: any) => void
+        }
+      }
+    }
+  }
+
+  function getHook(envOverrides?: Record<string, unknown>) {
+    return loadCreateAuth().then((createAuth) => {
+      const env = makeEnv({ NODE_ENV: "production", ...envOverrides })
+      const opts = (createAuth(env as never) as { __options: HooksOptions }).__options
+      return opts.databaseHooks.user.create.after
+    })
+  }
+
+  function makeMockCtx(path: string) {
+    return {
+      path,
+      setCookie: vi.fn(),
+    }
+  }
+
+  it("sets is_new_signup cookie with email_otp method for OTP sign-in", async () => {
+    const hook = await getHook()
+    const ctx = makeMockCtx("/sign-in/email-otp")
+    hook({ id: "u1", email: "test@example.com" }, ctx)
+    expect(ctx.setCookie).toHaveBeenCalledWith(
+      "is_new_signup",
+      "email_otp",
+      expect.objectContaining({ maxAge: 60, httpOnly: false, path: "/" }),
+    )
+  })
+
+  it("sets is_new_signup cookie with github method for GitHub callback", async () => {
+    const hook = await getHook()
+    const ctx = makeMockCtx("/callback/github")
+    hook({ id: "u1", email: "test@example.com" }, ctx)
+    expect(ctx.setCookie).toHaveBeenCalledWith(
+      "is_new_signup",
+      "github",
+      expect.objectContaining({ maxAge: 60, httpOnly: false }),
+    )
+  })
+
+  it("sets is_new_signup cookie with google method for Google callback", async () => {
+    const hook = await getHook()
+    const ctx = makeMockCtx("/callback/google")
+    hook({ id: "u1", email: "test@example.com" }, ctx)
+    expect(ctx.setCookie).toHaveBeenCalledWith(
+      "is_new_signup",
+      "google",
+      expect.objectContaining({ maxAge: 60, httpOnly: false }),
+    )
+  })
+
+  it("handles oauth2 callback path", async () => {
+    const hook = await getHook()
+    const ctx = makeMockCtx("/oauth2/callback/github")
+    hook({ id: "u1", email: "test@example.com" }, ctx)
+    expect(ctx.setCookie).toHaveBeenCalledWith(
+      "is_new_signup",
+      "github",
+      expect.objectContaining({ maxAge: 60 }),
+    )
+  })
+
+  it("does not throw when context is null", async () => {
+    const hook = await getHook()
+    expect(() => hook({ id: "u1" }, null)).not.toThrow()
+  })
+
+  it("sets secure flag in production", async () => {
+    const hook = await getHook({ NODE_ENV: "production" })
+    const ctx = makeMockCtx("/sign-in/email-otp")
+    hook({ id: "u1" }, ctx)
+    expect(ctx.setCookie).toHaveBeenCalledWith(
+      "is_new_signup",
+      "email_otp",
+      expect.objectContaining({ secure: true }),
+    )
+  })
+
+  it("does not set secure flag in development", async () => {
+    const hook = await getHook({ NODE_ENV: "development" })
+    const ctx = makeMockCtx("/sign-in/email-otp")
+    hook({ id: "u1" }, ctx)
+    expect(ctx.setCookie).toHaveBeenCalledWith(
+      "is_new_signup",
+      "email_otp",
+      expect.objectContaining({ secure: false }),
+    )
+  })
+})
