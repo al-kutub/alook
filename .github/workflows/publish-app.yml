@@ -4,6 +4,7 @@ on:
   push:
     branches: [main]
     paths: [src/app/package.json]
+  workflow_dispatch:
 
 concurrency:
   group: publish-app
