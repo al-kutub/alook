@@ -16,6 +16,7 @@ import {
   getTask,
   updateIssue,
   getAgentSkills,
+  cancelActiveTask,
 } from "@/lib/api";
 import { useLatest } from "@/components/agent-chat/chat-message-utils";
 import type {
@@ -44,6 +45,7 @@ import {
   MessageSquareQuote,
   MoreHorizontal,
   Paperclip,
+  Square,
   X,
 } from "lucide-react";
 import { useAgentChat } from "@/hooks/use-agent-chat";
@@ -517,12 +519,25 @@ export function AgentChatView({
   ]);
 
   const [menuOpen, setMenuOpen] = useState(false);
+  const [stopping, setStopping] = useState(false);
 
   const isTaskActive =
     !!activeTask &&
     !["completed", "failed", "cancelled", "superseded"].includes(
       activeTask.status,
     );
+
+  const handleStop = useCallback(async () => {
+    if (!conversation?.id || stopping) return;
+    setStopping(true);
+    try {
+      await cancelActiveTask(conversation.id, workspaceId);
+    } catch {
+      toast.error("Failed to stop the task");
+    } finally {
+      setStopping(false);
+    }
+  }, [conversation?.id, workspaceId, stopping]);
 
   // Rotating capability-hint placeholder for the idle, empty composer. Freezes
   // on focus/typing, resumes on empty blur; never rotates while a task is
@@ -853,6 +868,39 @@ export function AgentChatView({
                         : currentConvHasMessages
                           ? "Take a nap and reset the current session"
                           : `${agentName} is well-rested and ready to go`}
+                    </TooltipContent>
+                  </Tooltip>
+                  <Tooltip>
+                    <TooltipTrigger
+                      render={(props) => (
+                        <span
+                          {...props}
+                          className={cn("inline-flex", props.className)}
+                        >
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => {
+                              setMenuOpen(false);
+                              handleStop();
+                            }}
+                            disabled={stopping || !isTaskActive}
+                            className="w-full justify-start gap-2 rounded-md text-muted-foreground hover:text-foreground"
+                          >
+                            {stopping ? (
+                              <Loader2 className="size-3.5 animate-spin" />
+                            ) : (
+                              <Square className="size-3.5" />
+                            )}
+                            <span className="text-xs">Stop</span>
+                          </Button>
+                        </span>
+                      )}
+                    />
+                    <TooltipContent side="right">
+                      {isTaskActive
+                        ? "Stop the running task"
+                        : "No task running"}
                     </TooltipContent>
                   </Tooltip>
                 </PopoverContent>
