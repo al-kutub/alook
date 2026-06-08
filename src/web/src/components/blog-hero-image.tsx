@@ -1,53 +1,20 @@
 "use client";
 
 import Image from "next/image";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 
 interface BlogHeroImageProps {
-  imageVariantA: string;
-  imageVariantB: string;
+  image: string;
   imageAlt: string;
-  title: string;
 }
 
-export function BlogHeroImage({
-  imageVariantA,
-  imageVariantB,
-  imageAlt,
-  title,
-}: BlogHeroImageProps) {
-  const [selectedVariant, setSelectedVariant] = useState<"A" | "B">("A");
+export function BlogHeroImage({ image, imageAlt }: BlogHeroImageProps) {
   const [isLoading, setIsLoading] = useState(true);
-
-  useEffect(() => {
-    // Initialize A/B test variant
-    const storedVariant = localStorage.getItem("blog-hero-variant");
-
-    if (storedVariant === "A" || storedVariant === "B") {
-      setSelectedVariant(storedVariant);
-    } else {
-      // Randomly assign variant for new visitors
-      const variant = Math.random() < 0.5 ? "A" : "B";
-      setSelectedVariant(variant);
-      localStorage.setItem("blog-hero-variant", variant);
-    }
-
-    // Track variant selection in analytics
-    if (typeof window !== "undefined" && window.gtag) {
-      window.gtag("event", "blog_hero_variant", {
-        event_category: "A/B Test",
-        event_label: title,
-        variant: selectedVariant,
-      });
-    }
-  }, [title, selectedVariant]);
-
-  const imageSrc = selectedVariant === "A" ? imageVariantA : imageVariantB;
 
   return (
     <div className="relative w-full h-[400px] md:h-[500px] lg:h-[600px] mb-12 -mx-6 sm:-mx-0">
       <Image
-        src={imageSrc}
+        src={image}
         alt={imageAlt}
         fill
         priority

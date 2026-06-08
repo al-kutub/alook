@@ -117,12 +117,10 @@ export default async function BlogPostPage({
           </div>
         </header>
 
-        {post.imageVariantA && post.imageVariantB && (
+        {post.image && (
           <BlogHeroImage
-            imageVariantA={post.imageVariantA}
-            imageVariantB={post.imageVariantB}
+            image={post.image}
             imageAlt={post.imageAlt || post.title}
-            title={post.title}
           />
         )}
 

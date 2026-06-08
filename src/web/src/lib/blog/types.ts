@@ -8,6 +8,4 @@ export type BlogPost = {
   draft?: boolean;
   image?: string;
   imageAlt?: string;
-  imageVariantA?: string;
-  imageVariantB?: string;
 };
