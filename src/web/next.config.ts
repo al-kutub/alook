@@ -11,6 +11,80 @@ const nextConfig: NextConfig = {
 		root: path.resolve(__dirname, "../.."),
 	},
 	pageExtensions: ["js", "jsx", "md", "mdx", "ts", "tsx"],
+	async headers() {
+		return [
+			{
+				// Blog pages - cache for 1 hour on CDN, 1 year on browser
+				source: "/blog/:path*",
+				headers: [
+					{
+						key: "Cache-Control",
+						value: "public, max-age=3600, s-maxage=31536000",
+					},
+				],
+			},
+			{
+				// Homepage and main pages - cache for 1 hour on CDN, 1 day on browser
+				source: "/",
+				headers: [
+					{
+						key: "Cache-Control",
+						value: "public, max-age=3600, s-maxage=86400",
+					},
+				],
+			},
+			{
+				// Static assets - cache for 1 year
+				source: "/_next/static/:path*",
+				headers: [
+					{
+						key: "Cache-Control",
+						value: "public, max-age=31536000, immutable",
+					},
+				],
+			},
+			{
+				// Images and media - cache for 1 month
+				source: "/images/:path*",
+				headers: [
+					{
+						key: "Cache-Control",
+						value: "public, max-age=2592000",
+					},
+				],
+			},
+			{
+				// Gallery - cache for 1 month
+				source: "/gallery/:path*",
+				headers: [
+					{
+						key: "Cache-Control",
+						value: "public, max-age=2592000",
+					},
+				],
+			},
+			{
+				// API routes - no cache
+				source: "/api/:path*",
+				headers: [
+					{
+						key: "Cache-Control",
+						value: "no-store, no-cache, must-revalidate, proxy-revalidate",
+					},
+				],
+			},
+			{
+				// Default for all other pages - cache for 1 hour
+				source: "/:path*",
+				headers: [
+					{
+						key: "Cache-Control",
+						value: "public, max-age=3600, s-maxage=3600",
+					},
+				],
+			},
+		];
+	},
 };
 
 const withMDX = createMDX({
