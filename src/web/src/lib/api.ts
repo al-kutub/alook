@@ -298,6 +298,7 @@ export interface ConversationInitResponse {
   task_messages: TaskMessageResponse[];
   cache_valid: boolean;
   message_count: number;
+  root_message?: Message | null;
 }
 
 export const conversationInit = (
@@ -1180,3 +1181,57 @@ export const getTrace = (traceId: string, workspaceId: string) =>
   apiFetch<{ trace_id: string; channel: string; tasks: TraceTask[] }>(
     `/api/traces/${traceId}${wsQuery(workspaceId)}`
   );
+
+// ── Threads ──
+
+export interface ThreadSummary {
+  thread_id: string;
+  parent_message_id: string;
+  thread_title: string;
+  reply_count: number;
+  last_reply_at: string | null;
+  created_at: string;
+}
+
+export interface ThreadListItem {
+  id: string;
+  parent_message_id: string;
+  thread_title: string;
+  reply_count: number;
+  last_reply_at: string | null;
+  last_reply_preview: string;
+  created_at: string;
+}
+
+export const createThread = (
+  conversationId: string,
+  parentMessageId: string,
+  content: string,
+  workspaceId: string,
+) =>
+  apiFetch<{
+    conversation: Conversation;
+    message: Message;
+    task: TaskApi;
+  }>(`/api/conversations/${conversationId}/threads${wsQuery(workspaceId)}`, {
+    method: "POST",
+    body: JSON.stringify({ parent_message_id: parentMessageId, content }),
+  });
+
+export const getThreadSummaries = (conversationId: string, workspaceId: string) =>
+  apiFetch<{ thread_summaries: ThreadSummary[] }>(
+    `/api/conversations/${conversationId}/threads${wsQuery(workspaceId)}`
+  );
+
+export const listAgentThreads = (
+  agentId: string,
+  workspaceId: string,
+  opts?: { limit?: number; before?: string }
+) => {
+  const extra: Record<string, string> = {};
+  if (opts?.limit) extra.limit = String(opts.limit);
+  if (opts?.before) extra.before = opts.before;
+  return apiFetch<{ threads: ThreadListItem[]; has_more: boolean }>(
+    `/api/agents/${agentId}/threads${wsQuery(workspaceId, extra)}`
+  );
+};

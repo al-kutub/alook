@@ -11,7 +11,7 @@ import { highlightMentions } from "@/lib/highlight-mentions";
 import { TaskStream } from "@/components/task-stream";
 import { RuntimeErrorBlock } from "@/components/agent-chat/runtime-error-block";
 import { AnimatedAvatar, type AvatarConfig } from "@/components/avatar";
-import { FileText, Flag, Copy, Check, MessageSquareQuote } from "lucide-react";
+import { FileText, Flag, Copy, Check, MessageSquareQuote, MessageSquare } from "lucide-react";
 import { EmailCard } from "@/components/agent-chat/event-cards/email-card";
 import { CalendarCard } from "@/components/agent-chat/event-cards/calendar-card";
 import { IssueCard } from "@/components/agent-chat/event-cards/issue-card";
@@ -83,6 +83,9 @@ export interface MessageItemProps {
   isSendFailed?: boolean;
   onRetrySend?: (messageId: string) => void;
   onQuote?: (messageId: string, excerpt: string) => void;
+  onReplyInThread?: (messageId: string) => void;
+  threadSummary?: { thread_id: string; reply_count: number; last_reply_at: string | null; thread_title: string } | null;
+  isThreadRoot?: boolean;
 }
 
 type EmailData = {
@@ -373,6 +376,17 @@ function FlagDot() {
   );
 }
 
+function ThreadRootDot() {
+  return (
+    <span
+      aria-hidden
+      className="absolute -left-1.5 -top-1.5 z-10 flex size-3.5 items-center justify-center rounded-full border-2 border-background bg-foreground text-background"
+    >
+      <MessageSquare className="size-2" />
+    </span>
+  );
+}
+
 export const MessageItem = memo(function MessageItem({
   msg,
   agents,
@@ -398,6 +412,9 @@ export const MessageItem = memo(function MessageItem({
   isSendFailed,
   onRetrySend,
   onQuote,
+  onReplyInThread,
+  threadSummary,
+  isThreadRoot,
 }: MessageItemProps) {
   const { copy, copied } = useCopyToClipboard();
 
@@ -466,7 +483,15 @@ export const MessageItem = memo(function MessageItem({
       key: "quote",
       label: "Quote",
       icon: <MessageSquareQuote className="size-3.5" />,
-      onClick: () => onQuote(msg.id, msg.content.slice(0, 100)),
+      onClick: () => onQuote(msg.id, msg.content.slice(0, 50)),
+    });
+  }
+  if (onReplyInThread && (msg.role === "assistant" || msg.role === "user")) {
+    messageActions.push({
+      key: "thread",
+      label: "Reply in thread",
+      icon: <MessageSquare className="size-3.5" />,
+      onClick: () => onReplyInThread(msg.id),
     });
   }
   if (msg.role === "assistant" && onToggleFlag) {
@@ -545,7 +570,7 @@ export const MessageItem = memo(function MessageItem({
                     const target = document.querySelector(`[data-message-id="${CSS.escape(quoteId)}"]`);
                     target?.scrollIntoView({ behavior: "smooth", block: "center" });
                   }}
-                  className="max-w-[80%] mb-0.5 flex items-center gap-1.5 rounded-lg bg-muted/60 px-2.5 py-1 text-left"
+                  className="max-w-[50%] mb-0.5 flex items-center gap-1.5 rounded-lg bg-muted/60 px-2.5 py-1 text-left"
                 >
                   <MessageSquareQuote className="size-3 shrink-0 text-muted-foreground" />
                   <span className="text-xs text-muted-foreground truncate">{quote.excerpt}</span>
@@ -588,6 +613,22 @@ export const MessageItem = memo(function MessageItem({
                 className="mt-1 px-1 text-xs text-destructive hover:underline"
               >
                 Not delivered · tap to retry
+              </button>
+            )}
+            {threadSummary && threadSummary.reply_count > 0 && (
+              <button
+                type="button"
+                onClick={() => onReplyInThread?.(msg.id)}
+                className="flex items-center gap-1.5 pt-1 cursor-pointer hover:opacity-75 transition-opacity"
+              >
+                <span className="text-[11px] font-semibold text-[oklch(0.72_0.19_145)]">
+                  {threadSummary.reply_count} {threadSummary.reply_count === 1 ? "reply" : "replies"}
+                </span>
+                {threadSummary.last_reply_at && (
+                  <span className="text-[10px] text-muted-foreground">
+                    last reply {new Date(threadSummary.last_reply_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                  </span>
+                )}
               </button>
             )}
           </div>
@@ -676,15 +717,32 @@ export const MessageItem = memo(function MessageItem({
                   position={toBubblePosition(groupPosition)}
                   className={cn(
                     "markdown min-w-0 max-w-full",
-                    isFlagged && "shadow-[inset_2px_0_0_var(--foreground)]",
+                    (isFlagged || isThreadRoot) && "shadow-[inset_2px_0_0_var(--foreground)]",
                   )}
                 >
                   <Streamdown plugins={{ mermaid, cjk, math }} controls={{ code: { copy: true, download: false }, table: { copy: true, download: false, fullscreen: true } }} linkSafety={{ enabled: false }} allowedTags={MENTION_ALLOWED_TAGS} literalTagContent={MENTION_LITERAL_TAGS} components={mentionComponents}>{highlightMentions(msg.content, agents)}</Streamdown>
                 </MessageBubble>
-                {isFlagged && <FlagDot />}
+                {isFlagged && !isThreadRoot && <FlagDot />}
+                {isThreadRoot && <ThreadRootDot />}
                 {toolbar}
                 {actionSheet}
               </div>
+            )}
+            {threadSummary && threadSummary.reply_count > 0 && (
+              <button
+                type="button"
+                onClick={() => onReplyInThread?.(msg.id)}
+                className="flex items-center gap-1.5 pt-1 cursor-pointer hover:opacity-75 transition-opacity"
+              >
+                <span className="text-[11px] font-semibold text-[oklch(0.72_0.19_145)]">
+                  {threadSummary.reply_count} {threadSummary.reply_count === 1 ? "reply" : "replies"}
+                </span>
+                {threadSummary.last_reply_at && (
+                  <span className="text-[10px] text-muted-foreground">
+                    last reply {new Date(threadSummary.last_reply_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                  </span>
+                )}
+              </button>
             )}
           </AgentRow>
         </div>

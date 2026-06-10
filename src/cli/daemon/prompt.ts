@@ -57,6 +57,13 @@ export function buildTaskObject(task: Task, attachments?: Attachment[]): Record<
     if (ctx?.quoted_message) {
       obj.quoted_message = ctx.quoted_message;
     }
+    if (ctx?.conversation_history || ctx?.root_message) {
+      obj.thread_context = {
+        note: "The user started this thread by replying to the root_message below. The history is the conversation leading up to it.",
+        ...(ctx.root_message ? { root_message: ctx.root_message } : {}),
+        ...(ctx.conversation_history ? { history: ctx.conversation_history } : {}),
+      };
+    }
   }
   if (task.type === "email_notification") {
     const ctx = task.context as Record<string, unknown> | undefined;

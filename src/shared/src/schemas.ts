@@ -802,3 +802,10 @@ export const RecruitAgentRequestSchema = z.object({
   context_key: z.string().optional(),
 });
 export type RecruitAgentRequest = z.infer<typeof RecruitAgentRequestSchema>;
+
+export const CreateThreadRequestSchema = z.object({
+  parent_message_id: z.string().min(1),
+  content: z.string().optional().default(""),
+  attachment_ids: z.array(z.string()).optional(),
+});
+export type CreateThreadRequest = z.infer<typeof CreateThreadRequestSchema>;

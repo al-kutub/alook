@@ -124,6 +124,10 @@ export function conversationToResponse(c: any) {
     channel: c.channel ?? "default",
     created_at: formatTimestamp(c.createdAt),
   };
+  if (c.parentMessageId) {
+    resp.parent_message_id = c.parentMessageId;
+    resp.thread_title = c.threadTitle ?? "";
+  }
   if (c.messageCount !== undefined) {
     resp.message_count = c.messageCount;
   }

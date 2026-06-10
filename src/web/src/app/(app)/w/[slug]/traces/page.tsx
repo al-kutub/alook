@@ -91,7 +91,7 @@ function TraceRow({ trace, slug }: { trace: TraceListItem; slug: string }) {
 
   return (
     <Link
-      href={`/w/${slug}/threads/${trace.trace_id}`}
+      href={`/w/${slug}/traces/${trace.trace_id}`}
       className="block px-4 py-3 border-b border-border/30 hover:bg-accent/30 transition-colors duration-150 cursor-pointer"
     >
       <div className="flex items-center gap-2">
@@ -263,7 +263,7 @@ export default function TracesPage() {
       } else {
         newParams.delete(key);
       }
-      const pathname = `/w/${slug}/threads`;
+      const pathname = `/w/${slug}/traces`;
       const qs = newParams.toString();
       router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
     },

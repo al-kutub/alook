@@ -67,6 +67,8 @@ export interface Conversation {
   title: string;
   type: string;
   channel: string;
+  parent_message_id?: string | null;
+  thread_title?: string;
   created_at: string;
   message_count?: number;
 }
@@ -293,6 +295,8 @@ export type WsMessage =
   | { type: "agent.created"; agentId: string; workspaceId: string; parentAgentId: string }
   | { type: "issue.comment"; issueId: string; comment: IssueComment }
   | { type: "workspace.files"; agentId: string; requestId: string; requestType: "tree" | "read"; result: WorkspaceFileResult }
+  | { type: "thread.created"; conversationId: string; threadConversationId: string; parentMessageId: string; threadTitle: string }
+  | { type: "thread.reply"; conversationId: string; threadConversationId: string; parentMessageId: string; replyCount: number }
 
 export interface WorkspaceFileResult {
   entries?: WorkspaceFileEntry[];

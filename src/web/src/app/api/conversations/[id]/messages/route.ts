@@ -157,6 +157,19 @@ export const POST = withAuth(async (req: NextRequest, ctx) => {
     message: messageToResponse(message),
   }).catch(() => {});
 
+  // If this is a thread conversation, broadcast thread.reply with actual count
+  if (conversation.parentMessageId) {
+    queries.message.getActiveMessageCount(db, id).then((count) => {
+      broadcastToUser(ctx.userId, {
+        type: "thread.reply",
+        conversationId: id,
+        threadConversationId: id,
+        parentMessageId: conversation.parentMessageId!,
+        replyCount: count,
+      }).catch(() => {});
+    }).catch(() => {});
+  }
+
   // Auto-title: conditional WHERE title = '' ensures only the first message sets it
   queries.conversation.updateConversationTitle(db, id, truncateTitle(content)).catch(() => {});
 

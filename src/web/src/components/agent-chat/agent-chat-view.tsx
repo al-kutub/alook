@@ -17,11 +17,15 @@ import {
   updateIssue,
   getAgentSkills,
   cancelActiveTask,
+  getThreadSummaries,
+  createThread,
+  conversationInit,
 } from "@/lib/api";
 import { useLatest } from "@/components/agent-chat/chat-message-utils";
 import type {
   Artifact,
   Issue,
+  Message,
   SkillEntry,
   WsMessage,
 } from "@alook/shared";
@@ -73,6 +77,8 @@ import {
 } from "@/components/artifact-content-renderer";
 import { ScrollToBottomButton } from "@/components/ui/scroll-to-bottom-button";
 import { MessageItem, AgentRow } from "@/components/agent-chat/message-list";
+import { TimelineRail } from "@/components/agent-chat/timeline-rail";
+import { useAgentChatSheet } from "@/contexts/agent-chat-sheet-context";
 import { PresenceLine } from "@/components/agent-chat/presence-line";
 import { MenuToggleIcon } from "@/components/agent-chat/menu-toggle-icon";
 import { parseAvatarUrl } from "@/components/avatar";
@@ -206,6 +212,11 @@ export function AgentChatView({
   const { flaggedIds, setFlaggedIds, handleToggleFlag } =
     useMessageFlags(workspaceId);
 
+  // Thread state
+  const { openAgentChat } = useAgentChatSheet();
+  const [threadSummaries, setThreadSummaries] = useState<Map<string, { thread_id: string; reply_count: number; last_reply_at: string | null; thread_title: string }>>(new Map());
+  const [threadRootMessage, setThreadRootMessage] = useState<Message | null>(null);
+
   useEffect(() => {
     setChannelAgentId(agentId);
   }, [agentId, setChannelAgentId]);
@@ -295,6 +306,47 @@ export function AgentChatView({
     () => computeArtifactVersions(agentArtifacts),
     [agentArtifacts],
   );
+
+  // Fetch root message for thread conversations
+  useEffect(() => {
+    if (!conversation?.parent_message_id || !workspaceId) {
+      setThreadRootMessage(null);
+      return;
+    }
+    conversationInit(conversation.id, workspaceId)
+      .then((data) => {
+        if (data.root_message) setThreadRootMessage(data.root_message);
+      })
+      .catch(() => {});
+  }, [conversation?.id, conversation?.parent_message_id, workspaceId]);
+
+  const fetchThreadSummaries = useCallback(() => {
+    if (!conversation?.id || !workspaceId) return;
+    getThreadSummaries(conversation.id, workspaceId)
+      .then((data) => {
+        const map = new Map<string, { thread_id: string; reply_count: number; last_reply_at: string | null; thread_title: string }>();
+        for (const s of data.thread_summaries) {
+          map.set(s.parent_message_id, {
+            thread_id: s.thread_id,
+            reply_count: s.reply_count,
+            last_reply_at: s.last_reply_at,
+            thread_title: s.thread_title,
+          });
+        }
+        setThreadSummaries(map);
+      })
+      .catch(() => {});
+  }, [conversation?.id, workspaceId]);
+
+  useEffect(() => { fetchThreadSummaries(); }, [fetchThreadSummaries]);
+
+  useEffect(() => {
+    return subscribeWs((msg: WsMessage) => {
+      if (msg.type === "thread.created" || msg.type === "thread.reply") {
+        fetchThreadSummaries();
+      }
+    });
+  }, [subscribeWs, fetchThreadSummaries]);
 
   const agentAvatarConfig = useMemo(
     () => parseAvatarUrl(agents.find((a) => a.id === agentId)?.avatar_url ?? null),
@@ -635,10 +687,14 @@ export function AgentChatView({
           Quote
         </button>
       )}
+      {/* Main chat + optional thread panel side by side */}
+      <div className="flex flex-1 min-h-0">
+      {/* Chat column */}
+      <div className="flex flex-col flex-1 min-w-0">
       {/* Messages */}
       <div className="relative flex-1 min-h-0">
         <div
-          className="h-full overflow-y-auto overflow-x-hidden px-3 md:px-5 thin-scrollbar"
+          className={cn("h-full overflow-y-auto overflow-x-hidden px-3 md:px-5 thin-scrollbar", !conversation?.parent_message_id && threadSummaries.size > 0 && "pr-8")}
           ref={scrollRef}
           onScroll={handleScroll}
           onClick={(e) => {
@@ -649,6 +705,29 @@ export function AgentChatView({
           }}
         >
           <div className="mx-auto max-w-3xl pt-6 pb-15 min-w-0">
+            {/* Root message for thread conversations — rendered as a normal MessageItem with flagged emphasis + corner icon, no actions */}
+            {threadRootMessage && (
+              <div className="mb-2">
+                <MessageItem
+                  msg={threadRootMessage}
+                  agents={agents}
+                  artifacts={[]}
+                  activeTask={null}
+                  taskMessages={[]}
+                  connectionLost={false}
+                  pendingFilesByMessage={new Map()}
+                  onArtifactClick={() => {}}
+                  onEmailClick={() => {}}
+                  onIssueClick={() => {}}
+                  onCalendarEventClick={() => {}}
+                  mentionComponents={MENTION_COMPONENTS}
+                  groupPosition="solo"
+                  agentName={agentName}
+                  agentAvatarConfig={agentAvatarConfig}
+                  isThreadRoot
+                />
+              </div>
+            )}
             {conversation && canLoadMore && !loadingMore && (
               <div className="flex justify-center py-2">
                 <button
@@ -782,6 +861,19 @@ export function AgentChatView({
                     isSendFailed={failedSends.has(msg.id)}
                     onRetrySend={handleRetrySend}
                     onQuote={handleQuoteMessage}
+                    onReplyInThread={conversation?.parent_message_id ? undefined : async (msgId) => {
+                      const summary = threadSummaries.get(msgId);
+                      if (summary?.thread_id) {
+                        openAgentChat(agentId, { conversationId: summary.thread_id });
+                      } else if (conversation) {
+                        try {
+                          const result = await createThread(conversation.id, msgId, "", workspaceId);
+                          openAgentChat(agentId, { conversationId: result.conversation.id });
+                          fetchThreadSummaries();
+                        } catch {}
+                      }
+                    }}
+                    threadSummary={conversation?.parent_message_id ? null : threadSummaries.get(msg.id) ?? null}
                   />
                 </div>
               );
@@ -809,6 +901,21 @@ export function AgentChatView({
           </div>
         </div>
         <ScrollToBottomButton scrollRef={scrollRef} />
+        {/* Timeline rail — absolute overlay inside the messages area, scrollbar stays outermost */}
+        {!conversation?.parent_message_id && (
+          <div className="absolute right-1 top-0 bottom-0 z-10">
+            <div className="sticky top-4">
+              <TimelineRail
+                agentId={agentId}
+                workspaceId={workspaceId}
+                activeThreadMessageId={null}
+                onThreadClick={(_parentMsgId, threadConvId) => {
+                  openAgentChat(agentId, { conversationId: threadConvId });
+                }}
+              />
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Input */}
@@ -976,7 +1083,7 @@ export function AgentChatView({
                 <div className="flex items-center gap-2 px-3.5 pt-2.5 pb-1 border-b border-border/50">
                   <div className="flex-1 min-w-0 flex items-start gap-2">
                     <MessageSquareQuote className="size-3.5 shrink-0 mt-0.5 text-muted-foreground" />
-                    <p className="text-xs text-muted-foreground truncate">
+                    <p className="text-xs text-muted-foreground truncate max-w-50">
                       {quotedMessage.excerpt}
                     </p>
                   </div>
@@ -1129,6 +1236,8 @@ export function AgentChatView({
           </div>
         </div>
       </div>
+      </div>{/* end chat column */}
+      </div>{/* end flex row */}
 
       <ArtifactSheet
         open={artifactSheetOpen}

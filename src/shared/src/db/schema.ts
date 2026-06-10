@@ -304,12 +304,15 @@ export const conversation = sqliteTable(
     title: text("title").notNull().default(""),
     type: text("type").notNull().default(TASK_TYPES.USER_DM_MESSAGE),
     channel: text("channel").notNull().default("default"),
+    parentMessageId: text("parent_message_id"),
+    threadTitle: text("thread_title").notNull().default(""),
     createdAt: text("created_at").notNull().$defaultFn(() => new Date().toISOString()),
   },
   (t) => [
     index("idx_conversation_agent_lookup")
       .on(t.workspaceId, t.agentId, t.userId, t.type, t.channel, t.createdAt),
     index("idx_conversation_ws_user").on(t.workspaceId, t.userId, t.createdAt),
+    index("idx_conversation_thread").on(t.parentMessageId),
     foreignKey({
       columns: [t.agentId, t.workspaceId],
       foreignColumns: [agent.id, agent.workspaceId],
