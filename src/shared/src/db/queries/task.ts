@@ -506,8 +506,17 @@ export async function listActiveTaskCountsByWorkspace(
 
 export async function listActiveTasksByWorkspace(
   db: Database,
-  workspaceId: string
+  workspaceId: string,
+  agentIds?: string[]
 ) {
+  const conditions = [
+    eq(agentTaskQueue.workspaceId, workspaceId),
+    inArray(agentTaskQueue.status, ["queued", "dispatched", "running"]),
+    ne(agentTaskQueue.type, TASK_TYPES.KILL_TASK),
+  ];
+  if (agentIds && agentIds.length > 0) {
+    conditions.push(inArray(agentTaskQueue.agentId, agentIds));
+  }
   return db
     .select({
       id: agentTaskQueue.id,
@@ -521,13 +530,7 @@ export async function listActiveTasksByWorkspace(
     })
     .from(agentTaskQueue)
     .leftJoin(conversation, eq(agentTaskQueue.conversationId, conversation.id))
-    .where(
-      and(
-        eq(agentTaskQueue.workspaceId, workspaceId),
-        inArray(agentTaskQueue.status, ["queued", "dispatched", "running"]),
-        ne(agentTaskQueue.type, TASK_TYPES.KILL_TASK)
-      )
-    )
+    .where(and(...conditions))
     .orderBy(desc(agentTaskQueue.createdAt))
     .limit(50);
 }
