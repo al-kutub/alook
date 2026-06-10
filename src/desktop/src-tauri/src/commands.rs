@@ -5,6 +5,9 @@ use tauri::{AppHandle, Manager};
 use tauri_plugin_shell::ShellExt;
 
 #[cfg(desktop)]
+use tauri_plugin_notification::NotificationExt;
+
+#[cfg(desktop)]
 use std::path::PathBuf;
 
 #[cfg(desktop)]
@@ -309,6 +312,9 @@ pub fn set_window_theme(window: tauri::WebviewWindow, dark: bool) {
 pub static DAEMON_ONLINE: AtomicBool = AtomicBool::new(false);
 
 #[cfg(desktop)]
+static DAEMON_STARTED_BY_US: AtomicBool = AtomicBool::new(false);
+
+#[cfg(desktop)]
 pub fn setup_tray(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
     use tauri::{
         image::Image,
@@ -459,15 +465,54 @@ async fn stop_daemon_async(handle: &AppHandle) {
 #[cfg(desktop)]
 pub fn auto_start_daemon(handle: AppHandle) {
     tauri::async_runtime::spawn(async move {
-        if !check_daemon_status(&handle).await {
-            exec_daemon_cmd(&handle, &["daemon", "start"]).await;
+        if check_daemon_status(&handle).await {
+            return;
+        }
+
+        let shell = handle.shell();
+        let cfg = cli_config();
+        let mut args: Vec<&str> = cfg.base_args.to_vec();
+        args.extend_from_slice(&["daemon", "start"]);
+        let mut cmd = shell.command(cfg.command);
+        for (key, val) in &cfg.env {
+            cmd = cmd.env(key, val);
+        }
+        if let Some(cwd) = &cfg.cwd {
+            cmd = cmd.current_dir(cwd.clone());
+        }
+        match cmd.args(&args).output().await {
+            Ok(output) if output.status.success() => {
+                DAEMON_STARTED_BY_US.store(true, Ordering::Relaxed);
+            }
+            Ok(output) => {
+                let stderr = String::from_utf8_lossy(&output.stderr);
+                let msg = if stderr.trim().is_empty() {
+                    "Failed to start daemon. Please start it manually with: npx @alook/cli daemon start".to_string()
+                } else {
+                    format!("Failed to start daemon: {}", stderr.trim())
+                };
+                let _ = handle.notification()
+                    .builder()
+                    .title("Alook")
+                    .body(&msg)
+                    .show();
+            }
+            Err(e) => {
+                let _ = handle.notification()
+                    .builder()
+                    .title("Alook")
+                    .body(&format!("Could not find CLI to start daemon: {}", e))
+                    .show();
+            }
         }
     });
 }
 
 #[cfg(desktop)]
 pub fn stop_daemon_blocking(handle: &AppHandle) {
-    tauri::async_runtime::block_on(exec_daemon_cmd(handle, &["daemon", "stop"]));
+    if DAEMON_STARTED_BY_US.load(Ordering::Relaxed) {
+        tauri::async_runtime::block_on(exec_daemon_cmd(handle, &["daemon", "stop"]));
+    }
 }
 
 #[cfg(test)]
