@@ -617,6 +617,8 @@ export const EmailNotifyRequestSchema = z.object({
   traceId: z.string().optional(),
   sourceTaskId: z.string().optional(),
   isInternal: z.boolean().optional().default(false),
+  senderConversationId: z.string().optional(),
+  senderAgentId: z.string().optional(),
 });
 export type EmailNotifyRequest = z.infer<typeof EmailNotifyRequestSchema>;
 

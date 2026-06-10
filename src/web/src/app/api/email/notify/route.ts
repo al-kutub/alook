@@ -49,11 +49,11 @@ export async function POST(req: NextRequest) {
     })
   }
 
+  let conversationId: string | null = null;
+
   if (body.isWhitelisted && agent && agent.runtimeId && agent.ownerId) {
     const threadId = extractThreadId(body.references, body.inReplyTo, body.messageId);
     const mapKey = threadId ? buildEmailMapKey(agent.id, threadId) : null;
-
-    let conversationId: string | null = null;
     let conversationType: string = TASK_TYPES.EMAIL_NOTIFICATION;
     let dmUser: { name: string; email: string } | undefined;
 
@@ -99,7 +99,10 @@ export async function POST(req: NextRequest) {
     }
 
     const prompt = `New email from ${body.from}: ${body.subject}`;
-    const emailMetadata = JSON.stringify({ emailId: email.id, subject: body.subject, from: body.from, to: body.to, direction: "inbound" as const });
+    const crossLink = body.isInternal && body.senderConversationId && body.senderAgentId !== body.agentId
+      ? { targetConversationId: body.senderConversationId, targetAgentId: body.senderAgentId }
+      : {};
+    const emailMetadata = JSON.stringify({ emailId: email.id, subject: body.subject, from: body.from, to: body.to, direction: "inbound" as const, ...crossLink });
     const msg = await queries.message.createMessage(db, {
       conversationId,
       role: "event",
@@ -153,5 +156,5 @@ export async function POST(req: NextRequest) {
     broadcastToUser(agent.ownerId, { type: "email.received", agentId: body.agentId }).catch(() => {})
   }
 
-  return writeJSON({ ok: true })
+  return writeJSON({ ok: true, ...(conversationId ? { conversationId } : {}) })
 }

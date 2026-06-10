@@ -296,6 +296,79 @@ describe("POST /api/email/notify", () => {
     expect(mockFindByKey).not.toHaveBeenCalled();
   });
 
+  it("returns conversationId in response when whitelisted agent path creates conversation (TC5)", async () => {
+    mockGetAgent.mockResolvedValue({ id: "a1", workspaceId: "ws1", runtimeId: "r1", ownerId: "u1" });
+    mockCreateConversation.mockResolvedValue({ id: "conv_new" });
+    mockEnqueueTask.mockResolvedValue({ id: "t1" });
+
+    const res = await POST(makeNotifyReq(baseBody));
+    expect(res.status).toBe(200);
+
+    const json = await res.json();
+    expect(json.conversationId).toBe("conv_new");
+  });
+
+  it("returns no conversationId for non-whitelisted path (TC6)", async () => {
+    mockGetAgent.mockResolvedValue({ id: "a1", workspaceId: "ws1", runtimeId: "r1", ownerId: "u1" });
+
+    const res = await POST(makeNotifyReq({ ...baseBody, isWhitelisted: false }));
+    expect(res.status).toBe(200);
+
+    const json = await res.json();
+    expect(json.conversationId).toBeUndefined();
+  });
+
+  it("stamps targetConversationId in inbound metadata when senderConversationId provided (TC2)", async () => {
+    mockGetAgent.mockResolvedValue({ id: "a2", workspaceId: "ws1", runtimeId: "r1", ownerId: "u1" });
+    mockCreateConversation.mockResolvedValue({ id: "conv_b" });
+    mockEnqueueTask.mockResolvedValue({ id: "t1" });
+
+    const res = await POST(makeNotifyReq({
+      ...baseBody,
+      agentId: "a2",
+      isInternal: true,
+      senderConversationId: "conv_a",
+      senderAgentId: "a1",
+    }));
+    expect(res.status).toBe(200);
+
+    const metadataArg = mockCreateMessage.mock.calls[0]![1] as { metadata: string };
+    const parsed = JSON.parse(metadataArg.metadata);
+    expect(parsed.targetConversationId).toBe("conv_a");
+    expect(parsed.targetAgentId).toBe("a1");
+  });
+
+  it("does NOT stamp targetConversationId for external emails (TC3)", async () => {
+    mockGetAgent.mockResolvedValue({ id: "a1", workspaceId: "ws1", runtimeId: "r1", ownerId: "u1" });
+    mockCreateConversation.mockResolvedValue({ id: "conv_ext" });
+    mockEnqueueTask.mockResolvedValue({ id: "t1" });
+
+    await POST(makeNotifyReq(baseBody));
+
+    const metadataArg = mockCreateMessage.mock.calls[0]![1] as { metadata: string };
+    const parsed = JSON.parse(metadataArg.metadata);
+    expect(parsed.targetConversationId).toBeUndefined();
+    expect(parsed.targetAgentId).toBeUndefined();
+  });
+
+  it("does NOT stamp targetConversationId for self-send (TC16)", async () => {
+    mockGetAgent.mockResolvedValue({ id: "a1", workspaceId: "ws1", runtimeId: "r1", ownerId: "u1" });
+    mockCreateConversation.mockResolvedValue({ id: "conv_self" });
+    mockEnqueueTask.mockResolvedValue({ id: "t1" });
+
+    await POST(makeNotifyReq({
+      ...baseBody,
+      isInternal: true,
+      senderConversationId: "conv_a",
+      senderAgentId: "a1",
+    }));
+
+    const metadataArg = mockCreateMessage.mock.calls[0]![1] as { metadata: string };
+    const parsed = JSON.parse(metadataArg.metadata);
+    expect(parsed.targetConversationId).toBeUndefined();
+    expect(parsed.targetAgentId).toBeUndefined();
+  });
+
   it("uses References header thread root for mapping lookup", async () => {
     mockGetAgent.mockResolvedValue({ id: "a1", workspaceId: "ws1", runtimeId: "r1", ownerId: "u1" });
     mockFindByKey.mockResolvedValue("conv_thread");

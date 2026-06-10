@@ -4,6 +4,7 @@ import { NextRequest } from "next/server";
 const mockGetConversation = vi.fn();
 const mockDeleteConversation = vi.fn();
 const mockDeleteTasksByConversation = vi.fn();
+const mockDeleteUnreadByConversation = vi.fn();
 const mockConversationToResponse = vi.fn((c: any) => ({ id: c.id, title: c.title }));
 
 vi.mock("@opennextjs/cloudflare", () => ({
@@ -20,6 +21,9 @@ vi.mock("@alook/shared", () => ({
     },
     task: {
       deleteTasksByConversation: (...args: any[]) => mockDeleteTasksByConversation(...args),
+    },
+    inbox: {
+      deleteUnreadByConversation: (...args: any[]) => mockDeleteUnreadByConversation(...args),
     },
   },
 }));
@@ -96,6 +100,9 @@ describe("DELETE /api/conversations/[id]", () => {
     mockDeleteTasksByConversation.mockImplementation(async () => {
       callOrder.push("tasks");
     });
+    mockDeleteUnreadByConversation.mockImplementation(async () => {
+      callOrder.push("unread");
+    });
     mockDeleteConversation.mockImplementation(async () => {
       callOrder.push("conversation");
     });
@@ -105,7 +112,7 @@ describe("DELETE /api/conversations/[id]", () => {
       withParams("c1")
     );
 
-    expect(callOrder).toEqual(["tasks", "conversation"]);
+    expect(callOrder).toEqual(["tasks", "unread", "conversation"]);
   });
 
   it("returns 404 when conversation not found", async () => {

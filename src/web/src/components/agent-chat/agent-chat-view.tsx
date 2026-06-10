@@ -868,6 +868,7 @@ export function AgentChatView({
                       }
                     }}
                     threadSummary={conversation?.parent_message_id ? null : threadSummaries.get(msg.id) ?? null}
+                    onAgentChatOpen={(agId, convId) => openAgentChat(agId, { conversationId: convId })}
                   />
                 </div>
               );

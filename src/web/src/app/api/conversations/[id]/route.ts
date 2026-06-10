@@ -45,7 +45,7 @@ export const DELETE = withAuth(async (req, ctx) => {
 
   // Delete tasks first (no cascade on FK)
   await queries.task.deleteTasksByConversation(db, id, ws.workspaceId);
-  // Messages cascade automatically via schema
+  await queries.inbox.deleteUnreadByConversation(db, id);
   await queries.conversation.deleteConversation(db, id, ws.workspaceId);
 
   return new Response(null, { status: 204 });

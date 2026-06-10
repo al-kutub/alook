@@ -1,5 +1,5 @@
 import React, { memo } from "react";
-import type { Agent, Artifact, Message, TaskApi as Task, TaskMessageResponse } from "@alook/shared";
+import { parseEmailHandle, type Agent, type Artifact, type Message, type TaskApi as Task, type TaskMessageResponse } from "@alook/shared";
 
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -86,6 +86,7 @@ export interface MessageItemProps {
   onReplyInThread?: (messageId: string) => void;
   threadSummary?: { thread_id: string; reply_count: number; last_reply_at: string | null; thread_title: string } | null;
   isThreadRoot?: boolean;
+  onAgentChatOpen?: (agentId: string, targetConvId: string) => void;
 }
 
 type EmailData = {
@@ -415,6 +416,7 @@ export const MessageItem = memo(function MessageItem({
   onReplyInThread,
   threadSummary,
   isThreadRoot,
+  onAgentChatOpen,
 }: MessageItemProps) {
   const { copy, copied } = useCopyToClipboard();
 
@@ -647,7 +649,38 @@ export const MessageItem = memo(function MessageItem({
         const data = parseEventData(msg.metadata, msg.content, conversationType);
         let card: React.ReactNode;
         if (data.type === "email") {
-          card = <EmailCard subject={data.subject} address={data.address} direction={data.direction} onClick={onClick} />;
+          const handle = parseEmailHandle(data.address);
+          const targetConvId = msg.metadata?.targetConversationId as string | undefined;
+          const targetAgentId = msg.metadata?.targetAgentId as string | undefined;
+          const isInternalEmail = !!handle;
+          let touchAction: { label: string; onClick: () => void } | null = null;
+          if (isInternalEmail && !hoverCapable && targetConvId && targetAgentId && onAgentChatOpen) {
+            const agentName = agents.find(a => a.email_handle === handle)?.name;
+            if (agentName) {
+              touchAction = {
+                label: `View ${agentName}'s conversation`,
+                onClick: () => onAgentChatOpen(targetAgentId, targetConvId),
+              };
+            }
+          }
+          card = (
+            <EmailCard
+              subject={data.subject}
+              address={data.address}
+              direction={data.direction}
+              onClick={onClick}
+              timestamp={msg.created_at}
+              {...(hoverCapable && isInternalEmail ? {
+                isInternal: true,
+                internalHandle: handle || undefined,
+                targetConvId,
+                targetAgentId,
+                agents,
+                onAgentChatOpen,
+              } : {})}
+              touchAction={touchAction}
+            />
+          );
         } else if (data.type === "calendar") {
           card = <CalendarCard title={data.title} scheduledAt={data.scheduledAt} repeatInterval={data.repeatInterval} onClick={onClick} />;
         } else {
