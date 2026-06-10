@@ -29,7 +29,7 @@ const mode = resolveMode({
   nodeEnv: process.env.NODE_ENV,
   hostname: typeof window !== "undefined" ? window.location.hostname : undefined,
 })
-const isProd = mode === "production"
+const isProd = mode !== "dev" && mode !== "app"
 
 const DEFAULT_POST_LOGIN = "/workspaces?auto"
 

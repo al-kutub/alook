@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "tauri dev",
-    "build": "tauri build",
+    "build": "sh scripts/build.sh",
     "tauri": "tauri",
     "ios": "tauri ios dev",
     "android": "tauri android dev"
