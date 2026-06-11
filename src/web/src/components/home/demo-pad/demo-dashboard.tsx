@@ -65,7 +65,7 @@ export function DemoDashboard({ state, config, className }: { state: DashboardSt
                 className={cn(
                   "size-8 rounded-xl overflow-hidden ring-2 transition-all duration-300",
                   isActive
-                    ? "ring-primary shadow-md shadow-primary/20 scale-105"
+                    ? "ring-primary/50 shadow-md shadow-primary/20 scale-105"
                     : "ring-transparent hover:ring-border/60",
                 )}
               >
