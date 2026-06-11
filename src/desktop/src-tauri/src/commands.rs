@@ -129,6 +129,123 @@ fn to_command_result(output: CliOutput) -> CommandResult {
     }
 }
 
+// --- Splashscreen ---
+
+#[cfg(desktop)]
+static SPLASH_CLOSED: AtomicBool = AtomicBool::new(false);
+
+#[cfg(desktop)]
+static SPLASH_READY: AtomicBool = AtomicBool::new(false);
+
+#[cfg(desktop)]
+static SPLASH_MIN_ELAPSED: AtomicBool = AtomicBool::new(false);
+
+#[cfg(desktop)]
+pub fn splash_html() -> String {
+    use base64::Engine;
+    let icon_bytes = include_bytes!("../icons/icon.png");
+    let icon_b64 = base64::engine::general_purpose::STANDARD.encode(icon_bytes);
+    format!(
+        concat!(
+            "<html><head><meta charset=\"utf-8\"><style>",
+            "*{{margin:0;padding:0;box-sizing:border-box}}",
+            "html,body{{width:100%;height:100%;overflow:hidden;background:transparent;",
+            "display:flex;align-items:center;justify-content:center;",
+            "-webkit-user-select:none;user-select:none}}",
+            ".logo{{width:96px;height:96px;border-radius:22px;opacity:0;",
+            "animation:fi .4s ease-out .1s forwards;",
+            "box-shadow:0 8px 32px rgba(0,0,0,0.18)}}",
+            "@keyframes fi{{from{{opacity:0;transform:scale(.88)}}to{{opacity:1;transform:scale(1)}}}}",
+            "</style></head><body>",
+            "<img class=\"logo\" src=\"data:image/png;base64,{}\" draggable=\"false\">",
+            "</body></html>",
+        ),
+        icon_b64
+    )
+}
+
+#[cfg(desktop)]
+pub fn create_splash_window(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
+    use tauri::{WebviewUrl, WebviewWindowBuilder};
+
+    WebviewWindowBuilder::new(app, "splash", WebviewUrl::CustomProtocol("splash://index".parse()?))
+        .title("Alook")
+        .inner_size(200.0, 200.0)
+        .center()
+        .decorations(false)
+        .resizable(false)
+        .transparent(true)
+        .shadow(false)
+        .always_on_top(true)
+        .skip_taskbar(true)
+        .build()?;
+
+    Ok(())
+}
+
+#[cfg(desktop)]
+pub fn do_close_splashscreen(handle: &AppHandle) {
+    if SPLASH_CLOSED.swap(true, Ordering::SeqCst) {
+        return;
+    }
+    if let Some(main) = handle.get_webview_window("main") {
+        let _ = main.show();
+        let _ = main.set_focus();
+    }
+    let h = handle.clone();
+    std::thread::spawn(move || {
+        fade_out_and_close_splash(&h);
+    });
+}
+
+#[cfg(desktop)]
+fn fade_out_and_close_splash(handle: &AppHandle) {
+    let Some(splash) = handle.get_webview_window("splash") else { return };
+
+    #[cfg(target_os = "macos")]
+    {
+        use objc2::runtime::AnyObject;
+        use objc2::msg_send;
+        unsafe {
+            let ns_window = splash.ns_window().unwrap() as *mut AnyObject;
+            for i in (0..=5).rev() {
+                let alpha = i as f64 / 5.0;
+                let _: () = msg_send![ns_window, setAlphaValue: alpha];
+                std::thread::sleep(std::time::Duration::from_millis(40));
+            }
+        }
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    {
+        std::thread::sleep(std::time::Duration::from_millis(200));
+    }
+
+    let _ = splash.close();
+}
+
+#[cfg(desktop)]
+fn try_close_splashscreen(handle: &AppHandle) {
+    if SPLASH_READY.load(Ordering::SeqCst) && SPLASH_MIN_ELAPSED.load(Ordering::SeqCst) {
+        do_close_splashscreen(handle);
+    }
+}
+
+#[cfg(desktop)]
+pub fn mark_splash_min_elapsed(handle: &AppHandle) {
+    SPLASH_MIN_ELAPSED.store(true, Ordering::SeqCst);
+    try_close_splashscreen(handle);
+}
+
+#[cfg(desktop)]
+#[tauri::command]
+pub fn close_splashscreen(app: AppHandle) {
+    SPLASH_READY.store(true, Ordering::SeqCst);
+    try_close_splashscreen(&app);
+}
+
+// --- CLI commands ---
+
 #[cfg(desktop)]
 #[tauri::command]
 pub fn get_cli_info() -> CliInfo {
@@ -236,11 +353,20 @@ pub async fn cli_check(app: AppHandle) -> Result<CommandResult, String> {
     })
 }
 
-#[derive(Serialize)]
+// --- App updater ---
+
+#[derive(Serialize, Clone)]
 pub struct UpdateInfo {
     pub available: bool,
     pub version: Option<String>,
     pub notes: Option<String>,
+}
+
+#[derive(Serialize, Clone)]
+struct UpdateProgress {
+    percent: f64,
+    downloaded: u64,
+    total: Option<u64>,
 }
 
 #[cfg(desktop)]
@@ -267,10 +393,27 @@ pub async fn check_for_updates(app: AppHandle) -> Result<UpdateInfo, String> {
 #[tauri::command]
 pub async fn install_update(app: AppHandle) -> Result<(), String> {
     use tauri_plugin_updater::UpdaterExt;
+    use tauri::Emitter;
+
     let updater = app.updater().map_err(|e| e.to_string())?;
     let update = updater.check().await.map_err(|e| e.to_string())?
         .ok_or("No update available".to_string())?;
-    update.download_and_install(|_, _| {}, || {}).await.map_err(|e| e.to_string())?;
+
+    let handle = app.clone();
+    let mut cumulative: u64 = 0;
+    update.download_and_install(
+        move |chunk_size, total| {
+            cumulative += chunk_size as u64;
+            let percent = total.map(|t| (cumulative as f64 / t as f64) * 100.0).unwrap_or(0.0);
+            let _ = handle.emit("update://progress", UpdateProgress {
+                percent,
+                downloaded: cumulative,
+                total,
+            });
+        },
+        || {},
+    ).await.map_err(|e| e.to_string())?;
+
     app.restart();
 }
 
@@ -308,6 +451,8 @@ pub fn is_daemon_online() -> bool {
     DAEMON_ONLINE.load(Ordering::Relaxed)
 }
 
+// --- Daemon state ---
+
 #[cfg(desktop)]
 pub static DAEMON_ONLINE: AtomicBool = AtomicBool::new(false);
 
@@ -319,6 +464,8 @@ static UPDATE_AVAILABLE_VERSION: std::sync::Mutex<Option<String>> = std::sync::M
 
 #[cfg(desktop)]
 static UPDATE_IN_PROGRESS: AtomicBool = AtomicBool::new(false);
+
+// --- System tray ---
 
 #[cfg(desktop)]
 pub fn setup_tray(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
@@ -365,10 +512,7 @@ pub fn setup_tray(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
             }
             "quit" => {
                 let handle = app.clone();
-                tauri::async_runtime::spawn(async move {
-                    stop_daemon_async(&handle).await;
-                    handle.exit(0);
-                });
+                quit_with_daemon_prompt(&handle);
             }
             _ => {}
         })
@@ -407,16 +551,49 @@ pub fn setup_tray(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
+// --- Quit with daemon prompt ---
+
+#[cfg(desktop)]
+fn quit_with_daemon_prompt(handle: &AppHandle) {
+    use tauri_plugin_dialog::{DialogExt, MessageDialogButtons};
+
+    if !DAEMON_STARTED_BY_US.load(Ordering::Relaxed) {
+        handle.exit(0);
+        return;
+    }
+
+    let h = handle.clone();
+    handle.dialog()
+        .message("The Alook daemon is running in the background.\n\nWould you like to keep it running after quitting?")
+        .title("Quit Alook")
+        .buttons(MessageDialogButtons::OkCancelCustom("Keep Running".into(), "Stop & Quit".into()))
+        .show(move |keep_running| {
+            if !keep_running {
+                let h2 = h.clone();
+                tauri::async_runtime::spawn(async move {
+                    let _ = run_cli(&h2, &["daemon", "stop"]).await;
+                    h2.exit(0);
+                });
+            } else {
+                h.exit(0);
+            }
+        });
+}
+
+// --- Update flow ---
+
 #[cfg(desktop)]
 async fn do_install_update(handle: &AppHandle) {
     use tauri_plugin_updater::UpdaterExt;
+    use tauri_plugin_dialog::{DialogExt, MessageDialogButtons};
+    use tauri::Emitter;
 
     if UPDATE_IN_PROGRESS.swap(true, Ordering::SeqCst) {
-        let _ = handle.notification()
-            .builder()
+        handle.dialog()
+            .message("An update is already in progress.")
             .title("Alook")
-            .body("Update already in progress...")
-            .show();
+            .buttons(MessageDialogButtons::OkCustom("OK".into()))
+            .show(|_| {});
         return;
     }
 
@@ -424,11 +601,11 @@ async fn do_install_update(handle: &AppHandle) {
         Ok(u) => u,
         Err(e) => {
             UPDATE_IN_PROGRESS.store(false, Ordering::SeqCst);
-            let _ = handle.notification()
-                .builder()
-                .title("Alook")
-                .body(&format!("Update check failed: {}", e))
-                .show();
+            handle.dialog()
+                .message(&format!("Could not check for updates: {}", e))
+                .title("Update Check Failed")
+                .buttons(MessageDialogButtons::OkCustom("OK".into()))
+                .show(|_| {});
             return;
         }
     };
@@ -436,38 +613,91 @@ async fn do_install_update(handle: &AppHandle) {
     match updater.check().await {
         Ok(Some(update)) => {
             let version = update.version.clone();
+            let notes = update.body.clone().unwrap_or_default();
+            let msg = if notes.is_empty() {
+                format!("Version {} is available. Download and install?", version)
+            } else {
+                format!("Version {} is available.\n\n{}\n\nDownload and install?", version, notes)
+            };
+
+            let (tx, rx) = std::sync::mpsc::channel();
+            handle.dialog()
+                .message(&msg)
+                .title("Update Available")
+                .buttons(MessageDialogButtons::OkCancelCustom("Update".into(), "Later".into()))
+                .show(move |confirmed| {
+                    let _ = tx.send(confirmed);
+                });
+
+            let confirmed = rx.recv().unwrap_or(false);
+            if !confirmed {
+                UPDATE_IN_PROGRESS.store(false, Ordering::SeqCst);
+                return;
+            }
+
             let _ = handle.notification()
                 .builder()
                 .title("Alook")
-                .body(&format!("Installing update v{}...", version))
+                .body(&format!("Downloading v{}...", version))
                 .show();
-            match update.download_and_install(|_, _| {}, || {}).await {
-                Ok(_) => handle.restart(),
+
+            let h = handle.clone();
+            let mut cumulative: u64 = 0;
+            let result = update.download_and_install(
+                move |chunk_size, total| {
+                    cumulative += chunk_size as u64;
+                    let percent = total.map(|t| (cumulative as f64 / t as f64) * 100.0).unwrap_or(0.0);
+                    let _ = h.emit("update://progress", UpdateProgress {
+                        percent,
+                        downloaded: cumulative,
+                        total,
+                    });
+                },
+                || {},
+            ).await;
+
+            match result {
+                Ok(_) => {
+                    let (tx2, rx2) = std::sync::mpsc::channel();
+                    handle.dialog()
+                        .message(&format!("Version {} has been installed. Restart now?", version))
+                        .title("Update Complete")
+                        .buttons(MessageDialogButtons::OkCancelCustom("Restart".into(), "Later".into()))
+                        .show(move |restart| {
+                            let _ = tx2.send(restart);
+                        });
+
+                    if rx2.recv().unwrap_or(false) {
+                        handle.restart();
+                    } else {
+                        UPDATE_IN_PROGRESS.store(false, Ordering::SeqCst);
+                    }
+                }
                 Err(e) => {
                     UPDATE_IN_PROGRESS.store(false, Ordering::SeqCst);
-                    let _ = handle.notification()
-                        .builder()
-                        .title("Alook")
-                        .body(&format!("Update failed: {}", e))
-                        .show();
+                    handle.dialog()
+                        .message(&format!("Download failed: {}", e))
+                        .title("Update Failed")
+                        .buttons(MessageDialogButtons::OkCustom("OK".into()))
+                        .show(|_| {});
                 }
             }
         }
         Ok(None) => {
             UPDATE_IN_PROGRESS.store(false, Ordering::SeqCst);
-            let _ = handle.notification()
-                .builder()
-                .title("Alook")
-                .body("You're on the latest version.")
-                .show();
+            handle.dialog()
+                .message("You're on the latest version.")
+                .title("No Updates Available")
+                .buttons(MessageDialogButtons::OkCustom("OK".into()))
+                .show(|_| {});
         }
         Err(e) => {
             UPDATE_IN_PROGRESS.store(false, Ordering::SeqCst);
-            let _ = handle.notification()
-                .builder()
-                .title("Alook")
-                .body(&format!("Update check failed: {}", e))
-                .show();
+            handle.dialog()
+                .message(&format!("Could not check for updates: {}", e))
+                .title("Update Check Failed")
+                .buttons(MessageDialogButtons::OkCustom("OK".into()))
+                .show(|_| {});
         }
     }
 }
@@ -477,10 +707,9 @@ pub fn auto_check_updates(handle: AppHandle) {
     use tauri_plugin_updater::UpdaterExt;
 
     std::thread::spawn(move || {
-        // Initial delay — let app finish launching
         std::thread::sleep(std::time::Duration::from_secs(30));
 
-        let interval = std::time::Duration::from_secs(30 * 60); // 30 minutes
+        let interval = std::time::Duration::from_secs(30 * 60);
         loop {
             let h = handle.clone();
             let found = tauri::async_runtime::block_on(async {
@@ -508,17 +737,14 @@ pub fn auto_check_updates(handle: AppHandle) {
     });
 }
 
+// --- Daemon helpers ---
+
 #[cfg(desktop)]
 async fn check_daemon_online(handle: &AppHandle) -> bool {
     match run_cli(handle, &["daemon", "status"]).await {
         Ok(output) => parse_daemon_status(&output.stdout).running,
         Err(_) => false,
     }
-}
-
-#[cfg(desktop)]
-async fn stop_daemon_async(handle: &AppHandle) {
-    let _ = run_cli(handle, &["daemon", "stop"]).await;
 }
 
 #[cfg(desktop)]

@@ -23,6 +23,7 @@
   },
   "app": {
     "withGlobalTauri": true,
+    "macOSPrivateApi": true,
     "windows": [
       {
         "label": "main",
@@ -32,6 +33,7 @@
         "minWidth": 800,
         "minHeight": 600,
         "center": true,
+        "visible": false,
         "titleBarStyle": "Overlay",
         "hiddenTitle": true,
         "trafficLightPosition": {
