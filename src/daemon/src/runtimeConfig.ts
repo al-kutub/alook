@@ -2,11 +2,12 @@
  * RuntimeConfig — the structured, versioned agent runtime configuration.
  *
  * The canonical `RuntimeConfig`/`makeRuntimeConfig` now live in
- * `@alook/shared/runtime-config` (lifted there so the `src/web` wake producer,
- * which cannot depend on this CLI/daemon package, can construct a `config` for
- * `agent:start` — see `plans/community-agent-cli-bridge.md` §1). Re-exported
- * here so existing daemon call sites keep importing from `./runtimeConfig.js`
- * unchanged.
+ * `@alook/shared/runtime-config` (lifted there so the `src/web` wake producer
+ * and `src/wake-worker` consumer, neither of which can depend on this
+ * CLI/daemon package, can construct the `config` field of an `agent:wake`
+ * `HostCommand` — see `plans/community-agent-cli-bridge.md` §1 and
+ * `plans/minimal-wake-queue-unread-notice.md`). Re-exported here so existing
+ * daemon call sites keep importing from `./runtimeConfig.js` unchanged.
  *
  * This file keeps `resolveLaunchFields`/`ResolvedLaunchFields` — daemon-only,
  * host-side resolution of a `RuntimeConfig` into flat launch fields (CLI args +

@@ -316,18 +316,42 @@ export interface ServerApi {
 }
 
 /* ------------------------------------------------------------------ */
+/* Unread wake notice                                                  */
+/* ------------------------------------------------------------------ */
+
+/**
+ * A bodiless "you have unread work" signal — deliberately carries no message
+ * content. The daemon turns this into a fixed inbox-pull prompt; the agent
+ * must call `inboxPull` to fetch the actual message content from the server,
+ * which remains the only source of truth for message bodies.
+ */
+export interface UnreadNotice {
+  kind: "unread_notice";
+  /** Path ref of the scope with unread work (channel, thread, or DM). */
+  channel: ChannelRef;
+  /** The high-water seq that triggered this notice, for `AgentMsg.seq`. */
+  latestSeq: Seq;
+}
+
+/* ------------------------------------------------------------------ */
 /* Control plane — server → host commands                              */
 /* ------------------------------------------------------------------ */
 
 /**
  * Commands the SERVER pushes DOWN to a host (daemon). This is the control plane —
  * distinct from the agent-initiated data plane (`ServerApi`). The server owns
- * ADDRESSING: every `agent:deliver` already names its recipient `agentId`; the
- * host never fans out by channel membership.
+ * ADDRESSING: every command already names its recipient `agentId`; the host
+ * never fans out by channel membership.
+ *
+ * `agent:wake` is the ONE semantic unread-wake command — "ensure this agent
+ * handles unread work." The server/wake-worker does not decide whether a
+ * daemon process is already running; that is daemon-owned state. The daemon
+ * decides whether to spawn a fresh process, notify an already-running one, or
+ * coalesce the notice for the next turn (see `AgentProcessManager`).
  */
 export type HostCommand =
   | {
-    type: "agent:start";
+    type: "agent:wake";
     agentId: AgentId;
     /**
      * The full structured runtime configuration the server stores for this
@@ -337,29 +361,12 @@ export type HostCommand =
     config: RuntimeConfig;
     /** Resume an existing runtime session, if any (separate from RuntimeConfig). */
     sessionId?: string;
-    /** Optional triggering message delivered with the start. */
-    wakeMessage?: Message;
-    /**
-     * Delivery id for `wakeMessage` (when present), so the host can ack it and
-     * the server can redeliver the same id on no-ack (at-least-once + dedup).
-     */
-    deliveryId?: string;
-    /** Unique id for this launch (correlates host↔server). */
+    /** Unique id for this wake/launch attempt (correlates host↔server). */
     launchId: string;
+    /** The bodiless unread signal — the daemon prompts "pull your inbox". */
+    unreadNotice: UnreadNotice;
   }
   | { type: "agent:stop"; agentId: AgentId }
-  | {
-    type: "agent:deliver";
-    /** Pre-addressed by the server — host delivers to exactly this agent. */
-    agentId: AgentId;
-    message: Message;
-    /**
-     * At-least-once delivery id. The host acks it (`agent:deliver:ack`) once the
-     * message is accepted; the server redelivers the SAME id until acked, and the
-     * host dedups by id so the agent never sees a duplicate wake.
-     */
-    deliveryId: string;
-  }
   // ─── Bot lifecycle events (server → daemon) ────────────────────────────
   // Colon-namespaced to match the agent:* naming convention. Delivered to
   // the specific machine's daemon connection via the WS DO. On the daemon,
@@ -447,22 +454,12 @@ export interface HostControlChannel {
   /** Report an agent's runtime session id (after it starts / resumes). */
   reportAgentSession(info: { agentId: AgentId; sessionId: string; launchId: string }): Promise<void>;
   /**
-   * Acknowledge an at-least-once delivery so the server stops redelivering it.
-   * `status`/`error` are additive — existing callers passing only
-   * `{ agentId, deliveryId }` still work; the server side reads them when
-   * present to report an error inline.
-   */
-  reportDeliverAck(info: {
-    agentId: AgentId;
-    deliveryId: string;
-    status?: "ok" | "error";
-    error?: { code: string; message: string };
-  }): Promise<void>;
-  /**
-   * Reply to an `agent:start` command with the launch outcome. New in v0.2.
+   * Reply to an `agent:wake` command with the wake outcome — "daemon
+   * accepted/handled the wake command", NOT "process started" (a wake may
+   * spawn, notify an already-running process, or coalesce for later).
    * Optional so the local mock channel can omit it.
    */
-  reportStartedAck?(info: {
+  reportWakeAck?(info: {
     agentId: AgentId;
     launchId: string;
     status: "ok" | "error";
@@ -478,7 +475,7 @@ export interface HostControlChannel {
   }): Promise<void>;
   /**
    * Report a `session.error` upward. Used by `AgentRouter` when a driver
-   * can't fulfil an `agent:start` (e.g. runtime not installed) — the server
+   * can't fulfil an `agent:wake` (e.g. runtime not installed) — the server
    * routes the frame through the machine DO which stashes it as an overlay
    * on the machine summary so the web card renders it inline.
    */
@@ -529,9 +526,11 @@ export type WebSocketFactory = (url: string, headers: Record<string, string>) =>
 /**
  * Server-side provisioning, separate from the agent's daily `ServerApi`. Used by
  * the test-server command surface (and, in production, by privileged callers) to
- * create servers/agents/channels and inject messages. `postMessage` is what
- * drives the control plane: the server computes recipients and emits
- * `agent:deliver` (preceded by `agent:start` for any agent not yet running).
+ * create servers/agents/channels and inject messages. `postMessage` writes
+ * the message; real deployments separately enqueue an `agent:wake` for any
+ * bot behind on the new message (see `src/web`'s wake producer +
+ * `src/wake-worker`'s consumer) — this admin surface does not itself compute
+ * or dispatch control-plane commands.
  */
 export interface AdminApi {
   /** Create a user (owner of agents). */

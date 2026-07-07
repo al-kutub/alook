@@ -246,6 +246,40 @@ export async function findWakeCandidates(
     .map((r) => ({ botUserId: r.botUserId, name: r.name, machineId: r.machineId, runtime: r.runtime }));
 }
 
+/**
+ * Discriminated bot-state lookup for the unread-wake rebuild path
+ * (`buildUnreadWakeCommand`). A single D1 hit that distinguishes exactly why
+ * a bot isn't wake-able (missing / soft-deleted / no machine binding) from
+ * the happy path — the caller `ack()`s the queue item for every non-`ready`
+ * state, never `retry()`s a permanent miss.
+ */
+export type BotWakeContext =
+  | { state: "bot_missing" }
+  | { state: "bot_deleted" }
+  | { state: "bot_unbound" }
+  | { state: "ready"; botUserId: string; name: string; machineId: string; runtime: string };
+
+export async function getBotWakeContext(db: Database, botUserId: string): Promise<BotWakeContext> {
+  const rows = await db
+    .select({
+      id: user.id,
+      name: user.name,
+      isBot: user.isBot,
+      deletedAt: user.deletedAt,
+      machineId: communityBotBinding.machineId,
+      runtime: communityBotBinding.runtime,
+    })
+    .from(user)
+    .leftJoin(communityBotBinding, eq(communityBotBinding.userId, user.id))
+    .where(eq(user.id, botUserId))
+    .limit(1);
+  const r = rows[0];
+  if (!r || !r.isBot) return { state: "bot_missing" };
+  if (r.deletedAt) return { state: "bot_deleted" };
+  if (!r.machineId || !r.runtime) return { state: "bot_unbound" };
+  return { state: "ready", botUserId: r.id, name: r.name, machineId: r.machineId, runtime: r.runtime };
+}
+
 /** Bots bound to this machine — daemon cold-start warmup uses this. */
 export async function listBotsForMachine(
   db: Database,

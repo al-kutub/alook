@@ -262,16 +262,16 @@ describe("ws-do router", () => {
     })
   })
 
-  describe("POST /community-machine/by-id/:machineId/forward-agent-start", () => {
+  describe("POST /community-machine/by-id/:machineId/forward-agent-wake", () => {
     beforeEach(() => {
       mockGetActiveDoNamesForMachine.mockReset()
       mockGetActiveDoNamesForMachine.mockResolvedValue([])
     })
 
     it("zero active doNames → { sent: 0 } without touching any DO", async () => {
-      const req = new Request("http://localhost/community-machine/by-id/machine-1/forward-agent-start", {
+      const req = new Request("http://localhost/community-machine/by-id/machine-1/forward-agent-wake", {
         method: "POST",
-        body: JSON.stringify({ type: "agent:start" }),
+        body: JSON.stringify({ type: "agent:wake" }),
       })
       const res = await handler.fetch(req, env as any)
 
@@ -285,16 +285,16 @@ describe("ws-do router", () => {
       mockGetActiveDoNamesForMachine.mockResolvedValue(["do-abc"])
       doMock.stubFetch.mockResolvedValue(new Response(JSON.stringify({ sent: 1 }), { status: 200 }))
 
-      const req = new Request("http://localhost/community-machine/by-id/machine-1/forward-agent-start", {
+      const req = new Request("http://localhost/community-machine/by-id/machine-1/forward-agent-wake", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ type: "agent:start", agentId: "bot-1" }),
+        body: JSON.stringify({ type: "agent:wake", agentId: "bot-1" }),
       })
       const res = await handler.fetch(req, env as any)
 
       expect(doMock.idFromName).toHaveBeenCalledWith("community-machine:do-abc")
       const stubReq = doMock.stubFetch.mock.calls[0][0] as Request
-      expect(stubReq.url).toBe("http://internal/forward-agent-start")
+      expect(stubReq.url).toBe("http://internal/forward-agent-wake")
       expect(res.status).toBe(200)
       expect(await res.json()).toEqual({ sent: 1 })
     })
@@ -303,9 +303,9 @@ describe("ws-do router", () => {
       mockGetActiveDoNamesForMachine.mockResolvedValue(["do-abc"])
       doMock.stubFetch.mockResolvedValue(new Response(JSON.stringify({ sent: 0 }), { status: 200 }))
 
-      const req = new Request("http://localhost/community-machine/by-id/machine-1/forward-agent-start", {
+      const req = new Request("http://localhost/community-machine/by-id/machine-1/forward-agent-wake", {
         method: "POST",
-        body: JSON.stringify({ type: "agent:start" }),
+        body: JSON.stringify({ type: "agent:wake" }),
       })
       const res = await handler.fetch(req, env as any)
 
@@ -322,9 +322,9 @@ describe("ws-do router", () => {
         return Promise.resolve(new Response(JSON.stringify({ sent }), { status: 200 }))
       })
 
-      const req = new Request("http://localhost/community-machine/by-id/machine-1/forward-agent-start", {
+      const req = new Request("http://localhost/community-machine/by-id/machine-1/forward-agent-wake", {
         method: "POST",
-        body: JSON.stringify({ type: "agent:start" }),
+        body: JSON.stringify({ type: "agent:wake" }),
       })
       const res = await handler.fetch(req, env as any)
 
@@ -343,9 +343,9 @@ describe("ws-do router", () => {
         return Promise.resolve(new Response(JSON.stringify({ sent: 1 }), { status: 200 }))
       })
 
-      const req = new Request("http://localhost/community-machine/by-id/machine-1/forward-agent-start", {
+      const req = new Request("http://localhost/community-machine/by-id/machine-1/forward-agent-wake", {
         method: "POST",
-        body: JSON.stringify({ type: "agent:start" }),
+        body: JSON.stringify({ type: "agent:wake" }),
       })
       const res = await handler.fetch(req, env as any)
 
@@ -357,14 +357,14 @@ describe("ws-do router", () => {
       mockGetActiveDoNamesForMachine.mockResolvedValue(["do-a"])
       doMock.stubFetch.mockRejectedValue(new Error("network error"))
 
-      const req = new Request("http://localhost/community-machine/by-id/machine-1/forward-agent-start", {
+      const req = new Request("http://localhost/community-machine/by-id/machine-1/forward-agent-wake", {
         method: "POST",
-        body: JSON.stringify({ type: "agent:start" }),
+        body: JSON.stringify({ type: "agent:wake" }),
       })
       const res = await handler.fetch(req, env as any)
 
       expect(res.status).toBe(503)
-      expect(await res.json()).toEqual({ error: "failed to forward agent start" })
+      expect(await res.json()).toEqual({ error: "failed to forward agent wake" })
     })
 
     it("non-2xx or malformed DO responses with no delivery → retryable 503", async () => {
@@ -376,22 +376,22 @@ describe("ws-do router", () => {
         return Promise.resolve(new Response(JSON.stringify({ sent: "bad" }), { status: 200 }))
       })
 
-      const req = new Request("http://localhost/community-machine/by-id/machine-1/forward-agent-start", {
+      const req = new Request("http://localhost/community-machine/by-id/machine-1/forward-agent-wake", {
         method: "POST",
-        body: JSON.stringify({ type: "agent:start" }),
+        body: JSON.stringify({ type: "agent:wake" }),
       })
       const res = await handler.fetch(req, env as any)
 
       expect(res.status).toBe(503)
-      expect(await res.json()).toEqual({ error: "failed to forward agent start" })
+      expect(await res.json()).toEqual({ error: "failed to forward agent wake" })
     })
 
     it("DB lookup failure → retryable 503, not offline { sent: 0 }", async () => {
       mockGetActiveDoNamesForMachine.mockRejectedValue(new Error("d1 unreachable"))
 
-      const req = new Request("http://localhost/community-machine/by-id/machine-1/forward-agent-start", {
+      const req = new Request("http://localhost/community-machine/by-id/machine-1/forward-agent-wake", {
         method: "POST",
-        body: JSON.stringify({ type: "agent:start" }),
+        body: JSON.stringify({ type: "agent:wake" }),
       })
       const res = await handler.fetch(req, env as any)
 

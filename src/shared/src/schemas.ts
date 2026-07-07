@@ -869,7 +869,7 @@ export const CommunityMachineSummarySchema = z.object({
   availableRuntimes: z.array(CommunityMachineRuntimeSchema).default([]),
   /**
    * Last runtime error reported by the daemon (optimistically cleared on
-   * subsequent `agent:start` forward). Optional so pre-error summaries
+   * subsequent `agent:wake` forward). Optional so pre-error summaries
    * omit the field entirely — undefined == "no known error."
    */
   lastRuntimeError: z

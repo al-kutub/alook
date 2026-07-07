@@ -342,3 +342,17 @@ export async function getReadState(
     .where(buildTargetFilter(data));
   return rows[0] ?? null;
 }
+
+/**
+ * Thin `lastReadSeq` accessor for the unread-wake rebuild path
+ * (`buildUnreadWakeCommand`). No row (bot never read this scope) is "never
+ * read" — same convention `findWakeCandidates` already uses (`?? 0`).
+ */
+export async function getWakeReadSeq(
+  db: Database,
+  botUserId: string,
+  scope: { channelId?: string; dmConversationId?: string }
+): Promise<number> {
+  const state = await getReadState(db, { userId: botUserId, ...scope });
+  return state?.lastReadSeq ?? 0;
+}

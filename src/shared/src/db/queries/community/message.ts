@@ -398,6 +398,37 @@ export async function getMessageByChannelAndSeq(
   return rows[0] ?? null;
 }
 
+/**
+ * Lean by-id lookup for the unread-wake rebuild path
+ * (`buildUnreadWakeCommand`, plan §8/minimal-wake-queue-unread-notice). NO
+ * author join and NO message-body selection — a missing/deleted author row
+ * must not make an otherwise-real message look missing, and the wake
+ * command never carries message content (the daemon prompts `inbox pull`).
+ */
+export async function getWakeMessageScopeById(
+  db: Database,
+  messageId: string
+): Promise<{
+  id: string;
+  seq: number;
+  authorId: string;
+  channelId: string | null;
+  dmConversationId: string | null;
+} | null> {
+  const rows = await db
+    .select({
+      id: communityMessage.id,
+      seq: communityMessage.seq,
+      authorId: communityMessage.authorId,
+      channelId: communityMessage.channelId,
+      dmConversationId: communityMessage.dmConversationId,
+    })
+    .from(communityMessage)
+    .where(eq(communityMessage.id, messageId))
+    .limit(1);
+  return rows[0] ?? null;
+}
+
 export async function getMessage(db: Database, messageId: string) {
   const rows = await db
     .select({

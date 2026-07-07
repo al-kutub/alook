@@ -6,7 +6,7 @@
  * whole capability surface is three network faces (all toward the server
  * it was pointed at):
  *
- *   1. control plane (ws):   receive agent:start/deliver/stop, report ready/
+ *   1. control plane (ws):   receive agent:wake/stop, report ready/
  *      session/ack. Connects with `Authorization: Bearer <machineKey>`
  *      (`cmk_`). This is the only path — no URL-token fallback exists.
  *   2. enroll plane (http):  POST /api/community/daemon/enroll-agent
@@ -30,7 +30,7 @@ import { createTimelineRecorder } from "../timeline/index.js";
 import { resolveAlookCliPathWithFallback } from "../discovery.js";
 import type { Driver, LaunchContext } from "../types.js";
 import type { RuntimeConfig } from "../runtimeConfig.js";
-import type { Message, HostCommand } from "../server/contract.js";
+import type { UnreadNotice, HostCommand } from "../server/contract.js";
 
 // Cold-start warmup backoff schedule (ms).
 const WARMUP_BACKOFF_MS = [250, 500, 1000, 2000, 4000] as const;
@@ -58,7 +58,7 @@ export interface CreateDaemonOptions {
   }>;
   /**
    * Per-agent runtime driver. `runtimeConfig` (server-pushed on
-   * `agent:start`) is passed so callers can dispatch on the actual runtime
+   * `agent:wake`) is passed so callers can dispatch on the actual runtime
    * the agent asked for; tests may omit it and hand back a stub driver.
    */
   driverFor: (agentId: string, runtimeConfig?: RuntimeConfig) => Driver;
@@ -159,8 +159,8 @@ export async function createDaemon(opts: CreateDaemonOptions): Promise<RunningDa
         attempt++;
       }
     }
-    // Ceiling exhausted — resolve empty. A subsequent `agent:start` /
-    // `agent:deliver` frame will trigger a deferred retry via enrollAgent.
+    // Ceiling exhausted — resolve empty. A subsequent `agent:wake` frame
+    // will trigger a deferred retry via enrollAgent.
   }
 
   const enrollAgent = async (agentId: string): Promise<string> => {
@@ -314,8 +314,8 @@ export async function createDaemon(opts: CreateDaemonOptions): Promise<RunningDa
       }
       await enrollAgent(agentId);
     },
-    transformWakeText: (message: Message) =>
-      `You have a new message in channel ${message.channel}.`,
+    formatUnreadNoticeText: (notice: UnreadNotice) =>
+      `You have unread messages in channel ${notice.channel}.`,
   });
 
   // Register the bot-cache pre-hook. `onCommand` supports multiple listeners

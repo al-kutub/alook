@@ -1,30 +1,29 @@
 import { describe, it, expect } from "vitest";
 import { AgentRouter, UnknownRuntimeError } from "./agentRouter";
 import type { AgentProcessManager } from "./managerRuntime";
-import type { HostControlChannel, HostCommand, Message, SessionErrorFrame } from "../server/contract";
-
-function msg(seq: string, text: string): Message {
-  return { seq, channel: "/demo/general", sender: "@gustavo", content: { text }, time: "t" };
-}
+import type { HostControlChannel, HostCommand, SessionErrorFrame } from "../server/contract";
 
 /** Fake manager recording deliver/register; enough for router behavior tests. */
 function fakeManager() {
-  const delivers: Array<{ agentId: string; text: string }> = [];
+  const delivers: Array<{ agentId: string; text: string; seq?: number }> = [];
+  const registers: Array<{ agentId: string; sessionId?: string; launchId?: string }> = [];
   const mgr = {
-    register() {},
-    deliver(agentId: string, m: { seq: number; text: string }) {
-      delivers.push({ agentId, text: m.text });
+    register(agentId: string, launch?: { sessionId?: string; launchId?: string }) {
+      registers.push({ agentId, sessionId: launch?.sessionId, launchId: launch?.launchId });
+    },
+    deliver(agentId: string, m: { seq?: number; text: string }) {
+      delivers.push({ agentId, text: m.text, seq: m.seq });
     },
     stop() {},
     liveSessionReports: () => [],
   } as unknown as AgentProcessManager;
-  return { mgr, delivers };
+  return { mgr, delivers, registers };
 }
 
 /** Fake channel capturing acks + the command handler the router registers. */
 function fakeChannel() {
   let handler: ((c: HostCommand) => void | Promise<void>) | null = null;
-  const acks: string[] = [];
+  const wakeAcks: Array<{ agentId: string; launchId: string; status: string }> = [];
   const readys: Array<Parameters<HostControlChannel["reportReady"]>[0]> = [];
   const sessionErrors: SessionErrorFrame[] = [];
   const ch: HostControlChannel = {
@@ -35,50 +34,77 @@ function fakeChannel() {
       readys.push(ready);
     },
     async reportAgentSession() {},
-    async reportDeliverAck(info) {
-      acks.push(info.deliveryId);
+    async reportWakeAck(info) {
+      wakeAcks.push({ agentId: info.agentId, launchId: info.launchId, status: info.status });
     },
     async reportSessionError(frame) {
       sessionErrors.push(frame);
     },
     onResync() {},
   };
-  return { ch, acks, readys, sessionErrors, fire: (c: HostCommand) => handler?.(c) };
+  return { ch, wakeAcks, readys, sessionErrors, fire: (c: HostCommand) => handler?.(c) };
 }
 
-describe("AgentRouter — at-least-once dedup", () => {
-  it("acks every delivery, but only wakes the manager once per deliveryId", async () => {
-    const { mgr, delivers } = fakeManager();
-    const { ch, acks, fire } = fakeChannel();
-    const router = new AgentRouter({ manager: mgr, channel: ch, runtimeReport: [{ id: "mock" }] });
-    await router.start();
-
-    const deliver: HostCommand = { type: "agent:deliver", agentId: "a1", message: msg("#1", "hello"), deliveryId: "dlv_1" };
-    await fire(deliver);
-    await fire(deliver); // redelivery of the SAME id (e.g. after a reconnect)
-
-    // Manager woken exactly once; both deliveries acked (so the server retires it).
-    expect(delivers.length).toBe(1);
-    expect(delivers[0]).toEqual({ agentId: "a1", text: "hello" });
-    expect(acks).toEqual(["dlv_1", "dlv_1"]);
-  });
-
-  it("agent:start wake delivers + acks its deliveryId", async () => {
-    const { mgr, delivers } = fakeManager();
-    const { ch, acks, fire } = fakeChannel();
+describe("AgentRouter — agent:wake", () => {
+  it("registers the runtime config, delivers the notice text, and acks the wake", async () => {
+    const { mgr, delivers, registers } = fakeManager();
+    const { ch, wakeAcks, fire } = fakeChannel();
     const router = new AgentRouter({ manager: mgr, channel: ch, runtimeReport: [{ id: "mock" }] });
     await router.start();
 
     await fire({
-      type: "agent:start",
+      type: "agent:wake",
       agentId: "a1",
       config: { version: 1, runtime: "mock", model: { kind: "default" }, mode: { kind: "default" } },
-      wakeMessage: msg("#1", "wake"),
-      deliveryId: "dlv_w",
       launchId: "l1",
+      unreadNotice: { kind: "unread_notice", channel: "/demo/general", latestSeq: 7 },
     });
-    expect(delivers).toEqual([{ agentId: "a1", text: "wake" }]);
-    expect(acks).toEqual(["dlv_w"]);
+
+    expect(registers).toEqual([{ agentId: "a1", sessionId: undefined, launchId: "l1" }]);
+    expect(delivers).toEqual([{ agentId: "a1", text: "You have unread messages in channel /demo/general.", seq: 7 }]);
+    expect(wakeAcks).toEqual([{ agentId: "a1", launchId: "l1", status: "ok" }]);
+  });
+
+  it("uses a custom formatUnreadNoticeText when provided", async () => {
+    const { mgr, delivers } = fakeManager();
+    const { ch, fire } = fakeChannel();
+    const router = new AgentRouter({
+      manager: mgr,
+      channel: ch,
+      runtimeReport: [{ id: "mock" }],
+      formatUnreadNoticeText: (notice) => `custom: ${notice.channel}#${notice.latestSeq}`,
+    });
+    await router.start();
+
+    await fire({
+      type: "agent:wake",
+      agentId: "a1",
+      config: { version: 1, runtime: "mock", model: { kind: "default" }, mode: { kind: "default" } },
+      launchId: "l1",
+      unreadNotice: { kind: "unread_notice", channel: "/demo/general", latestSeq: 7 },
+    });
+
+    expect(delivers).toEqual([{ agentId: "a1", text: "custom: /demo/general#7", seq: 7 }]);
+  });
+
+  it("repeated agent:wake commands for the same agent each register + deliver again (no dedup — no deliveryId anymore)", async () => {
+    const { mgr, delivers } = fakeManager();
+    const { ch, wakeAcks, fire } = fakeChannel();
+    const router = new AgentRouter({ manager: mgr, channel: ch, runtimeReport: [{ id: "mock" }] });
+    await router.start();
+
+    const wake: HostCommand = {
+      type: "agent:wake",
+      agentId: "a1",
+      config: { version: 1, runtime: "mock", model: { kind: "default" }, mode: { kind: "default" } },
+      launchId: "l1",
+      unreadNotice: { kind: "unread_notice", channel: "/demo/general", latestSeq: 7 },
+    };
+    await fire(wake);
+    await fire(wake);
+
+    expect(delivers.length).toBe(2);
+    expect(wakeAcks.length).toBe(2);
   });
 });
 
@@ -100,10 +126,11 @@ describe("AgentRouter — unknown runtime → session.error", () => {
     await router.start();
 
     await fire({
-      type: "agent:start",
+      type: "agent:wake",
       agentId: "a1",
       config: { version: 1, runtime: "gemini", model: { kind: "default" }, mode: { kind: "default" } },
       launchId: "l1",
+      unreadNotice: { kind: "unread_notice", channel: "/demo/general", latestSeq: 1 },
     });
 
     expect(sessionErrors.length).toBe(1);
@@ -276,7 +303,6 @@ describe("AgentRouter — runtime health map", () => {
       onCommand() {},
       async reportReady() {},
       async reportAgentSession() {},
-      async reportDeliverAck() {},
     };
     const router = new AgentRouter({
       manager: mgr,

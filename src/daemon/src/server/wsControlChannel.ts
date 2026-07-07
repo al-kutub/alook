@@ -11,8 +11,10 @@
  * endpoint URL and auth headers are host-supplied — no platform is hardcoded.
  *
  * Wire framing is intentionally minimal and host-defined:
- *   - inbound frames are JSON `HostCommand`-shaped (server → host);
- *   - outbound frames are JSON `{ type: "ready" | "agent_session", … }` (host → server).
+ *   - inbound frames are JSON `HostCommand`-shaped (server → host), now just
+ *     `agent:wake` / `agent:stop` / `bot:*` (minimal-wake-queue-unread-notice
+ *     plan §2 — `agent:start`/`agent:deliver` are gone);
+ *   - outbound frames are JSON `{ type: "ready" | "agent_session" | "agent_wake_ack" | "agent_stopped_ack", … }` (host → server).
  * A real server adapter maps these to its own protocol.
  *
  * This is the control plane local dev actually uses: `mock-server`+`daemon` and the
@@ -71,9 +73,12 @@ export interface WsControlChannelOpts {
 /**
  * Command reply protocol — daemon → server. New in v0.2.0.
  *
- * `agent_started_ack` / `agent_stopped_ack` are new frames. `agent_deliver_ack`
- * is additively extended with optional `status` + `error`; existing server-side
- * consumers that read only `{ agentId, deliveryId }` still work.
+ * `agent_wake_ack` means "daemon accepted/handled the `agent:wake` command,"
+ * NOT "process started" — a wake may spawn, notify an already-running
+ * process, or coalesce for later (see `HostControlChannel.reportWakeAck`).
+ * `agent_deliver_ack` / `reportDeliverAck` are retired together with
+ * `agent:deliver` — the server never decides start-vs-deliver, so there is
+ * nothing left for the daemon to ack beyond the wake command itself.
  *
  * Error codes:
  *   - bot_unknown       daemon received a command for a bot not in botsById
@@ -89,14 +94,7 @@ type OutboundFrame =
   | ({ type: "ready" } & HostReady)
   | { type: "agent_session"; agentId: AgentId; sessionId: string; launchId: string }
   | {
-      type: "agent_deliver_ack";
-      agentId: AgentId;
-      deliveryId: string;
-      status?: AgentCommandAckStatus;
-      error?: AgentCommandAckError;
-    }
-  | {
-      type: "agent_started_ack";
+      type: "agent_wake_ack";
       agentId: AgentId;
       launchId: string;
       status: AgentCommandAckStatus;
@@ -112,13 +110,6 @@ type OutboundFrame =
 
 type ResyncProvider = () => { ready: HostReady; sessions: AgentSessionReport[] };
 
-type PendingAck = {
-  agentId: AgentId;
-  deliveryId: string;
-  status?: AgentCommandAckStatus;
-  error?: AgentCommandAckError;
-};
-
 export class WsControlChannel implements HostControlChannel {
   private statusValue: ControlChannelStatus = "idle";
   // Multiple listeners so consumers can layer behavior (e.g. bot-cache pre-hook
@@ -132,13 +123,6 @@ export class WsControlChannel implements HostControlChannel {
   private pingTimer: ReturnType<typeof setInterval> | null = null;
   private pongDeadline = 0;
   private resyncProvider: ResyncProvider | null = null;
-  /**
-   * Acks enqueued before the socket is open. Acks (not ready/session) are the
-   * only frames worth buffering across a brief gap — ready/session are instead
-   * regenerated fresh by the resync provider on (re)connect, so stale snapshots
-   * are never replayed.
-   */
-  private pendingAcks: PendingAck[] = [];
 
   constructor(private readonly opts: WsControlChannelOpts) {}
 
@@ -213,28 +197,18 @@ export class WsControlChannel implements HostControlChannel {
     this.sendFrame({ type: "agent_session", ...info });
   }
 
-  async reportDeliverAck(info: {
-    agentId: AgentId;
-    deliveryId: string;
-    status?: AgentCommandAckStatus;
-    error?: AgentCommandAckError;
-  }): Promise<void> {
-    // Acks must not be lost across a brief disconnect — buffer if not open.
-    if (this.statusValue !== "open" || !this.ws) {
-      this.pendingAcks.push(info);
-      return;
-    }
-    this.ws.send(JSON.stringify({ type: "agent_deliver_ack", ...info }));
-  }
-
-  /** Reply to an `agent:start` HostCommand with the launch outcome. */
-  async reportStartedAck(info: {
+  /**
+   * Reply to an `agent:wake` HostCommand with the wake outcome — "daemon
+   * accepted/handled the wake command", NOT "process started" (see
+   * `HostControlChannel.reportWakeAck`).
+   */
+  async reportWakeAck(info: {
     agentId: AgentId;
     launchId: string;
     status: AgentCommandAckStatus;
     error?: AgentCommandAckError;
   }): Promise<void> {
-    this.sendFrame({ type: "agent_started_ack", ...info });
+    this.sendFrame({ type: "agent_wake_ack", ...info });
   }
 
   /** Reply to an `agent:stop` HostCommand with the stop outcome. */
@@ -265,20 +239,14 @@ export class WsControlChannel implements HostControlChannel {
 
   /**
    * On every (re)connect, re-announce the host's CURRENT state: ready handshake
-   * + a fresh agent_session per live agent (from the resync provider), then flush
-   * any buffered acks. This is what lets the server recover this host after a
-   * dropped connection.
+   * + a fresh agent_session per live agent (from the resync provider). This is
+   * what lets the server recover this host after a dropped connection.
    */
   private resyncOnConnect(): void {
     if (this.resyncProvider) {
       const { ready, sessions } = this.resyncProvider();
       this.sendFrame({ type: "ready", ...ready });
       for (const s of sessions) this.sendFrame({ type: "agent_session", ...s });
-    }
-    if (this.pendingAcks.length && this.ws && this.statusValue === "open") {
-      const acks = this.pendingAcks;
-      this.pendingAcks = [];
-      for (const a of acks) this.ws.send(JSON.stringify({ type: "agent_deliver_ack", ...a }));
     }
     for (const hook of this.resyncHooks) {
       try {

@@ -130,11 +130,11 @@ export interface TimelineRecorder {
 export class AgentProcessManager {
   private state: ManagerState;
   private readonly sessions = new Map<string, ManagedSession>();
-  /** agentId → server-pushed RuntimeConfig (from agent:start). */
+  /** agentId → server-pushed RuntimeConfig (from agent:wake). */
   private readonly runtimeConfigs = new Map<string, RuntimeConfig>();
-  /** agentId → resume sessionId pushed by the server (from agent:start). */
+  /** agentId → resume sessionId pushed by the server (from agent:wake). */
   private readonly resumeSessions = new Map<string, string>();
-  /** agentId → launchId from the latest agent:start (for session correlation). */
+  /** agentId → launchId from the latest agent:wake (for session correlation). */
   private readonly launchIds = new Map<string, string>();
   /** agentId → live runtime sessionId (learned from session_init), for resync. */
   private readonly liveSessions = new Map<string, string>();
@@ -179,7 +179,7 @@ export class AgentProcessManager {
   /**
    * Register an agent (idempotent) so it can receive messages. `launch` carries
    * the server-pushed RuntimeConfig (and optional resume sessionId) from
-   * `agent:start`; it's remembered and merged into the LaunchContext at spawn.
+   * `agent:wake`; it's remembered and merged into the LaunchContext at spawn.
    */
   register(agentId: string, launch?: { runtimeConfig?: RuntimeConfig; sessionId?: string; launchId?: string }): void {
     if (launch?.runtimeConfig) this.runtimeConfigs.set(agentId, launch.runtimeConfig);
@@ -275,7 +275,7 @@ export class AgentProcessManager {
   private doSpawn(agentId: string, prompt: string, resumeSessionId: string | null): void {
     const driver = this.opts.driverFor(agentId, this.runtimeConfigs.get(agentId));
     const base = this.opts.baseContextFor(agentId);
-    // The server-pushed RuntimeConfig (from agent:start) takes precedence over
+    // The server-pushed RuntimeConfig (from agent:wake) takes precedence over
     // any baseContextFor default; the resume sessionId likewise prefers the
     // manager's runtime-tracked id, then the server-pushed one, then the base.
     const runtimeConfig = this.runtimeConfigs.get(agentId) ?? base.config?.runtimeConfig;

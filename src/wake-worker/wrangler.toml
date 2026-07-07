@@ -22,11 +22,18 @@ destinations = ["grafana-traces"]
 port = 8790
 inspector_port = 9232
 
-# Sole binding this worker needs (plan §8) — doName resolution happens
-# inside `alook-ws-do`'s own D1-backed route, not here. No D1 binding.
 [[services]]
 binding = "WS_DO_WORKER"
 service = "alook-ws-do"
+
+# Same `alook-app` database `src/web/wrangler.toml` binds as `DB`
+# (minimal-wake-queue-unread-notice plan §3) — the consumer re-derives the
+# `agent:wake` command from current D1 state at consume time instead of
+# trusting a possibly-stale queue-carried command.
+[[d1_databases]]
+binding = "DB"
+database_id = "1593b87c-d8a8-4cdf-b6c0-c80d94442654"
+database_name = "alook-app"
 
 [[queues.consumers]]
 queue = "alook-wake"

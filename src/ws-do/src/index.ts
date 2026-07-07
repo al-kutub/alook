@@ -134,19 +134,19 @@ export default {
       return Response.json({ sent: delivered })
     }
 
-    // POST /community-machine/by-id/<machineId>/forward-agent-start — sibling
-    // of the `/push` route above, for the community-agent-cli-bridge wake
-    // path (plan §8/§13). Forwards an already-built `HostCommand`
-    // (`agent:start`) verbatim to every live DO for this machine's active
-    // credential(s), then aggregates by parsing each DO's own `{ sent: N }`
-    // response — unlike `/push`, we must NOT just count `res.ok`: a 200 with
+    // POST /community-machine/by-id/<machineId>/forward-agent-wake — sibling
+    // of the `/push` route above, for the minimal-wake-queue-unread-notice
+    // wake path. Forwards an already-built `HostCommand` (`agent:wake`)
+    // verbatim to every live DO for this machine's active credential(s),
+    // then aggregates by parsing each DO's own `{ sent: N }` response —
+    // unlike `/push`, we must NOT just count `res.ok`: a 200 with
     // `{ sent: 0 }` means that DO has no authenticated daemon socket at all,
     // which must not be reported as delivered.
-    const forwardAgentStart = url.pathname.match(/^\/community-machine\/by-id\/([^/]+)\/forward-agent-start$/)
-    if (forwardAgentStart && request.method === "POST") {
-      const machineId = decodeURIComponent(forwardAgentStart[1])
+    const forwardAgentWake = url.pathname.match(/^\/community-machine\/by-id\/([^/]+)\/forward-agent-wake$/)
+    if (forwardAgentWake && request.method === "POST") {
+      const machineId = decodeURIComponent(forwardAgentWake[1])
       const reqLog = log.child({ traceId, machineId })
-      reqLog.debug("forwarding agent:start to machine")
+      reqLog.debug("forwarding agent:wake to machine")
 
       let doNames: string[] = []
       try {
@@ -168,7 +168,7 @@ export default {
         const stub = env.WS_DO.get(doId)
         try {
           const res = await stub.fetch(
-            new Request("http://internal/forward-agent-start", {
+            new Request("http://internal/forward-agent-wake", {
               method: "POST",
               headers: { "content-type": "application/json" },
               body: bodyText,
@@ -189,7 +189,7 @@ export default {
         }
       }
       if (delivered === 0 && transientFailure) {
-        return Response.json({ error: "failed to forward agent start" }, { status: 503 })
+        return Response.json({ error: "failed to forward agent wake" }, { status: 503 })
       }
       return Response.json({ sent: delivered })
     }

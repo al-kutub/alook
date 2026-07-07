@@ -1,30 +1,42 @@
 /**
- * Push-wake producer (plan §8) — after a message lands and the human-WS
- * fanout has broadcast it, this filters the fanout's recipient set down to
- * "bots that are actually behind on this scope" and enqueues one
- * `WAKE_QUEUE` payload per candidate, each carrying a fully-built
- * `HostCommand` (`agent:start`). The `alook-wake-worker` consumer (separate
- * deploy unit) is a dumb forwarder with no D1 access — all the D1-backed
- * construction (bot name/runtime/machine, `toAgentMessage` hydration)
- * happens HERE, where the D1 binding actually lives.
+ * Push-wake producer — after a message lands and the human-WS fanout has
+ * broadcast it, this filters the fanout's recipient set down to "bots that
+ * are actually behind on this scope" and hands one minimal `{ messageId,
+ * botUserId }` payload per candidate off to a `WakeTransport`
+ * (minimal-wake-queue-unread-notice plan §1/§5). Deliberately carries NO
+ * `HostCommand`, `machineId`, runtime, or message content — the consumer
+ * (real `alook-wake-worker`, in both transports — see `wake-transport.ts`)
+ * rebuilds the `agent:wake` command from CURRENT D1 state at consume time
+ * (`dispatchOneUnreadWake`/`buildUnreadWakeCommand`), so a stale item never
+ * wakes an old machine or carries stale content.
+ *
+ * This module owns ONLY "who are the candidates" — it never talks to
+ * `WAKE_QUEUE`/`WAKE_WORKER` directly and never re-implements what happens
+ * to a candidate. See `wake-transport.ts` for which transport runs in which
+ * environment and why (local Cloudflare Queues can't bridge separate
+ * `wrangler dev`/`next dev` processes today).
  */
 import { getCloudflareContext } from "@opennextjs/cloudflare"
-import { createDb, queries, createLogger, makeRuntimeConfig } from "@alook/shared"
-import type { HostCommand, WakePayload } from "@alook/shared"
-import { nanoid } from "nanoid"
+import { createDb, queries, createLogger } from "@alook/shared"
+import type { WakePayload } from "@alook/shared"
+import { createQueueWakeTransport, createDevHttpWakeTransport } from "./wake-transport"
+import type { WakeTransport } from "./wake-transport"
 
 const log = createLogger({ service: "community-wake-producer" })
 
-// Cloudflare Queues caps a single `sendBatch` call at 100 messages.
-const QUEUE_BATCH_SIZE = 100
+// Cloudflare Queues caps a single `sendBatch` call at 100 messages; kept the
+// same batch size for the dev HTTP transport for a uniform code path.
+const WAKE_BATCH_SIZE = 100
 
-/** The just-inserted message row — must include `seq` (see `getMessage`'s select). */
+/**
+ * The just-inserted message row — lean, no body/preview (plan §1/§5): only
+ * what `findWakeCandidates`' unread filter needs. Must include `seq` (see
+ * `getMessage`'s select).
+ */
 export interface WakeMessageRow {
   id: string
   seq: number
   authorId: string
-  content: string | null
-  createdAt: string
   channelId: string | null
   dmConversationId: string | null
 }
@@ -43,7 +55,7 @@ export interface EnqueueBotWakesOpts {
  * context and registers `ctx.waitUntil(...)` synchronously in its own first
  * tick (before any `await`), so the enclosing request's response can be
  * written and the isolate can still be kept alive long enough for the
- * `sendBatch` calls to land. Callers MUST invoke this before the response is
+ * transport call to land. Callers MUST invoke this before the response is
  * sent (same requirement as `broadcastToUser`/`fanOutToChannel`) — calling it
  * after the response has already been returned risks the `waitUntil`
  * registration being dropped.
@@ -62,6 +74,18 @@ export function enqueueBotWakes(opts: EnqueueBotWakesOpts): Promise<void> {
   return promise
 }
 
+/**
+ * `NODE_ENV === "development"` (never `test`, `production`, or an
+ * opennextjs-cloudflare preview/deploy build — all of which set `NODE_ENV`
+ * to something else) is the only case that gets the dev HTTP transport;
+ * every other environment keeps the real Cloudflare Queue.
+ */
+function selectWakeTransport(env: Env): WakeTransport {
+  return process.env.NODE_ENV === "development"
+    ? createDevHttpWakeTransport(env)
+    : createQueueWakeTransport(env.WAKE_QUEUE)
+}
+
 async function doEnqueueBotWakes(env: Env, opts: EnqueueBotWakesOpts): Promise<void> {
   const { recipients, channelId, dmConversationId, messageRow } = opts
   if (recipients.length === 0) return
@@ -75,45 +99,18 @@ async function doEnqueueBotWakes(env: Env, opts: EnqueueBotWakesOpts): Promise<v
   })
   if (candidates.length === 0) return
 
-  // Channel refs don't depend on `viewerId` at all; DM refs do, but a DM
-  // scope only ever has (at most) one bot candidate since a DM has exactly
-  // two participants — either way, hydrating once with the first
-  // candidate's identity is correct and avoids N redundant DB round-trips.
-  const wakeMessage = await queries.communityAgentInbox.toAgentMessage(
-    db,
-    { ...messageRow, content: messageRow.content ?? "" },
-    candidates[0]!.botUserId
-  )
-
-  const payloads: WakePayload[] = candidates.map((c) => {
-    // Known, accepted gap (plan §8): `community_bot_binding` stores only a
-    // bare `runtime` string today — no model/mode/provider/instruction
-    // columns exist yet. Bots wake with runtime-default model/mode and no
-    // custom instruction until a future "bot profile config" feature adds
-    // those columns; this is not an oversight.
-    const config = makeRuntimeConfig({
-      runtime: c.runtime,
-      agentName: c.name ?? c.botUserId,
-      agentHandle: `@${c.name ?? c.botUserId}`,
-    })
-    const command: HostCommand = {
-      type: "agent:start",
-      agentId: c.botUserId,
-      config,
-      launchId: nanoid(),
-      wakeMessage,
-    }
-    return { botUserId: c.botUserId, machineId: c.machineId, command }
-  })
+  const payloads: WakePayload[] = candidates.map((c) => ({
+    messageId: messageRow.id,
+    botUserId: c.botUserId,
+  }))
 
   const chunks: WakePayload[][] = []
-  for (let i = 0; i < payloads.length; i += QUEUE_BATCH_SIZE) {
-    chunks.push(payloads.slice(i, i + QUEUE_BATCH_SIZE))
+  for (let i = 0; i < payloads.length; i += WAKE_BATCH_SIZE) {
+    chunks.push(payloads.slice(i, i + WAKE_BATCH_SIZE))
   }
 
-  const results = await Promise.allSettled(
-    chunks.map((chunk) => env.WAKE_QUEUE.sendBatch(chunk.map((body) => ({ body }))))
-  )
+  const transport = selectWakeTransport(env)
+  const results = await Promise.allSettled(chunks.map((chunk) => transport.send(chunk)))
   for (let i = 0; i < results.length; i++) {
     const r = results[i]!
     if (r.status === "rejected") {

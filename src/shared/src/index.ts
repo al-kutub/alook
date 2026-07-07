@@ -92,6 +92,7 @@ export {
   DEV_WEB_URL,
   DEV_WS_DO_URL,
   DEV_EMAIL_WORKER_URL,
+  DEV_WAKE_WORKER_URL,
   MeetingStatus,
   TERMINAL_MEETING_STATUSES,
   COMMUNITY_BOT_LIMIT_PER_OWNER,
@@ -363,6 +364,7 @@ export type {
   ResolveRequest as CommunityCliResolveRequest,
   ListChannelsRequest as CommunityCliListChannelsRequest,
   ServerApi as CommunityCliServerApi,
+  UnreadNotice,
   HostCommand,
   HostReadyRuntime,
   HostReady,
@@ -382,8 +384,9 @@ export type {
 } from "./runtime-config";
 export { RUNTIME_CONFIG_VERSION, makeRuntimeConfig } from "./runtime-config";
 
-export { sendWakeToMachine } from "./community/wake-dispatch";
-export type { WakePayload } from "./community/wake-dispatch";
+export { sendWakeToMachine, buildUnreadWakeCommand, dispatchOneUnreadWake } from "./community/wake-dispatch";
+export type { DispatchOneWakeResult } from "./community/wake-dispatch";
+export type { WakePayload, BuildUnreadWakeResult } from "./community/wake-dispatch";
 
 export type { CommunityMachineSummary, CommunityMachineRuntime } from "./community-ws-events";
 export type {

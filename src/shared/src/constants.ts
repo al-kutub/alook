@@ -163,3 +163,5 @@ export const DEV_PASSWORD = "dev-password-000";
 export const DEV_WEB_URL = process.env.ALOOK_SERVER_URL || "http://localhost:3000";
 export const DEV_WS_DO_URL = process.env.DEV_WS_DO_URL || "http://localhost:8789";
 export const DEV_EMAIL_WORKER_URL = process.env.DEV_EMAIL_WORKER_URL || "http://localhost:8787";
+// `src/wake-worker/wrangler.toml`'s `[dev] port` — see wake-transport.ts.
+export const DEV_WAKE_WORKER_URL = process.env.DEV_WAKE_WORKER_URL || "http://localhost:8790";

@@ -21,7 +21,7 @@ import {
 } from "../../community-schema";
 import { user } from "../../schema";
 import type { Database } from "../../index";
-import { formatRef, formatSeq, DM_SERVER, type Message, type Seq } from "../../../community-cli-contract";
+import { formatRef, formatSeq, DM_SERVER, type Message, type Seq, type ChannelRef } from "../../../community-cli-contract";
 
 type RawAgentMessage = {
   id: string;
@@ -175,6 +175,87 @@ export async function toAgentMessages(
       time: r.createdAt,
     };
   });
+}
+
+/**
+ * Strict single-scope ref resolver for `UnreadNotice.channel`
+ * (`buildUnreadWakeCommand`, minimal-wake-queue-unread-notice plan §4). Unlike
+ * `resolveScopeRefs` (used for message/inbox hydration, where an `/unknown/…`
+ * fallback is tolerable UI degradation), a wake command's notice channel must
+ * NEVER be a placeholder — a missing channel, missing DM, missing parent
+ * channel, or missing parent message for a thread all resolve to `null` so
+ * the caller treats it as `notice_channel_unresolvable` (ack/skip) rather
+ * than waking an agent with a bogus ref it can't `inboxPull` against.
+ */
+export async function resolveUnreadNoticeChannel(
+  db: Database,
+  scope: { channelId?: string; dmConversationId?: string },
+  botUserId: string
+): Promise<ChannelRef | null> {
+  if (scope.channelId) {
+    const rows = await db
+      .select({
+        id: communityChannel.id,
+        name: communityChannel.name,
+        serverId: communityChannel.serverId,
+        parentChannelId: communityChannel.parentChannelId,
+        parentMessageId: communityChannel.parentMessageId,
+      })
+      .from(communityChannel)
+      .where(eq(communityChannel.id, scope.channelId))
+      .limit(1);
+    const ch = rows[0];
+    if (!ch) return null;
+
+    if (ch.parentChannelId && ch.parentMessageId) {
+      const [parentRows, rootRows] = await Promise.all([
+        db
+          .select({ name: communityChannel.name, serverId: communityChannel.serverId })
+          .from(communityChannel)
+          .where(eq(communityChannel.id, ch.parentChannelId))
+          .limit(1),
+        db
+          .select({ seq: communityMessage.seq })
+          .from(communityMessage)
+          .where(eq(communityMessage.id, ch.parentMessageId))
+          .limit(1),
+      ]);
+      const parent = parentRows[0];
+      const root = rootRows[0];
+      if (!parent || !root) return null;
+      const serverName = await getServerName(db, parent.serverId);
+      if (!serverName) return null;
+      return formatRef({ server: serverName, channel: parent.name, threadRootSeq: root.seq });
+    }
+
+    const serverName = await getServerName(db, ch.serverId);
+    if (!serverName) return null;
+    return formatRef({ server: serverName, channel: ch.name });
+  }
+
+  if (scope.dmConversationId) {
+    const rows = await db
+      .select()
+      .from(communityDmConversation)
+      .where(eq(communityDmConversation.id, scope.dmConversationId))
+      .limit(1);
+    const dm = rows[0];
+    if (!dm) return null;
+    const peerId = dm.user1Id === botUserId ? dm.user2Id : dm.user1Id;
+    if (!peerId) return null;
+    return formatRef({ server: DM_SERVER, channel: peerId });
+  }
+
+  return null;
+}
+
+async function getServerName(db: Database, serverId: string): Promise<string | null> {
+  const rows = await db
+    .select({ name: communityServer.name })
+    .from(communityServer)
+    .where(eq(communityServer.id, serverId))
+    .limit(1);
+  return rows[0]?.name ?? null;
 }
 
 /** Single-row convenience wrapper around `toAgentMessages`. */

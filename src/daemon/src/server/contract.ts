@@ -41,6 +41,7 @@ export type {
   ResolveRequest,
   ListChannelsRequest,
   ServerApi,
+  UnreadNotice,
   HostCommand,
   HostReadyRuntime,
   HostReady,

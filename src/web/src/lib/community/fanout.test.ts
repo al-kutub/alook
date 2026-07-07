@@ -115,13 +115,11 @@ describe("fanOutToServerMembers", () => {
   })
 })
 
-describe("wake dispatch (plan §8) — only fires for MESSAGE_CREATE with a wakeMessageRow", () => {
+describe("wake dispatch (minimal-wake-queue-unread-notice) — only fires for MESSAGE_CREATE with a wakeMessageRow", () => {
   const wakeMessageRow = {
     id: "msg_1",
     seq: 7,
     authorId: "u1",
-    content: "hello",
-    createdAt: "2026-01-01T00:00:00.000Z",
     channelId: "c1",
     dmConversationId: null,
   }

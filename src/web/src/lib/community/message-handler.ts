@@ -276,17 +276,17 @@ export async function createCommunityMessage(params: {
     })),
   })
 
-  // Wake-dispatch row (plan §8) — the same `row` already fetched above via
-  // `getMessage` (which now selects `seq`). Passed alongside the
-  // MESSAGE_CREATE event so `fanOutToChannel`/`fanOutToDM` can enqueue bot
-  // wakes using the SAME recipient list already resolved for the human-WS
-  // broadcast, no second membership query.
+  // Wake-dispatch row (minimal-wake-queue-unread-notice plan §1/§5) — the
+  // same `row` already fetched above via `getMessage` (which now selects
+  // `seq`). Passed alongside the MESSAGE_CREATE event so
+  // `fanOutToChannel`/`fanOutToDM` can enqueue bot wakes using the SAME
+  // recipient list already resolved for the human-WS broadcast, no second
+  // membership query. Deliberately no `content`/`createdAt` — the queue
+  // payload only ever carries `{ messageId, botUserId }`.
   const wakeMessageRow = {
     id: row.id,
     seq: row.seq,
     authorId: row.authorId,
-    content: row.content,
-    createdAt: row.createdAt,
     channelId: row.channelId,
     dmConversationId: row.dmConversationId,
   }

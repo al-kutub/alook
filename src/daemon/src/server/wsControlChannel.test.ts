@@ -161,25 +161,28 @@ describe("WsControlChannel — ready frame", () => {
   });
 });
 
-describe("WsControlChannel — deliver acks", () => {
-  it("sends an ack when open", async () => {
+describe("WsControlChannel — wake/stop acks", () => {
+  it("sends agent_wake_ack when open", async () => {
     const { ch, sockets } = makeChannel();
     ch.onResync(() => ({ ready: { runtimeReport: [], runningAgents: [] }, sessions: [] }));
     ch.connect();
     sockets[0].emit("open");
-    await ch.reportDeliverAck({ agentId: "a1", deliveryId: "dlv_1" });
-    expect(sockets[0].frames().some((f) => f.type === "agent_deliver_ack" && f.deliveryId === "dlv_1")).toBe(true);
+    await ch.reportWakeAck({ agentId: "a1", launchId: "l1", status: "ok" });
+    expect(sockets[0].frames().some((f) => f.type === "agent_wake_ack" && f.launchId === "l1")).toBe(true);
   });
 
-  it("buffers an ack issued before open and flushes it on connect", async () => {
+  it("drops (does not throw, does not send) an ack issued before the socket is open", async () => {
+    // Unlike the retired agent_deliver_ack, wake/stop acks are point-in-time —
+    // there is no queue-side unacked-delivery store retiring them, so there
+    // is nothing to buffer for. A dropped ack while offline is fine: the
+    // server never addressed this wake attempt on this connection anyway.
     const { ch, sockets } = makeChannel();
     ch.onResync(() => ({ ready: { runtimeReport: [], runningAgents: [] }, sessions: [] }));
     ch.connect();
-    // Ack before the socket opens — must be buffered, not lost.
-    await ch.reportDeliverAck({ agentId: "a1", deliveryId: "dlv_early" });
-    expect(sockets[0].frames().some((f) => f.type === "agent_deliver_ack")).toBe(false);
+    await ch.reportWakeAck({ agentId: "a1", launchId: "l_early", status: "ok" });
+    expect(sockets[0].frames().some((f) => f.type === "agent_wake_ack")).toBe(false);
     sockets[0].emit("open");
-    expect(sockets[0].frames().some((f) => f.type === "agent_deliver_ack" && f.deliveryId === "dlv_early")).toBe(true);
+    expect(sockets[0].frames().some((f) => f.type === "agent_wake_ack" && f.launchId === "l_early")).toBe(false);
   });
 });
 

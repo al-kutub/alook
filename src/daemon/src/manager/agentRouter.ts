@@ -3,20 +3,22 @@
  *
  * The server pushes `HostCommand`s down a `HostControlChannel`; the router turns
  * them into `AgentProcessManager` calls. It is deliberately thin and does NO
- * addressing — every `agent:deliver` already names its recipient `agentId`
- * (the server decided who receives). The host just executes.
+ * addressing — every command already names its recipient `agentId` (the
+ * server decided who receives). The host just executes.
  *
- *   agent:start   → register + deliver wakeMessage (manager spawns single-flight)
- *   agent:deliver → manager.deliver(agentId, message)
- *   agent:stop    → manager.stop(agentId)
+ *   agent:wake → register (server-pushed RuntimeConfig) + deliver the
+ *                bodiless unread-notice prompt. The MANAGER (not this
+ *                router, and not the server) decides whether that means
+ *                spawning a fresh process, notifying an already-running one,
+ *                or coalescing the notice for the next turn — see
+ *                `AgentProcessManager`/`managerPolicy`.
+ *   agent:stop → manager.stop(agentId)
  *
- * It also reports readiness + session ids back up the channel, ACKs at-least-once
- * deliveries (dedup by deliveryId so an agent never sees a duplicate wake), and
- * supplies a resync snapshot so the server recovers this host's state after a
- * dropped control connection.
+ * It also reports readiness + session ids back up the channel, ACKs
+ * `agent:wake`/`agent:stop` outcomes, and supplies a resync snapshot so the
+ * server recovers this host's state after a dropped control connection.
  */
-import type { HostCommand, HostControlChannel, HostReady, HostReadyRuntime, Message, AgentSessionReport, SessionErrorFrame } from "../server/contract.js";
-import { parseSeq } from "../server/contract.js";
+import type { HostCommand, HostControlChannel, HostReady, HostReadyRuntime, UnreadNotice, AgentSessionReport, SessionErrorFrame } from "../server/contract.js";
 import type { AgentProcessManager } from "./managerRuntime.js";
 
 /**
@@ -83,11 +85,13 @@ export interface AgentRouterOpts {
    */
   onBeforeAgent?: (agentId: string) => Promise<void>;
   /**
-   * Transform the raw message text into the prompt the agent actually sees.
-   * The default passes text through unchanged. A real deployment replaces this
-   * with a notify-style wake ("you have N messages, pull inbox").
+   * Format the bodiless `UnreadNotice` into the prompt text the agent
+   * actually sees. The default is a fixed "you have unread messages in
+   * channel X" line. Deliberately does NOT include the inbox-pull
+   * instruction — that's `wakePromptFooter` on `ManagerRuntimeOpts`, appended
+   * once after coalescing/dedup so a burst of notices doesn't repeat it.
    */
-  transformWakeText?: (message: Message) => string;
+  formatUnreadNoticeText?: (notice: UnreadNotice) => string;
   /**
    * Coalescer scheduler for on-demand ready-frame resends. Defaults to
    * `queueMicrotask` so a burst of health mutations in the same tick collapse
@@ -96,10 +100,12 @@ export interface AgentRouterOpts {
   scheduleReadyResend?: (fn: () => void) => void;
 }
 
+function defaultFormatUnreadNoticeText(notice: UnreadNotice): string {
+  return `You have unread messages in channel ${notice.channel}.`;
+}
+
 export class AgentRouter {
   private readonly running = new Set<string>();
-  /** Delivery ids already accepted — dedups redelivery so no duplicate wake. */
-  private readonly seenDeliveries = new Set<string>();
   /**
    * Mutable per-runtime health map. Seeded from the startup snapshot passed
    * on construction; mutated live by `markRuntimeUnhealthy` / `markRuntimeHealthy`
@@ -236,7 +242,7 @@ export class AgentRouter {
 
   private async onCommand(cmd: HostCommand): Promise<void> {
     switch (cmd.type) {
-      case "agent:start":
+      case "agent:wake":
         try {
           await this.opts.onBeforeAgent?.(cmd.agentId);
           this.opts.manager.register(cmd.agentId, {
@@ -245,8 +251,11 @@ export class AgentRouter {
             launchId: cmd.launchId,
           });
           this.running.add(cmd.agentId);
-          if (cmd.wakeMessage) this.deliver(cmd.agentId, cmd.wakeMessage, cmd.deliveryId);
-          await this.opts.channel.reportStartedAck?.({
+          const text = (this.opts.formatUnreadNoticeText ?? defaultFormatUnreadNoticeText)(cmd.unreadNotice);
+          // The manager (not this router) decides spawn vs. in-process notify
+          // vs. coalesce — see managerPolicy's `onWake`.
+          this.opts.manager.deliver(cmd.agentId, { seq: cmd.unreadNotice.latestSeq, text });
+          await this.opts.channel.reportWakeAck?.({
             agentId: cmd.agentId,
             launchId: cmd.launchId,
             status: "ok",
@@ -266,7 +275,7 @@ export class AgentRouter {
               },
             };
             await this.opts.channel.reportSessionError?.(frame);
-            await this.opts.channel.reportStartedAck?.({
+            await this.opts.channel.reportWakeAck?.({
               agentId: cmd.agentId,
               launchId: cmd.launchId,
               status: "error",
@@ -279,7 +288,7 @@ export class AgentRouter {
           }
           // Any other throw — including onBeforeAgent throws that used to be
           // swallowed silently — surfaces as a structured error ack.
-          await this.opts.channel.reportStartedAck?.({
+          await this.opts.channel.reportWakeAck?.({
             agentId: cmd.agentId,
             launchId: cmd.launchId,
             status: "error",
@@ -289,23 +298,6 @@ export class AgentRouter {
             },
           });
           return;
-        }
-        break;
-      case "agent:deliver":
-        try {
-          await this.opts.onBeforeAgent?.(cmd.agentId);
-          this.running.add(cmd.agentId);
-          this.deliver(cmd.agentId, cmd.message, cmd.deliveryId);
-        } catch (err) {
-          await this.opts.channel.reportDeliverAck({
-            agentId: cmd.agentId,
-            deliveryId: cmd.deliveryId,
-            status: "error",
-            error: {
-              code: classifyErrorCode(err),
-              message: err instanceof Error ? err.message : String(err),
-            },
-          });
         }
         break;
       case "agent:stop":
@@ -333,24 +325,6 @@ export class AgentRouter {
       case "bot:updated":
       case "bot:removed":
         break;
-    }
-  }
-
-  /**
-   * Hand an addressed message to the manager. At-least-once: a redelivered id is
-   * deduped (not re-woken) but STILL acked, so the server can retire it.
-   */
-  private deliver(agentId: string, message: Message, deliveryId?: string): void {
-    if (deliveryId !== undefined && this.seenDeliveries.has(deliveryId)) {
-      void this.opts.channel.reportDeliverAck({ agentId, deliveryId });
-      return;
-    }
-    this.opts.manager.register(agentId);
-    const text = this.opts.transformWakeText ? this.opts.transformWakeText(message) : message.content.text;
-    this.opts.manager.deliver(agentId, { seq: parseSeq(message.seq), text });
-    if (deliveryId !== undefined) {
-      this.seenDeliveries.add(deliveryId);
-      void this.opts.channel.reportDeliverAck({ agentId, deliveryId });
     }
   }
 }

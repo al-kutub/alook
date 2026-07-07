@@ -3,10 +3,11 @@ import { sendWakeToMachine } from "../../src/community/wake-dispatch";
 import type { HostCommand } from "../../src/community-cli-contract";
 
 const dummyCommand = {
-  type: "agent:start",
+  type: "agent:wake",
   agentId: "bot-1",
   config: { version: 1, runtime: "claude" },
   launchId: "launch-1",
+  unreadNotice: { kind: "unread_notice", channel: "/demo/general", latestSeq: 1 },
 } as unknown as HostCommand;
 
 function makeEnv(fetchImpl: (url: string, init?: RequestInit) => Promise<Response>) {
@@ -14,9 +15,9 @@ function makeEnv(fetchImpl: (url: string, init?: RequestInit) => Promise<Respons
 }
 
 describe("sendWakeToMachine", () => {
-  it("POSTs the command verbatim to the ws-do forward-agent-start route", async () => {
+  it("POSTs the command verbatim to the ws-do forward-agent-wake route", async () => {
     const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
-      expect(url).toBe("http://internal/community-machine/by-id/machine-1/forward-agent-start");
+      expect(url).toBe("http://internal/community-machine/by-id/machine-1/forward-agent-wake");
       expect(init?.method).toBe("POST");
       expect(JSON.parse(init!.body as string)).toEqual(dummyCommand);
       return new Response(JSON.stringify({ sent: 1 }), { status: 200 });
@@ -61,7 +62,7 @@ describe("sendWakeToMachine", () => {
 
   it("encodes the machineId in the URL path", async () => {
     const fetchMock = vi.fn(async (url: string) => {
-      expect(url).toBe("http://internal/community-machine/by-id/machine%2Fwith%2Fslash/forward-agent-start");
+      expect(url).toBe("http://internal/community-machine/by-id/machine%2Fwith%2Fslash/forward-agent-wake");
       return new Response(JSON.stringify({ sent: 0 }), { status: 200 });
     });
     const env = makeEnv(fetchMock);
