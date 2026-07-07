@@ -71,6 +71,12 @@ service = "alook-ws-do"
 binding = "EMAIL_WORKER"
 service = "alook-email-worker"
 
+# Bot wake-on-unread producer — see plans/community-agent-cli-bridge.md §8.
+# Consumer is the separate `alook-wake-worker` (src/wake-worker).
+[[queues.producers]]
+binding = "WAKE_QUEUE"
+queue = "alook-wake"
+
 [[kv_namespaces]]
 binding = "RATE_LIMIT_KV"
 id = "a3d035bea7bc49d99377b82ec21ce4c1"

@@ -1,0 +1,35 @@
+name = "alook-wake-worker"
+main = "src/index.ts"
+compatibility_date = "2025-04-01"
+compatibility_flags = ["nodejs_compat"]
+workers_dev = false
+
+[observability]
+enabled = true
+head_sampling_rate = 0.1
+
+[observability.logs]
+invocation_logs = true
+head_sampling_rate = 0.1
+destinations = ["grafana-logs"]
+
+[observability.traces]
+enabled = true
+head_sampling_rate = 0.05
+destinations = ["grafana-traces"]
+
+[dev]
+port = 8790
+inspector_port = 9232
+
+# Sole binding this worker needs (plan §8) — doName resolution happens
+# inside `alook-ws-do`'s own D1-backed route, not here. No D1 binding.
+[[services]]
+binding = "WS_DO_WORKER"
+service = "alook-ws-do"
+
+[[queues.consumers]]
+queue = "alook-wake"
+max_batch_size = 25
+max_retries = 3
+dead_letter_queue = "alook-wake-dlq"

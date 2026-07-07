@@ -134,6 +134,66 @@ export default {
       return Response.json({ sent: delivered })
     }
 
+    // POST /community-machine/by-id/<machineId>/forward-agent-start — sibling
+    // of the `/push` route above, for the community-agent-cli-bridge wake
+    // path (plan §8/§13). Forwards an already-built `HostCommand`
+    // (`agent:start`) verbatim to every live DO for this machine's active
+    // credential(s), then aggregates by parsing each DO's own `{ sent: N }`
+    // response — unlike `/push`, we must NOT just count `res.ok`: a 200 with
+    // `{ sent: 0 }` means that DO has no authenticated daemon socket at all,
+    // which must not be reported as delivered.
+    const forwardAgentStart = url.pathname.match(/^\/community-machine\/by-id\/([^/]+)\/forward-agent-start$/)
+    if (forwardAgentStart && request.method === "POST") {
+      const machineId = decodeURIComponent(forwardAgentStart[1])
+      const reqLog = log.child({ traceId, machineId })
+      reqLog.debug("forwarding agent:start to machine")
+
+      let doNames: string[] = []
+      try {
+        const shared = await import("@alook/shared")
+        const db = shared.createDb((env as unknown as { DB: D1Database }).DB)
+        doNames = await queries.communityMachine.getActiveDoNamesForMachine(db, machineId)
+      } catch (err) {
+        reqLog.error("failed to resolve machine doNames for agent wake", { err })
+        return Response.json({ error: "failed to resolve machine" }, { status: 503 })
+      }
+      if (doNames.length === 0) {
+        return Response.json({ sent: 0 })
+      }
+      const bodyText = await request.text()
+      let delivered = 0
+      let transientFailure = false
+      for (const dn of doNames) {
+        const doId = env.WS_DO.idFromName("community-machine:" + dn)
+        const stub = env.WS_DO.get(doId)
+        try {
+          const res = await stub.fetch(
+            new Request("http://internal/forward-agent-start", {
+              method: "POST",
+              headers: { "content-type": "application/json" },
+              body: bodyText,
+            }),
+          )
+          if (!res.ok) {
+            transientFailure = true
+            continue
+          }
+          const data = (await res.json()) as { sent?: unknown }
+          if (typeof data.sent !== "number" || !Number.isFinite(data.sent) || data.sent < 0) {
+            transientFailure = true
+            continue
+          }
+          delivered += data.sent
+        } catch {
+          transientFailure = true
+        }
+      }
+      if (delivered === 0 && transientFailure) {
+        return Response.json({ error: "failed to forward agent start" }, { status: 503 })
+      }
+      return Response.json({ sent: delivered })
+    }
+
     // POST /community-machine/<doName>/force-close — disconnect a daemon by
     // its DO-name suffix (first 32 hex of the credential hash). Callers look
     // the suffix up from `community_machine_credential.do_name`.
