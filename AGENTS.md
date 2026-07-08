@@ -90,6 +90,20 @@ isNotNull(agentTaskQueue.sessionId)
 .set({ attempts: sql`${verificationCode.attempts} + 1` })
 ```
 
+## Blog posts
+
+Posts live in `src/web/src/content/<slug>.mdx`; images live in `src/web/public/blog/<slug>/`.
+
+### Frontmatter
+Use `export const metadata = { ... }` — NOT YAML `---` frontmatter. The loader does a dynamic import and reads `mod.metadata`; MDX config has no `remark-frontmatter` plugin, so YAML blocks render as literal text and the post disappears from the listing.
+
+Required fields (see `src/web/src/lib/blog/types.ts`): `slug`, `title`, `date`, `author`, `excerpt`, `readingTime`. Missing any → post is skipped with a warning.
+
+### Images
+- Path: `src/web/public/blog/<slug>/<name>.<ext>`, referenced from MDX as `/blog/<slug>/<name>.<ext>`.
+- Naming: short semantic names (`hero.png`, `timeline.png`, `workflow-1-dev-team-pipeline.svg`). No date prefix. Don't repeat the slug — the parent directory already carries it.
+- Format: `png` for photos/screenshots, `svg` for diagrams, `webp` when compression matters. Pick one; don't mix formats for the same purpose in one post.
+
 ## Scrollbar
 
 Always use the `thin-scrollbar` class alongside `overflow-y-auto` or `overflow-x-auto`. Never use bare overflow-auto without it.
