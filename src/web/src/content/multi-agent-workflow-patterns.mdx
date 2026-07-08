@@ -29,7 +29,7 @@ People keep trying to build one super-agent. Wrong approach. You want specialist
 
 ### 1. The Dev Team Pipeline
 
-![Dev Team Pipeline Workflow](/blog/workflow-1-dev-team-pipeline.svg)
+![Dev Team Pipeline Workflow](/blog/multi-agent-workflow-patterns/workflow-1-dev-team-pipeline.svg)
 
 Standard setup: architecture agent, frontend agent, backend agent, test agent, deployment agent. Each owns their piece.
 
@@ -41,7 +41,7 @@ Breaks when you need creative solutions that cross boundaries. Also if your requ
 
 ### 2. The Support Swarm
 
-![Support Swarm Workflow](/blog/workflow-2-support-swarm.svg)
+![Support Swarm Workflow](/blog/multi-agent-workflow-patterns/workflow-2-support-swarm.svg)
 
 Support tickets are perfect for this. Triage agent reads and routes. Specialist agents handle their thing (billing knows all the plans, technical remembers every fix, feature requests track what's been asked). Response agent writes the actual reply. Quality agent makes sure it's not nonsense.
 
@@ -51,7 +51,7 @@ Fails hard on emotional stuff. Angry customer? Refund request? Get a human.
 
 ### 3. Content Production Line
 
-![Content Production Line Workflow](/blog/workflow-3-content-production.svg)
+![Content Production Line Workflow](/blog/multi-agent-workflow-patterns/workflow-3-content-production.svg)
 
 Research, writing, fact-checking, SEO, publishing. Assembly line for content.
 
@@ -63,7 +63,7 @@ Can't do opinion pieces though. Or anything that needs lived experience. The age
 
 ### 4. The Code Migration Factory
 
-![Code Migration Factory Workflow](/blog/workflow-4-code-migration.svg)
+![Code Migration Factory Workflow](/blog/multi-agent-workflow-patterns/workflow-4-code-migration.svg)
 
 This one's limited but when it works, it really works. Analyzer maps the old code. Planner figures out the migration path. Converter agents run in parallel. Validator checks nothing broke.
 
@@ -73,7 +73,7 @@ Only works for mechanical migrations. Trying to refactor architecture? Forget it
 
 ### 5. The QA Fortress
 
-![QA Fortress Workflow](/blog/workflow-5-qa-fortress.svg)
+![QA Fortress Workflow](/blog/multi-agent-workflow-patterns/workflow-5-qa-fortress.svg)
 
 Test generator reads requirements and creates cases. Runner executes. Bug reporter writes up failures with full context. Fix suggester... suggests fixes. Regression guardian makes sure fixed bugs stay fixed.
 
@@ -83,7 +83,7 @@ Can't test if something feels good though. UI testing is still mostly "does this
 
 ### 6. The Data Pipeline Crew
 
-![Data Pipeline Crew Workflow](/blog/workflow-6-data-pipeline.svg)
+![Data Pipeline Crew Workflow](/blog/multi-agent-workflow-patterns/workflow-6-data-pipeline.svg)
 
 Scraping, cleaning, analyzing, reporting, alerting. Good for competitive intelligence.
 
@@ -95,7 +95,7 @@ Until the site redesigns. Then you're fixing scrapers for a day.
 
 ### 7. The Documentation System
 
-![Documentation System Workflow](/blog/workflow-7-documentation-system.svg)
+![Documentation System Workflow](/blog/multi-agent-workflow-patterns/workflow-7-documentation-system.svg)
 
 This should be simple but nobody does it. Code scanner reads your actual code. API agent documents endpoints. Example agent writes samples. Changelog agent tracks commits. Tutorial agent creates guides based on what people ask about.
 
