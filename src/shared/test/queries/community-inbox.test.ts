@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
 import * as inboxQueries from "../../src/db/queries/community/inbox";
+import { isChannelUnread } from "../../src/db/queries/community/inbox";
 
 // These tests pin the shape of the public API; SQL behavior is covered by
 // integration runs against D1. The fact that this file imports cleanly
@@ -8,6 +9,92 @@ import * as inboxQueries from "../../src/db/queries/community/inbox";
 describe("community/inbox exports", () => {
   it("exports listUnreadChannels", () => {
     expect(typeof inboxQueries.listUnreadChannels).toBe("function");
+  });
+  it("exports isChannelUnread", () => {
+    expect(typeof inboxQueries.isChannelUnread).toBe("function");
+  });
+});
+
+describe("isChannelUnread — two-branch predicate", () => {
+  const j = "2026-07-06T00:00:00.000Z"; // joinedAt
+  const before = "2026-07-05T00:00:00.000Z"; // before join
+  const after = "2026-07-07T00:00:00.000Z"; // after join
+
+  it("archived → false", () => {
+    expect(
+      isChannelUnread({
+        archived: true,
+        lastMessageAt: after,
+        lastReadAt: null,
+        joinedAt: j,
+      }),
+    ).toBe(false);
+  });
+
+  it("no lastMessageAt → false", () => {
+    expect(
+      isChannelUnread({
+        archived: false,
+        lastMessageAt: null,
+        lastReadAt: null,
+        joinedAt: j,
+      }),
+    ).toBe(false);
+  });
+
+  it("has read-state, lastMessageAt > lastReadAt → true", () => {
+    expect(
+      isChannelUnread({
+        archived: false,
+        lastMessageAt: after,
+        lastReadAt: j,
+        joinedAt: j,
+      }),
+    ).toBe(true);
+  });
+
+  it("has read-state, lastMessageAt === lastReadAt → false (author's own send)", () => {
+    expect(
+      isChannelUnread({
+        archived: false,
+        lastMessageAt: j,
+        lastReadAt: j,
+        joinedAt: j,
+      }),
+    ).toBe(false);
+  });
+
+  it("no read-state, lastMessageAt > joinedAt → true (unread since join)", () => {
+    expect(
+      isChannelUnread({
+        archived: false,
+        lastMessageAt: after,
+        lastReadAt: null,
+        joinedAt: j,
+      }),
+    ).toBe(true);
+  });
+
+  it("no read-state, lastMessageAt < joinedAt → false (message pre-dates join)", () => {
+    expect(
+      isChannelUnread({
+        archived: false,
+        lastMessageAt: before,
+        lastReadAt: null,
+        joinedAt: j,
+      }),
+    ).toBe(false);
+  });
+
+  it("no read-state, lastMessageAt === joinedAt → false (equal timestamps, matches > semantics)", () => {
+    expect(
+      isChannelUnread({
+        archived: false,
+        lastMessageAt: j,
+        lastReadAt: null,
+        joinedAt: j,
+      }),
+    ).toBe(false);
   });
 });
 
@@ -37,6 +124,8 @@ describe("listUnreadChannels — author read-watermark behaviour", () => {
     return chain;
   }
 
+  const j = "2026-07-06T00:00:00.000Z"; // joinedAt used by all fixtures
+
   it("after author sends in channel A, listUnreadChannels(author) excludes A (lastMessageAt === lastReadAt)", async () => {
     // Post-createMessage state: channel.lastMessageAt and readState.lastReadAt
     // are the same string — the timestamp alignment invariant from #1.
@@ -50,6 +139,7 @@ describe("listUnreadChannels — author read-watermark behaviour", () => {
         lastMessageAt: ts,
         lastReadAt: ts, // author's watermark advanced to this exact message
         archived: false,
+        joinedAt: j,
       },
     ]);
     const result = await inboxQueries.listUnreadChannels(db, "u_author");
@@ -72,6 +162,7 @@ describe("listUnreadChannels — author read-watermark behaviour", () => {
         lastMessageAt: t2,
         lastReadAt: t1,
         archived: false,
+        joinedAt: j,
       },
     ]);
     const result = await inboxQueries.listUnreadChannels(db, "u_author");
@@ -91,30 +182,50 @@ describe("listUnreadChannels — author read-watermark behaviour", () => {
         lastMessageAt: "2026-07-06T00:00:00.000Z",
         lastReadAt: null,
         archived: true,
+        joinedAt: j,
       },
     ]);
     const result = await inboxQueries.listUnreadChannels(db, "u_1");
     expect(result).toEqual([]);
   });
 
-  it("channels with no read-state row and a lastMessageAt surface as unread", async () => {
-    // Pre-fix behaviour path: a channel the user has never opened. The
-    // author-watermark write in createMessage is what keeps a user's OWN sends
-    // out of this bucket — but any channel the user hasn't touched should
-    // still surface here.
+  it("channel the user has never opened surfaces as unread when lastMessageAt > joinedAt", async () => {
+    // No read-state row for this (user, channel). Message posted AFTER the
+    // user joined the server → still unread from their perspective.
     const db = createUnreadRowMock([
       {
         channelId: "ch_new",
         channelName: "brand new",
         serverId: "srv_1",
         serverName: "server 1",
-        lastMessageAt: "2026-07-06T00:00:00.000Z",
+        lastMessageAt: "2026-07-06T00:01:00.000Z",
         lastReadAt: null,
         archived: false,
+        joinedAt: j,
       },
     ]);
     const result = await inboxQueries.listUnreadChannels(db, "u_1");
     expect(result).toHaveLength(1);
     expect(result[0]!.channelId).toBe("ch_new");
+  });
+
+  it("channel with messages predating the user's join does NOT surface as unread", async () => {
+    // The bug fix: a user who joined a server with pre-existing history
+    // shouldn't see every old channel as unread. lastReadAt is null (never
+    // opened) but lastMessageAt < joinedAt.
+    const db = createUnreadRowMock([
+      {
+        channelId: "ch_old",
+        channelName: "old history",
+        serverId: "srv_1",
+        serverName: "server 1",
+        lastMessageAt: "2026-07-05T00:00:00.000Z", // predates joinedAt
+        lastReadAt: null,
+        archived: false,
+        joinedAt: j,
+      },
+    ]);
+    const result = await inboxQueries.listUnreadChannels(db, "u_1");
+    expect(result).toEqual([]);
   });
 });
