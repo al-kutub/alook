@@ -530,6 +530,7 @@ function ChannelView() {
             onTyping={handleTyping}
             replyingTo={replyTo?.authorName}
             onCancelReply={() => setReplyTo(null)}
+            autoFocus={bp !== "mobile"}
           />
         </main>
 
@@ -640,6 +641,7 @@ function ChannelView() {
           onTyping={handleTyping}
           replyingTo={replyTo?.authorName}
           onCancelReply={() => setReplyTo(null)}
+          autoFocus={bp !== "mobile"}
         />
       </main>
 

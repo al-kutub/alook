@@ -90,6 +90,15 @@ export function MessageList({
   // Owners key `<MessageList>` on channelId/dmId, so channel switches
   // remount the component and reset this ref — no explicit reset logic
   // needed here.
+  //
+  // Cold-cache guard (RO watchdog): on a hard reload the browser hasn't
+  // decoded any embedded images yet, so `scrollHeight` when the initial
+  // scroll fires is the pre-image height. Images arrive over the next
+  // few hundred ms and push the target out of view. A ResizeObserver on
+  // the scroll container re-invokes the same action on every subsequent
+  // layout change, until the user scrolls or 3s elapses. Later mounts
+  // (channel switch within session) skip this because the browser image
+  // cache is warm and layout is stable on the first frame.
   useLayoutEffect(() => {
     const el = scrollRef.current
     if (!el) return
@@ -100,18 +109,26 @@ export function MessageList({
     // to the bottom and burns the one-shot gate.
     if (!initialScrollReady) return
 
+    let action: () => void
     if (newDividerBefore) {
       const target = el.querySelector<HTMLElement>(
         `[data-msg-id="${cssEscape(newDividerBefore)}"]`,
       )
       if (target) {
-        target.scrollIntoView({ block: "center", behavior: "smooth" })
-        didInitialScrollRef.current = true
-        return
+        // Instant, not smooth — same reason as the self-send effect
+        // below: smooth animations race the RO re-pins on some engines
+        // and can snap back to the pre-image target.
+        action = () => target.scrollIntoView({ block: "center" })
+      } else {
+        action = () => el.scrollTo({ top: el.scrollHeight })
       }
+    } else {
+      action = () => el.scrollTo({ top: el.scrollHeight })
     }
-    el.scrollTo({ top: el.scrollHeight, behavior: "smooth" })
+    action()
     didInitialScrollRef.current = true
+
+    return watchAsyncGrowth(el, action)
   }, [messages, newDividerBefore, initialScrollReady])
 
   // Rule #3: when the viewer sends a message, snap to the bottom.
@@ -120,6 +137,13 @@ export function MessageList({
   // older rows and leaves the tail id unchanged, so paging up never triggers
   // a jump. Peer sends move the tail but with a different authorId — those
   // stay on the "↓ N" pill path.
+  //
+  // The tail row can keep growing after the initial scrollTo — images
+  // decode, mermaid diagrams render, invite cards resolve — all shove the
+  // composer off the viewport. A ResizeObserver on the tail row re-pins to
+  // the bottom on every size change, regardless of the source. Bails once
+  // the user scrolls away (`wheel` / `touchstart`), so an image loading in
+  // the background never yanks a scrolled-up reader.
   const lastTailIdRef = useRef<string | null>(null)
   useLayoutEffect(() => {
     const el = scrollRef.current
@@ -135,7 +159,14 @@ export function MessageList({
     if (prev === tail.id) return
     if (!viewerUserId) return
     if (tail.authorId !== viewerUserId) return
-    el.scrollTo({ top: el.scrollHeight, behavior: "smooth" })
+    // Instant, not smooth. `behavior: 'smooth'` conflicts with the RO
+    // re-pins below — the browser's ongoing smooth animation and our
+    // subsequent instant scrollTo race, and on some engines the smooth
+    // animation "wins" by continuing to its stored target after the
+    // instant jump lands, snapping the view back up.
+    const action = () => el.scrollTo({ top: el.scrollHeight })
+    action()
+    return watchAsyncGrowth(el, action)
   }, [messages, viewerUserId])
 
   // Live count of messages sitting below the viewport. Recomputed on scroll,
@@ -277,6 +308,71 @@ export function MessageList({
       </div>
     </div>
   )
+}
+
+// Re-invoke `action` whenever the scroll container's own size changes.
+// Serves both initial scroll (images decoding on a cold browser cache
+// arrive after the first scrollTo — target row was still short at that
+// moment) and self-send (composer stays in view when an image the user
+// just attached finishes decoding).
+//
+// Bails when:
+// - the user scrolls (wheel / touchstart — the only reliable "user
+//   intent" signal during async growth; programmatic scroll fires its
+//   own `scroll` events, so scrollTop comparisons can't distinguish).
+// - the watchdog window elapses (3s — long enough for large images and
+//   mermaid renders, short enough that the effect doesn't linger).
+//
+// rAF coalescing: multiple ResizeObserver fires in the same frame
+// dispatch one `action` call. Without this, several images finishing
+// decode in one layout tick would each call `action` on an intermediate
+// scrollHeight before the browser settles on the final value.
+//
+// Returns a cleanup that owners MUST return from their effect.
+const ASYNC_GROWTH_WINDOW_MS = 3000
+function watchAsyncGrowth(el: HTMLElement, action: () => void): () => void {
+  // Observe the scroll container's FIRST child — the content wrapper.
+  // The scroll container itself has a fixed (`flex-1`) box; its size
+  // doesn't change when children grow. The wrapper does grow, and its
+  // border-box growth is what pushes `scrollHeight` up.
+  const content = el.firstElementChild as HTMLElement | null
+  if (!content) return () => {}
+
+  let userIntervened = false
+  const markIntervened = () => { userIntervened = true }
+  el.addEventListener("wheel", markIntervened, { passive: true })
+  el.addEventListener("touchstart", markIntervened, { passive: true })
+
+  // Skip the RO's synchronous initial callback (fired once with the
+  // current size at observe() time) — otherwise we'd re-run `action`
+  // against the pre-growth height and waste a frame.
+  let firstCallback = true
+  let rafId: number | null = null
+  const scheduleAction = () => {
+    if (rafId !== null) return
+    rafId = requestAnimationFrame(() => {
+      rafId = null
+      if (userIntervened) return
+      action()
+    })
+  }
+  const ro = new ResizeObserver(() => {
+    if (firstCallback) { firstCallback = false; return }
+    scheduleAction()
+  })
+  ro.observe(content)
+
+  const timeoutId = window.setTimeout(() => {
+    ro.disconnect()
+  }, ASYNC_GROWTH_WINDOW_MS)
+
+  return () => {
+    el.removeEventListener("wheel", markIntervened)
+    el.removeEventListener("touchstart", markIntervened)
+    if (rafId !== null) cancelAnimationFrame(rafId)
+    window.clearTimeout(timeoutId)
+    ro.disconnect()
+  }
 }
 
 // Escape a message id for safe use inside an attribute selector. Message ids

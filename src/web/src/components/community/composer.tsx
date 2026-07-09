@@ -28,7 +28,7 @@ import {
 // Enter sends, Shift+Enter adds a newline; while the mention popover is open
 // Enter/Tab/Arrow keys drive selection instead. @everyone / @here are virtual
 // candidates in channel + thread contexts (hidden in DM).
-export function Composer({ channel, context, members, onSearchMembers, onSend, onCreateThread, onTyping, replyingTo, onCancelReply }: {
+export function Composer({ channel, context, members, onSearchMembers, onSend, onCreateThread, onTyping, replyingTo, onCancelReply, autoFocus = false }: {
   channel: string
   context: MentionContext
   members: Member[]
@@ -43,6 +43,9 @@ export function Composer({ channel, context, members, onSearchMembers, onSend, o
   // when set, shows a "Replying to X" bar above the input
   replyingTo?: string
   onCancelReply?: () => void
+  // Auto-focus the editor on mount and on channel change. Desktop only —
+  // callers pass `bp !== "mobile"` to avoid unexpected soft-keyboard pop-up.
+  autoFocus?: boolean
 }) {
   const {
     pendingFiles,
@@ -54,7 +57,7 @@ export function Composer({ channel, context, members, onSearchMembers, onSend, o
     handleDragEnter,
     handleDragLeave,
     handleDragOver,
-    handleDrop,
+    handleDrop: handleDropRaw,
   } = useFileAttachments()
   const typingTimer = useRef<NodeJS.Timeout | null>(null)
 
@@ -178,6 +181,22 @@ export function Composer({ channel, context, members, onSearchMembers, onSend, o
     setMentionPopup(EMPTY_MENTION_STATE)
   }
 
+  // Auto-focus on mount + on channel switch. `<Composer>` is not remounted
+  // per channel (only `<MessageList>` is keyed by channelId), so keying this
+  // effect on `channel` is what refocuses when the user navigates channels.
+  useEffect(() => {
+    if (!autoFocus || !editor) return
+    editor.commands.focus("end")
+  }, [autoFocus, editor, channel])
+
+  // Refocus editor after a drop so the user can start typing without
+  // clicking. The drop landed on the composer container — the intent is
+  // clear.
+  const handleDrop = (e: React.DragEvent) => {
+    handleDropRaw(e)
+    editor?.commands.focus()
+  }
+
   return (
     <div
       className="relative px-3 pb-3 pt-0"
@@ -240,14 +259,14 @@ export function Composer({ channel, context, members, onSearchMembers, onSend, o
           <EditorContent editor={editor} className="max-h-40 overflow-y-auto thin-scrollbar text-base chat-input-line-height outline-none" />
         </div>
         {/* Attach button — fixed bottom-left */}
-        <DropdownMenu>
+        <DropdownMenu onOpenChange={(open) => { if (!open) editor?.commands.focus() }}>
           <DropdownMenuTrigger
             render={<button className="absolute left-2 bottom-2 grid size-8 place-items-center rounded-full text-muted-foreground hover:text-foreground aria-expanded:text-foreground" aria-label="Add" />}
           >
             <PlusCircle className="size-5" />
           </DropdownMenuTrigger>
           <DropdownMenuContent side="top" align="start" className="w-44">
-            <DropdownMenuItem onClick={() => fileInputRef.current?.click()}><Upload className="size-4" /> Upload a File</DropdownMenuItem>
+            <DropdownMenuItem onClick={() => { fileInputRef.current?.click(); editor?.commands.focus() }}><Upload className="size-4" /> Upload a File</DropdownMenuItem>
             {context === "channel" && <DropdownMenuItem onClick={onCreateThread}><MessagesSquare className="size-4" /> Create Thread</DropdownMenuItem>}
           </DropdownMenuContent>
         </DropdownMenu>
