@@ -1,4 +1,4 @@
-import { eq, and, inArray, sql } from "drizzle-orm";
+import { eq, and, inArray, lt, sql } from "drizzle-orm";
 import {
   communityReadState,
   communityChannel,
@@ -90,6 +90,18 @@ export function markReadToMessageBuilder(
     );
   }
 
+  // Monotone guard: `setWhere` requires the incoming `lastReadAt` to be
+  // strictly greater than the row's current value. If a stale client PUT
+  // arrives (channel switch → return, remounted `useChannelWatermark`
+  // resets its local `maxSeen` and picks an older mid-viewport row as
+  // its first advance), the UPDATE portion no-ops and the existing row
+  // wins. INSERT (no row yet) is unaffected — you can't regress what
+  // doesn't exist. Sibling pattern to `createMessage`'s author-watermark
+  // upsert, which guards on `lastReadSeq < seq` for the same reason.
+  //
+  // Timestamp comparison is safe: `lastReadAt` is a TEXT ISO-8601 string
+  // (see schema note) and SQLite compares those lexicographically, which
+  // matches temporal order for ISO-8601.
   if (channelId) {
     return db
       .insert(communityReadState)
@@ -107,6 +119,7 @@ export function markReadToMessageBuilder(
           lastReadAt: message.createdAt,
           lastReadMessageId: message.id,
         },
+        setWhere: sql`${communityReadState.lastReadAt} < ${message.createdAt}`,
       });
   }
 
@@ -126,6 +139,7 @@ export function markReadToMessageBuilder(
         lastReadAt: message.createdAt,
         lastReadMessageId: message.id,
       },
+      setWhere: sql`${communityReadState.lastReadAt} < ${message.createdAt}`,
     });
 }
 
@@ -231,11 +245,22 @@ export async function markAllServerChannelsRead(
   // fires on user click "Mark all read", not in a hot loop). Alternative
   // would be a `CASE WHEN ...` bulk UPDATE, which is uglier and only wins
   // above ~50 channels.
+  //
+  // Monotone guard mirrors `markReadToMessageBuilder`: only advance rows
+  // whose current `lastReadAt` is strictly older than the channel's
+  // latest. If a stale row happens to already sit ahead of the current
+  // latest (rare — usually only under concurrent writes or right after
+  // a message delete), leave it alone rather than regressing.
   for (const u of toUpdate) {
     await db
       .update(communityReadState)
       .set({ lastReadAt: u.createdAt, lastReadMessageId: u.msgId })
-      .where(eq(communityReadState.id, u.id));
+      .where(
+        and(
+          eq(communityReadState.id, u.id),
+          lt(communityReadState.lastReadAt, u.createdAt)
+        )
+      );
   }
 
   if (toInsert.length > 0) {

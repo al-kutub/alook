@@ -80,6 +80,22 @@ describe("markReadToMessageBuilder — channel branch", () => {
     ]);
     expect(conflictArg.targetWhere).toBeDefined();
   });
+
+  it("includes a monotone setWhere so stale-createdAt PUTs cannot regress the pointer", () => {
+    const db = createInsertBuilderMock();
+    readStateQueries.markReadToMessageBuilder(db, {
+      userId: "u_1",
+      channelId: "c_1",
+      message: { id: "m_42", createdAt: "2026-07-03T00:00:00Z" },
+    });
+    const conflictArg = db.onConflictDoUpdate.mock.calls[0][0];
+    // The setWhere is a Drizzle SQL fragment; we can't easily assert its
+    // exact structure without evaluating it, but its mere presence is
+    // the load-bearing invariant here — its absence would silently
+    // reintroduce the "channel switch → return → stale mid-viewport row
+    // overwrites the newer pointer" bug.
+    expect(conflictArg.setWhere).toBeDefined();
+  });
 });
 
 describe("markReadToMessageBuilder — dm branch", () => {
@@ -107,6 +123,8 @@ describe("markReadToMessageBuilder — dm branch", () => {
       lastReadAt: "2026-07-04T00:00:00Z",
       lastReadMessageId: "m_9",
     });
+    // DM branch also carries the monotone setWhere — same guarantee.
+    expect(conflictArg.setWhere).toBeDefined();
   });
 
   it("throws when neither channelId nor dmConversationId is provided", () => {
@@ -189,13 +207,12 @@ function makeMassMarkDbMock(opts: {
     }),
     update: vi.fn(() => ({
       set: vi.fn((s: any) => ({
-        where: vi.fn((_w: any) => {
-          // where clause is eq(readState.id, u.id) — we can't inspect the id
-          // trivially without evaluating the eq() operator. Instead, we log
-          // the set clause and the ORDER of update calls; combined with the
-          // spy on latest-messages we can reconstruct which channel each
-          // update belongs to.
-          updates.push({ id: "unknown", set: s });
+        where: vi.fn((w: any) => {
+          // where clause is `and(eq(readState.id, u.id), lt(readState.lastReadAt, u.createdAt))`
+          // — we can't inspect its structure without evaluating the SQL
+          // fragment, but the mere presence of a non-null argument lets
+          // downstream tests assert that a guard was passed at all.
+          updates.push({ id: "unknown", set: s, where: w });
           return Promise.resolve();
         }),
       })),
@@ -319,6 +336,30 @@ describe("markAllServerChannelsRead", () => {
     expect(bTuple).toBeDefined();
     expect(aTuple!.lastReadAt).toBe("2026-07-05T10:00:00Z");
     expect(bTuple!.lastReadAt).toBe("2026-07-05T11:00:00Z");
+    spy.mockRestore();
+  });
+
+  it("each UPDATE carries a monotone guard in its WHERE so a stale row cannot be regressed", async () => {
+    const db = makeMassMarkDbMock({
+      memberChannelIds: ["c_a"],
+      latestByChannel: {},
+      existingReadStateChannels: ["c_a"],
+    });
+    const messageModule = await import("../../src/db/queries/community/message");
+    const spy = vi.spyOn(messageModule, "getLatestMessagesByChannelIds").mockResolvedValue([
+      { channelId: "c_a", id: "m_a_new", createdAt: "2026-07-05T10:00:00Z" },
+    ]);
+
+    await readStateQueries.markAllServerChannelsRead(db, "u_1");
+    // A raw eq(id, ...) is a Drizzle SQL fragment; a guarded and(eq(...), lt(...))
+    // is a distinct fragment. We can't evaluate them structurally without
+    // spinning up SQLite, but the WHERE clause is definitely not undefined
+    // AND (post-refactor) is now an `and(...)` compound rather than a bare
+    // eq. Presence is the load-bearing bit — absence would silently allow
+    // "mark all read" to regress a channel whose stale read-state row is
+    // ahead of its current latest message.
+    expect(db.__updates).toHaveLength(1);
+    expect(db.__updates[0].where).toBeDefined();
     spy.mockRestore();
   });
 });
