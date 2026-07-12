@@ -330,6 +330,22 @@ async function registerUser(baseURL, email) {
 }
 
 async function createWorkspace(baseURL, cookie) {
+  // POST /api/workspaces doesn't enforce a unique slug per user, so posting
+  // unconditionally on every boot (this runs on every container restart —
+  // register()'s own sign-up/sign-in fallback already assumes a boot can
+  // re-run against an existing account) accumulated one throwaway "Personal"
+  // workspace per boot, each watched by the daemon. List first and reuse
+  // whatever already exists; only create when the account truly has none.
+  const listRes = await fetch(`${baseURL}/api/workspaces`, { headers: { Cookie: cookie, Origin: baseURL } });
+  if (listRes.ok) {
+    const workspaces = await listRes.json();
+    const existing = workspaces.find((w) => w.slug === "personal") || workspaces[0];
+    if (existing) {
+      log("register", `workspace "${existing.name}" ready (${existing.id})`);
+      return existing;
+    }
+  }
+
   const res = await fetch(`${baseURL}/api/workspaces`, {
     method: "POST",
     headers: { "Content-Type": "application/json", Origin: baseURL, Cookie: cookie },
@@ -339,11 +355,6 @@ async function createWorkspace(baseURL, cookie) {
     const ws = await res.json();
     log("register", `workspace "${ws.name}" ready (${ws.id})`);
     return ws;
-  }
-  const listRes = await fetch(`${baseURL}/api/workspaces`, { headers: { Cookie: cookie, Origin: baseURL } });
-  if (listRes.ok) {
-    const workspaces = await listRes.json();
-    if (workspaces.length > 0) return workspaces[0];
   }
   throw new Error("failed to create or list workspaces");
 }
@@ -402,7 +413,22 @@ function isPidAlive(pid) {
 
 async function stopAutoStartedDaemon() {
   const pidPath = join(CLI_DATA_DIR, "daemon.pid");
+
+  // activate.ts's detached spawn() returns (and our runCli() promise
+  // resolves) well before the child's own `bun` cold-start reaches
+  // acquireDaemonPid() and writes the pidfile — a naive existsSync() here
+  // races the detached child and silently no-ops most of the time (it did
+  // during testing: this function returned instantly with nothing to kill,
+  // and the container's own foreground daemon spawn happened to win the
+  // pidfile lock by luck, not because this function stopped anything). Poll
+  // for the pidfile to actually appear before concluding there's nothing to
+  // clean up.
+  const appearDeadline = Date.now() + 8000;
+  while (!existsSync(pidPath) && Date.now() < appearDeadline) {
+    await new Promise((r) => setTimeout(r, 100));
+  }
   if (!existsSync(pidPath)) return;
+
   const pid = Number.parseInt(readFileSync(pidPath, "utf-8").trim(), 10);
   if (!Number.isFinite(pid) || !isPidAlive(pid)) {
     rmSync(pidPath, { force: true });
