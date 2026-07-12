@@ -105,6 +105,26 @@ function ensureDevVars() {
     writeFileSync(webSecretsPath, contents, { mode: 0o600 });
     log("boot", `generated ${webSecretsPath}`);
   }
+
+  // BETTER_AUTH_TRUSTED_ORIGINS: recomputed and rewritten every boot (not
+  // just on first generation) since Railway's public domain is only known
+  // at runtime and can change across redeploys. Without this, sign-in from
+  // a real browser hitting the public domain 403s with "Invalid origin" —
+  // better-auth only trusts baseURL's own origin by default, which is the
+  // internal BASE_URL this script itself uses, not whatever a browser sees.
+  {
+    const origins = [BASE_URL];
+    if (process.env.RAILWAY_PUBLIC_DOMAIN) {
+      origins.push(`https://${process.env.RAILWAY_PUBLIC_DOMAIN}`);
+    }
+    let contents = readFileSync(webSecretsPath, "utf-8");
+    const line = `BETTER_AUTH_TRUSTED_ORIGINS=${origins.join(",")}`;
+    contents = /^BETTER_AUTH_TRUSTED_ORIGINS=.*$/m.test(contents)
+      ? contents.replace(/^BETTER_AUTH_TRUSTED_ORIGINS=.*$/m, line)
+      : `${contents.trimEnd()}\n${line}\n`;
+    writeFileSync(webSecretsPath, contents, { mode: 0o600 });
+  }
+
   writeFileSync(join(WEB_DIR, ".dev.vars"), readFileSync(webSecretsPath));
 
   const emailSecretsPath = join(SECRETS_DIR, "email-worker.dev.vars");

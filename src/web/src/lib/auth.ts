@@ -39,8 +39,21 @@ export function createAuth(env: Env) {
     return allowed.includes(clientId)
   }
 
+  const trustedOrigins = (env.BETTER_AUTH_TRUSTED_ORIGINS || "")
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean)
+
   return betterAuth({
     baseURL: env.BETTER_AUTH_URL,
+    // better-auth only trusts baseURL's own origin by default. Self-hosted
+    // boxes (this one included) are reached via a Railway public domain
+    // that differs from the internal baseURL used for the boot script's own
+    // registration calls — without this, sign-in from a real browser 403s
+    // with "Invalid origin" even though the internal boot-time sign-up
+    // succeeds fine. See scripts/docker-entrypoint.mjs's ensureDevVars()
+    // for how BETTER_AUTH_TRUSTED_ORIGINS gets populated.
+    trustedOrigins,
     database: env.DB,
     secret: env.BETTER_AUTH_SECRET,
     // Signed session-data cookie lets getSession() validate without hitting D1.

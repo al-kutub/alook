@@ -17,6 +17,7 @@ declare namespace Cloudflare {
     GOOGLE_CLIENT_SECRET: string
     BETTER_AUTH_SECRET: string
     BETTER_AUTH_URL: string
+    BETTER_AUTH_TRUSTED_ORIGINS?: string
     ENCRYPTION_KEY: string
     CACHE_KV: KVNamespace
     AUTH_OTP_RATE_LIMIT_MAX?: string
