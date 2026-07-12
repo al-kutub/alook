@@ -97,6 +97,7 @@ async function doEnqueueBotWakes(env: Env, opts: EnqueueBotWakesOpts): Promise<v
     channelId,
     dmConversationId,
     newSeq: messageRow.seq,
+    messageId: messageRow.id,
   })
   if (candidates.length === 0) return
 

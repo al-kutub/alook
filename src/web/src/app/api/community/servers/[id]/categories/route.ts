@@ -5,6 +5,7 @@ import { getDb } from "@/lib/db"
 import {
   queries,
   canManageServer,
+  isUniqueConstraintError,
   MAX_CATEGORY_NAME_LENGTH,
   WS_EVENTS,
 } from "@alook/shared"
@@ -40,12 +41,20 @@ export const POST = withAuth(async (req: NextRequest, ctx) => {
     return writeError("only admins can create private categories", 403)
   }
 
-  const row = await queries.communityCategory.createCategory(db, {
-    serverId,
-    name,
-    private: body.private,
-    creatorId: ctx.userId,
-  })
+  let row
+  try {
+    row = await queries.communityCategory.createCategory(db, {
+      serverId,
+      name,
+      private: body.private,
+      creatorId: ctx.userId,
+    })
+  } catch (err) {
+    if (isUniqueConstraintError(err)) {
+      return writeError("a category with this name already exists", 409)
+    }
+    throw err
+  }
 
   const category = {
     id: row.id,

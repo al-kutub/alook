@@ -5,6 +5,7 @@ import { getDb } from "@/lib/db"
 import {
   queries,
   canManageServer,
+  isUniqueConstraintError,
   MAX_CATEGORY_NAME_LENGTH,
   WS_EVENTS,
 } from "@alook/shared"
@@ -56,7 +57,15 @@ export const PATCH = withAuth(async (req: NextRequest, ctx) => {
     return writeError("no changes provided", 400)
   }
 
-  const updated = await queries.communityCategory.updateCategory(db, categoryId, changes)
+  let updated
+  try {
+    updated = await queries.communityCategory.updateCategory(db, categoryId, changes)
+  } catch (err) {
+    if (isUniqueConstraintError(err)) {
+      return writeError("a category with this name already exists", 409)
+    }
+    throw err
+  }
   if (!updated) return writeError("category not found", 404)
 
   await fanOutToServerMembers(serverId, {

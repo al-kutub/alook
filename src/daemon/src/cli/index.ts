@@ -14,7 +14,7 @@
  * There is no meaningful exit code — the process exits 0 and the JSON envelope is
  * the sole result channel.
  */
-import { Command, CommanderError } from "commander";
+import { Argument, Command, CommanderError } from "commander";
 import type { ServerApi, Cursor, Message } from "../server/contract.js";
 import { proxyServerApiFromEnv } from "./proxyServerApi.js";
 import { daemonStart, daemonStop, daemonList } from "./daemonStart.js";
@@ -141,6 +141,42 @@ async function cmdServerJoin(opts: Record<string, unknown>): Promise<unknown> {
   return { server };
 }
 
+async function cmdChannelList(opts: Record<string, unknown>): Promise<unknown> {
+  const api = getApi();
+  const agent = agentId(opts);
+  const server = opts.server as string;
+  if (!server) throw new CliError("channel list: --server <id-or-name> is required");
+  const { channels } = await api.listChannels({ agentId: agent, server });
+  return { channels };
+}
+
+async function cmdChannelHistory(opts: Record<string, unknown>): Promise<unknown> {
+  const api = getApi();
+  const agent = agentId(opts);
+  const channel = opts.channel as string;
+  if (!channel) throw new CliError("channel history: --channel <ref> is required");
+  const toSeq = (v: unknown): number | undefined => (v === undefined ? undefined : Number(v));
+  const { items, hasMore, latestSeq } = await api.read({
+    agentId: agent,
+    channel,
+    before: toSeq(opts.before),
+    after: toSeq(opts.after),
+    around: toSeq(opts.around),
+    limit: toSeq(opts.limit),
+  });
+  return { items, hasMore, ...(latestSeq !== undefined ? { latestSeq } : {}) };
+}
+
+async function cmdChannelSubscribe(opts: Record<string, unknown>): Promise<unknown> {
+  const api = getApi();
+  const agent = agentId(opts);
+  const channel = opts.channel as string;
+  if (!channel) throw new CliError("channel subscribe: --channel <ref> is required");
+  const level = opts.level as "all" | "mentions";
+  const result = await api.subscribeChannel({ agentId: agent, channel, level });
+  return result;
+}
+
 /* ------------------------------------------------------------------ */
 /* Program definition                                                  */
 /* ------------------------------------------------------------------ */
@@ -228,6 +264,53 @@ function buildProgram(): Command {
       const localOpts = this.opts();
       const globalOpts = program.opts();
       const result = await cmdServerJoin({ ...globalOpts, ...localOpts });
+      printEnvelope({ success: result });
+    });
+
+  const channel = program.command("channel").description("channel operations").exitOverride();
+  channel.configureOutput({ writeOut: () => {}, writeErr: () => {} });
+
+  channel
+    .command("list")
+    .description("list top-level channels visible to this agent in one server")
+    .option("--server <id-or-name>", "server id or name (from `server list`)")
+    .exitOverride()
+    .configureOutput({ writeOut: () => {}, writeErr: () => {} })
+    .action(async function (this: Command) {
+      const localOpts = this.opts();
+      const globalOpts = program.opts();
+      const result = await cmdChannelList({ ...globalOpts, ...localOpts });
+      printEnvelope({ success: result });
+    });
+
+  channel
+    .command("history")
+    .description("fetch a page of messages from a channel, thread, or DM")
+    .option("--channel <ref>", "channel/thread/DM ref (path-style)")
+    .option("--before <seq>", "messages before this seq")
+    .option("--after <seq>", "messages after this seq")
+    .option("--around <seq>", "messages around this seq")
+    .option("--limit <n>", "max messages to return")
+    .exitOverride()
+    .configureOutput({ writeOut: () => {}, writeErr: () => {} })
+    .action(async function (this: Command) {
+      const localOpts = this.opts();
+      const globalOpts = program.opts();
+      const result = await cmdChannelHistory({ ...globalOpts, ...localOpts });
+      printEnvelope({ success: result });
+    });
+
+  channel
+    .command("subscribe")
+    .description("set this agent's own wake-notification level for a channel or thread")
+    .addArgument(new Argument("<level>", "all|mentions").choices(["all", "mentions"]))
+    .option("--channel <ref>", "channel/thread ref (path-style; DMs are not supported)")
+    .exitOverride()
+    .configureOutput({ writeOut: () => {}, writeErr: () => {} })
+    .action(async function (this: Command, level: string) {
+      const localOpts = this.opts();
+      const globalOpts = program.opts();
+      const result = await cmdChannelSubscribe({ ...globalOpts, ...localOpts, level });
       printEnvelope({ success: result });
     });
 

@@ -39,7 +39,10 @@ import type {
   ReadRequest,
   ResolveRequest,
   ListChannelsRequest,
+  ChannelListItem,
   ServerMember,
+  SubscribeChannelRequest,
+  SubscribeChannelResponse,
   Page,
   AdminApi,
   Agent,
@@ -48,7 +51,8 @@ import type {
   UserId,
   EnrollmentApi,
 } from "./contract.js";
-import { DM_SERVER, parseRef, formatSeq } from "./contract.js";
+import { DM_SERVER, parseRef, formatRef, formatSeq } from "./contract.js";
+import type { ChannelType } from "@alook/shared/utils/community-roles";
 import * as crypto from "crypto";
 import type { RuntimeConfig } from "../runtimeConfig.js";
 import { makeRuntimeConfig } from "../runtimeConfig.js";
@@ -95,7 +99,7 @@ export interface MockServerPersistState {
 
 export class MockServer implements ServerApi, AdminApi, EnrollmentApi {
   private readonly servers = new Map<string, Server>();
-  private readonly channels = new Map<string, Channel>();
+  private readonly channels = new Map<string, Channel & { type: ChannelType }>();
   /** serverId → set of agentIds participating. */
   private readonly membership = new Map<string, Set<string>>();
   /** agentId → global handle ("@name#0042") for sender stamping. */
@@ -117,6 +121,13 @@ export class MockServer implements ServerApi, AdminApi, EnrollmentApi {
   private readonly seqCounter = new Map<ChannelRef, number>();
   /** agentId → (channelRef → last acked seq). */
   private readonly readMarks = new Map<string, Map<ChannelRef, Seq>>();
+  /**
+   * agentId → (channelRef → subscribed wake-notification level), as set by
+   * `subscribeChannel`. CLI-contract-shape storage only — MockServer never
+   * simulates wake suppression (see class doc comment); nothing here reads
+   * this map to decide anything.
+   */
+  private readonly subscriptions = new Map<AgentId, Map<ChannelRef, "all" | "mentions">>();
   private seed?: MockServerSeed;
 
   /** Valid machine keys this server issued on enrollment (tier-1). */
@@ -231,6 +242,7 @@ export class MockServer implements ServerApi, AdminApi, EnrollmentApi {
           name: c.name,
           kind: c.kind ?? "channel",
           description: c.description,
+          type: "text",
         });
       }
     }
@@ -359,12 +371,25 @@ export class MockServer implements ServerApi, AdminApi, EnrollmentApi {
     return { servers };
   }
 
-  async listChannels(req: ListChannelsRequest): Promise<{ channels: Channel[] }> {
+  /**
+   * `{ ref, name, type }` items (plan §Decisions #12) — `req.server` accepts
+   * either a server id or its display name (via `resolveServerId`, the same
+   * helper `listMembers`/`assertChannelExists` already use), matching the
+   * production route's id-or-name resolution.
+   */
+  async listChannels(req: ListChannelsRequest): Promise<{ channels: ChannelListItem[] }> {
     const myServers = new Set((await this.listServers({ agentId: req.agentId })).servers.map((s) => s.id));
+    const resolvedServerId = req.server ? this.resolveServerId(req.server) ?? req.server : undefined;
     const channels = [...this.channels.values()].filter(
-      (c) => myServers.has(c.serverId) && (!req.server || c.serverId === req.server),
+      (c) => myServers.has(c.serverId) && (!resolvedServerId || c.serverId === resolvedServerId),
     );
-    return { channels };
+    return {
+      channels: channels.map((c) => ({
+        ref: formatRef({ server: this.servers.get(c.serverId)?.name ?? c.serverId, channel: c.name }),
+        name: c.name,
+        type: c.type,
+      })),
+    };
   }
 
   async inboxPull(req: InboxPullRequest): Promise<InboxPullResponse> {
@@ -502,6 +527,25 @@ export class MockServer implements ServerApi, AdminApi, EnrollmentApi {
     return { server };
   }
 
+  /**
+   * Store this agent's wake-notification level for one channel/thread ref —
+   * CLI-contract-shape only. `MockServer` never models the wake pipeline
+   * (see class doc comment), so this never suppresses anything; it exists
+   * purely so the CLI/mock round-trip exercises the real request/response
+   * shape. DMs are rejected, mirroring the production route.
+   */
+  async subscribeChannel(req: SubscribeChannelRequest): Promise<SubscribeChannelResponse> {
+    const p = parseRef(req.channel);
+    if (p.server === DM_SERVER) throw apiError("BAD_REQUEST", "channel subscribe does not support DMs");
+    let byChannel = this.subscriptions.get(req.agentId);
+    if (!byChannel) {
+      byChannel = new Map();
+      this.subscriptions.set(req.agentId, byChannel);
+    }
+    byChannel.set(req.channel, req.level);
+    return { channel: req.channel, level: req.level };
+  }
+
   /* ----- AdminApi (provisioning / test surface) ----- */
 
   private adminCounter = 0;
@@ -556,10 +600,28 @@ export class MockServer implements ServerApi, AdminApi, EnrollmentApi {
     (this.membership.get(serverId) ?? this.membership.set(serverId, new Set()).get(serverId)!).add(req.agentId);
   }
 
-  async createChannel(req: { server: ServerId; name: string; kind?: ChannelKind }): Promise<{ channel: Channel }> {
+  async createChannel(req: {
+    server: ServerId;
+    name: string;
+    kind?: ChannelKind;
+    /** Defaults to `"text"`. A test-only knob to seed a `"forum"` channel — see `listChannels`. */
+    type?: ChannelType;
+  }): Promise<{ channel: Channel }> {
     const serverId = this.resolveServerId(req.server) ?? req.server;
     if (!this.servers.has(serverId)) throw apiError("NOT_FOUND", `server ${req.server} not found`);
-    const channel: Channel = { id: this.mkId("ch"), serverId, name: req.name, kind: req.kind ?? "channel" };
+    const nameTaken = [...this.channels.values()].some(
+      (c) => c.serverId === serverId && c.name === req.name
+    );
+    if (nameTaken) {
+      throw apiError("ALREADY_EXISTS", `channel "${req.name}" already exists in this server`);
+    }
+    const channel: Channel & { type: ChannelType } = {
+      id: this.mkId("ch"),
+      serverId,
+      name: req.name,
+      kind: req.kind ?? "channel",
+      type: req.type ?? "text",
+    };
     this.channels.set(channel.id, channel);
     return { channel };
   }

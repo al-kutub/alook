@@ -1,15 +1,23 @@
 import { NextResponse, type NextRequest } from "next/server"
-import { queries, CommunityAgentListChannelsRequestSchema } from "@alook/shared"
+import { queries, CommunityAgentListChannelsRequestSchema, formatRef } from "@alook/shared"
+import type { ChannelListItem } from "@alook/shared"
 import { getDb } from "@/lib/db"
 import { withAgentRunnerAuth } from "@/lib/middleware/community-agent-runner-auth"
 
 /**
- * POST /api/community/agent/listChannels — plan §7. Body `{ server? }`
- * (`server` is a bare `ServerId`, not a name — omit to list across every
- * server the bot is in). Top-level channels only (`listChannelsForMember`
- * filters `parentChannelId IS NULL`, mirroring `listServerChannels`) — same
+ * POST /api/community/agent/listChannels — `alook channel list`. Body
+ * `{ server? }` — `server` accepts either the server's id or its display
+ * name (resolved via `resolveServerByNameForMember`, same helper
+ * `listMembers` uses), or omit to list across every server the bot is in.
+ * Top-level channels only (`listChannelsForMember` filters
+ * `parentChannelId IS NULL`, mirroring `listServerChannels`) — same
  * visibility rule a human server-channels route uses, no extra
- * private-category filter on read (decided plan §7 v3).
+ * private-category filter on read.
+ *
+ * Response items are `{ ref, name, type }` (plan §Decisions #12) — `ref` is
+ * directly reusable as `--channel`/`--target` on every other command, and
+ * `type` (`"text"`/`"forum"`) comes straight off `listChannelsForMember`'s
+ * row.
  */
 export const POST = withAgentRunnerAuth(async (req: NextRequest, ctx) => {
   const db = getDb(ctx.env.DB)
@@ -26,20 +34,37 @@ export const POST = withAgentRunnerAuth(async (req: NextRequest, ctx) => {
     return NextResponse.json({ error: "invalid payload", details: parsed.error.flatten() }, { status: 400 })
   }
 
-  const serverIds = parsed.data.server
-    ? [parsed.data.server]
-    : (await queries.communityServer.listUserServers(db, ctx.botUserId)).map((s) => s.id)
+  let servers: Array<{ id: string; name: string }>
+  if (parsed.data.server) {
+    servers = await queries.communityServer.resolveServerByNameForMember(db, ctx.botUserId, parsed.data.server)
+    if (servers.length === 0) {
+      return NextResponse.json({ error: `server not found: ${parsed.data.server}` }, { status: 404 })
+    }
+    if (servers.length > 1) {
+      const candidates = servers.map((s) => `${s.id} ("${s.name}")`).join(", ")
+      return NextResponse.json(
+        { error: `ambiguous server name "${parsed.data.server}" — matches ${servers.length} servers: ${candidates}` },
+        { status: 400 },
+      )
+    }
+  } else {
+    servers = await queries.communityServer.listUserServers(db, ctx.botUserId)
+  }
 
   const channelsByServer = await Promise.all(
-    serverIds.map((serverId) => queries.communityChannel.listChannelsForMember(db, serverId, ctx.botUserId))
+    servers.map(async (s) => ({
+      server: s,
+      rows: await queries.communityChannel.listChannelsForMember(db, s.id, ctx.botUserId),
+    }))
   )
 
-  const channels = channelsByServer.flat().map((c) => ({
-    id: c.id,
-    serverId: c.serverId,
-    name: c.name,
-    kind: "channel" as const,
-  }))
+  const channels: ChannelListItem[] = channelsByServer.flatMap(({ server, rows }) =>
+    rows.map((c) => ({
+      ref: formatRef({ server: server.name, channel: c.name }),
+      name: c.name,
+      type: c.type,
+    }))
+  )
 
   return NextResponse.json({ channels })
 })

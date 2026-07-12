@@ -31,6 +31,8 @@ import {
   communityFriendship,
   communityUserProfile,
   communityReadState,
+  communityNotificationSetting,
+  communityMention,
 } from "../../community-schema";
 import { communityMachine } from "../../community-machine-schema";
 import type { Database } from "../../index";
@@ -207,6 +209,19 @@ export async function getBotBinding(
  * already caught up (e.g. it just authored `newSeq` itself, or acked
  * out-of-band) is filtered out here so the producer never enqueues a wasted
  * wake.
+ *
+ * Channel-scoped calls (`opts.channelId` set) additionally apply the
+ * `channel subscribe` notification-level filter (daemon-channel-cli plan
+ * §Design overview): a candidate whose OWN channel-level
+ * `community_notification_setting` row is `"mentions"` is dropped UNLESS
+ * `opts.messageId` mentions them (`community_mention` row with
+ * `kind:"mention"` — a `kind:"reply"` row does NOT count). No row (or an
+ * explicit `"all"` row) always wakes, matching today's behavior exactly.
+ * DM-scoped calls skip this block entirely — there is no DM equivalent of
+ * `channelId` on that table, and `channel subscribe` never writes one. Both
+ * follow-up queries run only over the already-narrow candidate id list, in
+ * JS (not a SQL join/EXISTS) per decision #10 — simpler to read/test at the
+ * cost of two tiny extra indexed queries per message.
  */
 export async function findWakeCandidates(
   db: Database,
@@ -215,6 +230,7 @@ export async function findWakeCandidates(
     channelId?: string;
     dmConversationId?: string;
     newSeq: number;
+    messageId: string;
   }
 ): Promise<Array<{ botUserId: string; name: string | null; machineId: string; runtime: string }>> {
   if (opts.recipients.length === 0) return [];
@@ -241,9 +257,42 @@ export async function findWakeCandidates(
       )
     );
 
-  return rows
+  const candidates = rows
     .filter((r) => (r.lastReadSeq ?? 0) < opts.newSeq)
     .map((r) => ({ botUserId: r.botUserId, name: r.name, machineId: r.machineId, runtime: r.runtime }));
+
+  if (!opts.channelId || candidates.length === 0) return candidates;
+
+  const candidateIds = candidates.map((c) => c.botUserId);
+  const levelRows = await db
+    .select({
+      userId: communityNotificationSetting.userId,
+      level: communityNotificationSetting.level,
+    })
+    .from(communityNotificationSetting)
+    .where(
+      and(
+        eq(communityNotificationSetting.channelId, opts.channelId),
+        inArray(communityNotificationSetting.userId, candidateIds)
+      )
+    );
+  const levelByUserId = new Map(levelRows.map((r) => [r.userId, r.level]));
+
+  const mentionRows = await db
+    .select({ userId: communityMention.userId })
+    .from(communityMention)
+    .where(
+      and(
+        eq(communityMention.messageId, opts.messageId),
+        eq(communityMention.kind, "mention"),
+        inArray(communityMention.userId, candidateIds)
+      )
+    );
+  const mentionedUserIds = new Set(mentionRows.map((r) => r.userId));
+
+  return candidates.filter(
+    (c) => (levelByUserId.get(c.botUserId) ?? "all") !== "mentions" || mentionedUserIds.has(c.botUserId)
+  );
 }
 
 /**

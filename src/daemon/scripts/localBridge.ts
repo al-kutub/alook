@@ -36,6 +36,7 @@ const API_METHODS = new Set([
   "listChannels",
   "listMembers",
   "joinServer",
+  "subscribeChannel",
 ]);
 
 export interface BridgeDeps {

@@ -5,7 +5,14 @@ import type { Presence } from "./_types"
 
 const STATUS_COLOR: Record<Presence, string> = {
   online: "var(--status-online)",
-  offline: "var(--status-offline)",
+  // Not the reserved `--status-offline` red — DESIGN.md reserves that token
+  // for the workspace agent-runtime disconnect badge (an alert-worthy
+  // signal). A friend/bot simply being offline is a neutral state, so it
+  // gets the same de-emphasized `muted-foreground` treatment the community
+  // bot/machine lists use for their own offline dots — solid, not
+  // translucent, so it stays a crisp dot rather than fading into whatever
+  // sits behind the avatar.
+  offline: "var(--muted-foreground)",
 }
 
 function isUrl(s: string | undefined | null): boolean {
@@ -65,10 +72,10 @@ export function Avatar({ label, src, size = 40, dim = false, presence, ringColor
           {safeLabel.charAt(0).toUpperCase()}
         </AvatarFallback>
       )}
-      {presence === "online" && (
+      {presence && (
         <AvatarBadge
           style={{
-            background: STATUS_COLOR.online,
+            background: STATUS_COLOR[presence],
             // Scales with the avatar instead of a fixed 10px — on a small
             // 24-32px list avatar that's fine, but on ProfileCard's 64px
             // avatar a fixed dot reads as disproportionately tiny. Keep the

@@ -267,6 +267,7 @@ export {
   CommunityAgentListChannelsRequestSchema,
   CommunityAgentListMembersRequestSchema,
   CommunityAgentJoinServerRequestSchema,
+  CommunityAgentSubscribeChannelRequestSchema,
 } from "./schemas";
 
 export type {
@@ -338,6 +339,7 @@ export type {
   CommunityAgentListChannelsRequest,
   CommunityAgentListMembersRequest,
   CommunityAgentJoinServerRequest,
+  CommunityAgentSubscribeChannelRequest,
 } from "./schemas";
 
 // Community agent CLI bridge contract — lifted from `src/daemon/src/server/contract.ts`.
@@ -376,7 +378,10 @@ export type {
   ReadRequest as CommunityCliReadRequest,
   ResolveRequest as CommunityCliResolveRequest,
   ListChannelsRequest as CommunityCliListChannelsRequest,
+  ChannelListItem,
   ServerMember as CommunityCliServerMember,
+  SubscribeChannelRequest,
+  SubscribeChannelResponse,
   ServerApi as CommunityCliServerApi,
   UnreadNotice,
   HostCommand,

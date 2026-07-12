@@ -198,7 +198,7 @@ export function BotList({ onBack }: { onBack?: () => void } = {}) {
                   <span
                     className={[
                       "inline-block size-1.5 rounded-full",
-                      machineOnline ? "bg-emerald-500" : "bg-muted-foreground/40",
+                      machineOnline ? "bg-status-online" : "bg-muted-foreground",
                     ].join(" ")}
                   />
                 </div>
@@ -226,11 +226,29 @@ export function BotList({ onBack }: { onBack?: () => void } = {}) {
                                   <span
                                     className={[
                                       "inline-block size-1.5 rounded-full",
-                                      online ? "bg-emerald-500" : "bg-muted-foreground/40",
+                                      online ? "bg-status-online" : "bg-muted-foreground",
                                     ].join(" ")}
                                   />
                                   {online ? "Online" : "Offline"}
                                 </span>
+                                {/* A bot's presence is its bound machine's
+                                status, so "bring online" jumps to Machines
+                                and opens the same reconnect Sheet as
+                                MachineCard's "Reconnect…". Omitted when the
+                                machine can't be resolved (Unknown machine). */}
+                                {!online && machine && (
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    className="h-6 shrink-0 px-2 text-xs"
+                                    onClick={(e) => {
+                                      e.stopPropagation()
+                                      router.push(`/community/me/machines?reconnect=${machine.id}`)
+                                    }}
+                                  >
+                                    Bring online
+                                  </Button>
+                                )}
                               </div>
                               <span className="flex items-center gap-1.5 truncate text-xs text-muted-foreground">
                                 <ProviderLogo provider={bot.runtime} className="size-3.5 shrink-0" />

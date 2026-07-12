@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest"
 import { NextRequest } from "next/server"
 
 const mockGetMember = vi.fn()
-const mockCreateChannel = vi.fn()
+const mockCreateCategory = vi.fn()
 const mockLogAction = vi.fn()
 const mockFanOut = vi.fn()
 
@@ -18,8 +18,8 @@ vi.mock("@alook/shared", async () => {
     ...actual,
     queries: {
       communityMember: { getMember: (...a: unknown[]) => mockGetMember(...a) },
-      communityChannel: {
-        createChannel: (...a: unknown[]) => mockCreateChannel(...a),
+      communityCategory: {
+        createCategory: (...a: unknown[]) => mockCreateCategory(...a),
       },
       communityAuditLog: {
         logAction: (...a: unknown[]) => mockLogAction(...a),
@@ -53,14 +53,14 @@ import { POST } from "./route"
 const ctx = { params: { id: "s1" } } as any
 
 function postReq(body: unknown) {
-  return new NextRequest("http://localhost/api/community/servers/s1/channels", {
+  return new NextRequest("http://localhost/api/community/servers/s1/categories", {
     method: "POST",
     body: JSON.stringify(body),
     headers: { "Content-Type": "application/json" },
   })
 }
 
-describe("POST /api/community/servers/[id]/channels", () => {
+describe("POST /api/community/servers/[id]/categories", () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mockGetMember.mockResolvedValue({ id: "mem_1", userId: "u1", role: "member" })
@@ -68,47 +68,32 @@ describe("POST /api/community/servers/[id]/channels", () => {
     mockLogAction.mockResolvedValue(undefined)
   })
 
-  it("normalizes a spaced name via slugify before creating the channel", async () => {
-    mockCreateChannel.mockResolvedValue({
-      id: "c1",
-      name: "General-Chat",
-      type: "text",
-      categoryId: null,
-      topic: null,
-      position: 0,
-      createdAt: "2026-07-02T00:00:00.000Z",
-    })
+  it("creates a category", async () => {
+    mockCreateCategory.mockResolvedValue({ id: "cat1", name: "General", position: 0, private: 0 })
 
-    const res = await POST(postReq({ name: "General Chat" }), ctx)
+    const res = await POST(postReq({ name: "General" }), ctx)
     expect(res.status).toBe(201)
-    expect(mockCreateChannel).toHaveBeenCalledWith(
+    expect(mockCreateCategory).toHaveBeenCalledWith(
       expect.anything(),
-      expect.objectContaining({ name: "General-Chat" }),
+      expect.objectContaining({ name: "General" }),
     )
   })
 
-  it("returns 400 (and never calls createChannel) when the name is all disallowed characters", async () => {
-    const res = await POST(postReq({ name: "###" }), ctx)
-    expect(res.status).toBe(400)
-    expect(mockCreateChannel).not.toHaveBeenCalled()
-    expect(mockFanOut).not.toHaveBeenCalled()
-  })
-
-  it("returns 409 when a channel with this name already exists in the server", async () => {
-    mockCreateChannel.mockRejectedValue(
-      Object.assign(new Error("UNIQUE constraint failed: community_channel.server_id, community_channel.name"), {
+  it("returns 409 when a category with this name already exists in the server", async () => {
+    mockCreateCategory.mockRejectedValue(
+      Object.assign(new Error("UNIQUE constraint failed: community_category.server_id, community_category.name"), {
         code: "SQLITE_CONSTRAINT_UNIQUE",
       }),
     )
 
-    const res = await POST(postReq({ name: "general" }), ctx)
+    const res = await POST(postReq({ name: "General" }), ctx)
     expect(res.status).toBe(409)
-    expect(await res.json()).toEqual({ error: "a channel with this name already exists" })
+    expect(await res.json()).toEqual({ error: "a category with this name already exists" })
     expect(mockFanOut).not.toHaveBeenCalled()
   })
 
-  it("rethrows non-uniqueness errors from createChannel", async () => {
-    mockCreateChannel.mockRejectedValue(new Error("boom"))
-    await expect(POST(postReq({ name: "general" }), ctx)).rejects.toThrow("boom")
+  it("rethrows non-uniqueness errors from createCategory", async () => {
+    mockCreateCategory.mockRejectedValue(new Error("boom"))
+    await expect(POST(postReq({ name: "General" }), ctx)).rejects.toThrow("boom")
   })
 })

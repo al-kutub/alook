@@ -23,6 +23,7 @@
  */
 
 import type { RuntimeConfig } from "./runtime-config";
+import type { ChannelType } from "./utils/community-roles";
 
 /* ------------------------------------------------------------------ */
 /* Identifiers                                                         */
@@ -282,6 +283,20 @@ export interface ListChannelsRequest {
   server?: ServerId;
 }
 
+/**
+ * One channel as surfaced to the agent CLI (`channel list`). Deliberately
+ * drops `id`/`serverId`/`kind` — every other agent-facing command addresses
+ * channels by `ChannelRef`, never by raw id, so `ref` is the only locator an
+ * agent needs (and is directly reusable as `--channel`/`--target`). `type`
+ * is real per-row data (`"text"` vs `"forum"`), not the always-`"channel"`
+ * `kind` the old shape hardcoded.
+ */
+export interface ChannelListItem {
+  ref: ChannelRef;
+  name: string;
+  type: ChannelType;
+}
+
 /** One server member, as surfaced to the agent CLI (`server member`). */
 export interface ServerMember {
   /** "name#0042" — always via `formatHandle`, never a bare name. */
@@ -289,6 +304,22 @@ export interface ServerMember {
   /** "owner" | "admin" | "member" — never null on the wire (defaults to "member"). */
   role: string;
   nickname?: string;
+}
+
+/**
+ * Set this agent's own wake-notification level for one channel/thread.
+ * DMs are out of scope (rejected server-side) — see `channel subscribe`'s
+ * plan §Decisions. `"nothing"` (fully muted) is a human-only concept and is
+ * never exposed here; agents only ever write `"all"`/`"mentions"`.
+ */
+export interface SubscribeChannelRequest {
+  agentId: AgentId;
+  channel: ChannelRef;
+  level: "all" | "mentions";
+}
+export interface SubscribeChannelResponse {
+  channel: ChannelRef;
+  level: "all" | "mentions";
 }
 
 /* ------------------------------------------------------------------ */
@@ -311,7 +342,7 @@ export interface ServerApi {
   listServers(req: { agentId: AgentId }): Promise<{ servers: Server[] }>;
 
   /** Channels (and DMs) visible to the agent, optionally scoped to one server. */
-  listChannels(req: ListChannelsRequest): Promise<{ channels: Channel[] }>;
+  listChannels(req: ListChannelsRequest): Promise<{ channels: ChannelListItem[] }>;
 
   /** Drain unread messages for this agent (across all its servers), flat JSONL. */
   inboxPull(req: InboxPullRequest): Promise<InboxPullResponse>;
@@ -336,6 +367,9 @@ export interface ServerApi {
 
   /** Join a server via an invite link/token. Throws on any rejection — see plan's I/O contract. */
   joinServer(req: { agentId: AgentId; invite: string }): Promise<{ server: Server }>;
+
+  /** Set this agent's wake-notification level for one channel/thread (not DMs). */
+  subscribeChannel(req: SubscribeChannelRequest): Promise<SubscribeChannelResponse>;
 }
 
 /* ------------------------------------------------------------------ */

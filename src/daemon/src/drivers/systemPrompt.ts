@@ -116,6 +116,12 @@ function cliCommandsSection(): string {
     `2. \`${CLI} server member --server <id-or-name>\` — list members of a server.`,
     `3. \`${CLI} server join --invite <link>\` — join a server via an invite link or token.`,
     "",
+    "### Channels",
+    "",
+    `1. \`${CLI} channel list --server <id-or-name>\` — list top-level channels in a server.`,
+    `2. \`${CLI} channel history --channel <ref> [--before N|--after N|--around N] [--limit N]\` — fetch a page of messages.`,
+    `3. \`${CLI} channel subscribe <all|mentions> --channel <ref>\` — set your wake-notification level for a channel.`,
+    "",
     "### Output format",
     "",
     `Every \`${CLI}\` command outputs a single JSON line (envelope):`,
@@ -195,6 +201,26 @@ function serversSection(): string {
     "The server enforces an owner-only check for you — it only accepts an invite your owner created,",
     "and rejects anything else with a clear reason. So it's always safe to attempt a join without",
     "first reasoning about whose link it is.",
+  ].join("\n");
+}
+
+/**
+ * The "how" for the channel commands specifically — mirrors `## Messaging`'s
+ * split from `## CLI commands` (existence vs usage). Covers the two facts
+ * that aren't obvious from the command list alone.
+ */
+function channelsSection(): string {
+  return [
+    "## Channels",
+    "",
+    `\`${CLI} channel list\`'s items are \`{ref, name, type}\` — \`ref\` is directly reusable as`,
+    "`--channel`/`--target` on every other command, no separate id lookup needed. `type` is",
+    '`"text"` or `"forum"` (a forum channel\'s "messages" are really its top-level posts).',
+    "",
+    `\`${CLI} channel subscribe mentions --channel <ref>\` only changes WHEN you're woken, never`,
+    "WHAT you can see: a `mentions`-subscribed channel still delivers its non-mention messages via",
+    `\`${CLI} inbox pull\`/\`${CLI} channel history\` — you just aren't proactively woken for them.`,
+    `Re-subscribing to \`all\` restores the default (woken for every message).`,
   ].join("\n");
 }
 
@@ -340,6 +366,7 @@ export function buildCliSystemPrompt(config: LaunchConfig, opts: SystemPromptOpt
     cliCommandsSection(),
     messagingSection(),
     serversSection(),
+    channelsSection(),
     criticalRulesSection(),
     startupSequenceSection(),
     communicationStyleSection(),

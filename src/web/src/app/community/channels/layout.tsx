@@ -283,10 +283,16 @@ export default function ServerLayout({ children }: { children: ReactNode }) {
   )
 
   const onCreateChannelInSidebar = useCallback((categoryId: string, name: string, type: ChannelType) => {
-    createChannelMut.mutate({ serverId, categoryId, name, type }, { onError: () => toast("Failed to create channel") })
+    createChannelMut.mutate(
+      { serverId, categoryId, name, type },
+      { onError: (e) => toast(e instanceof Error ? e.message : "Failed to create channel") },
+    )
   }, [createChannelMut, serverId])
   const onCreateCategoryInSidebar = useCallback((name: string, opts?: { private?: boolean }) => {
-    createCategoryMut.mutate({ serverId, name, private: opts?.private }, { onError: () => toast("Failed to create category") })
+    createCategoryMut.mutate(
+      { serverId, name, private: opts?.private },
+      { onError: (e) => toast(e instanceof Error ? e.message : "Failed to create category") },
+    )
   }, [createCategoryMut, serverId])
   const onRenameChannel = useCallback(async (channelId: string, name: string) => {
     try {

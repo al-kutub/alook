@@ -30,6 +30,7 @@ function stubApi(over: Partial<ServerApi> = {}): ServerApi {
     resolve: async () => null,
     listMembers: async () => ({ members: [] }),
     joinServer: async () => ({ server: { id: "s", name: "s" } }),
+    subscribeChannel: async ({ channel, level }) => ({ channel, level }),
     ...over,
   } as ServerApi;
 }
@@ -267,5 +268,193 @@ describe("server join", () => {
     const env = parseEnvelope(cap.lines());
     expect(env).toEqual({ success: { server: { id: "srv_1", name: "Design Studio" } } });
     expect(env.success as object).not.toHaveProperty("joined");
+  });
+});
+
+describe("channel list", () => {
+  it("prints {success:{channels:[{ref,name,type},...]}} from a stubbed listChannels", async () => {
+    const listChannelsSpy = vi.fn(async () => ({
+      channels: [
+        { ref: "/demo-workspace/general", name: "general", type: "text" as const },
+        { ref: "/demo-workspace/help", name: "help", type: "forum" as const },
+      ],
+    }));
+    setApiForTesting(stubApi({ listChannels: listChannelsSpy }));
+    await main(["channel", "list", "--server", "srv_8fk2"]);
+    const env = parseEnvelope(cap.lines());
+    expect(env).toEqual({
+      success: {
+        channels: [
+          { ref: "/demo-workspace/general", name: "general", type: "text" },
+          { ref: "/demo-workspace/help", name: "help", type: "forum" },
+        ],
+      },
+    });
+    expect(listChannelsSpy).toHaveBeenCalledWith(expect.objectContaining({ server: "srv_8fk2" }));
+  });
+
+  it("--server accepts a name and passes it straight through unmodified", async () => {
+    const listChannelsSpy = vi.fn(async () => ({ channels: [] }));
+    setApiForTesting(stubApi({ listChannels: listChannelsSpy }));
+    await main(["channel", "list", "--server", "Design Studio"]);
+    expect(listChannelsSpy).toHaveBeenCalledWith(expect.objectContaining({ server: "Design Studio" }));
+  });
+
+  it("surfaces an ambiguous-name error verbatim as {error: <message>}", async () => {
+    const message = 'ambiguous server name "studio" — matches 2 servers: srv_1 ("Design Studio"), srv_2 ("Studio Ops")';
+    setApiForTesting(
+      stubApi({
+        listChannels: async () => {
+          throw new Error(message);
+        },
+      }),
+    );
+    await main(["channel", "list", "--server", "studio"]);
+    const env = parseEnvelope(cap.lines());
+    expect(env).toEqual({ error: message });
+  });
+
+  it("--server matching no server surfaces a readable error", async () => {
+    setApiForTesting(
+      stubApi({
+        listChannels: async () => {
+          throw new Error("server not found: Nope");
+        },
+      }),
+    );
+    await main(["channel", "list", "--server", "Nope"]);
+    const env = parseEnvelope(cap.lines());
+    expect(env.error).toContain("server not found");
+  });
+
+  it("missing --server → CLI error, no API call made", async () => {
+    const listChannelsSpy = vi.fn(async () => ({ channels: [] }));
+    setApiForTesting(stubApi({ listChannels: listChannelsSpy }));
+    await main(["channel", "list"]);
+    const env = parseEnvelope(cap.lines());
+    expect(env).toEqual({ error: "channel list: --server <id-or-name> is required" });
+    expect(listChannelsSpy).not.toHaveBeenCalled();
+  });
+
+  it("empty channel list → {success:{channels:[]}}, not an error", async () => {
+    setApiForTesting(stubApi({ listChannels: async () => ({ channels: [] }) }));
+    await main(["channel", "list", "--server", "srv_1"]);
+    const env = parseEnvelope(cap.lines());
+    expect(env).toEqual({ success: { channels: [] } });
+  });
+});
+
+describe("channel history", () => {
+  it("missing --channel → CLI error, no API call made", async () => {
+    const readSpy = vi.fn(async () => ({ items: [], hasMore: false }));
+    setApiForTesting(stubApi({ read: readSpy }));
+    await main(["channel", "history"]);
+    const env = parseEnvelope(cap.lines());
+    expect(env).toEqual({ error: "channel history: --channel <ref> is required" });
+    expect(readSpy).not.toHaveBeenCalled();
+  });
+
+  it("passes --before/--after/--around/--limit through to api.read() untouched", async () => {
+    const readSpy = vi.fn(async () => ({ items: [], hasMore: false }));
+    setApiForTesting(stubApi({ read: readSpy }));
+    await main([
+      "channel", "history", "--channel", "/demo-workspace/general",
+      "--before", "42", "--after", "1", "--around", "20", "--limit", "5",
+    ]);
+    expect(readSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ channel: "/demo-workspace/general", before: 42, after: 1, around: 20, limit: 5 }),
+    );
+  });
+
+  it("response shape is {items,hasMore,latestSeq?} — omits latestSeq when absent", async () => {
+    setApiForTesting(
+      stubApi({
+        read: async () => ({
+          items: [{ seq: "#37", channel: "/s/general", sender: "@a", content: { text: "hi" }, time: "" }],
+          hasMore: true,
+        }),
+      }),
+    );
+    await main(["channel", "history", "--channel", "/s/general"]);
+    const env = parseEnvelope(cap.lines()) as { success: { items: unknown[]; hasMore: boolean } };
+    expect(env.success.hasMore).toBe(true);
+    expect(env.success.items).toHaveLength(1);
+    expect("latestSeq" in env.success).toBe(false);
+  });
+
+  it("includes latestSeq when the API returns one", async () => {
+    setApiForTesting(stubApi({ read: async () => ({ items: [], hasMore: false, latestSeq: 41 }) }));
+    await main(["channel", "history", "--channel", "/s/general"]);
+    const env = parseEnvelope(cap.lines()) as { success: { latestSeq: number } };
+    expect(env.success.latestSeq).toBe(41);
+  });
+
+  it("works for a thread ref — passes it through to api.read() unmodified", async () => {
+    const readSpy = vi.fn(async () => ({ items: [], hasMore: false }));
+    setApiForTesting(stubApi({ read: readSpy }));
+    await main(["channel", "history", "--channel", "/demo-workspace/general/#12"]);
+    expect(readSpy).toHaveBeenCalledWith(expect.objectContaining({ channel: "/demo-workspace/general/#12" }));
+  });
+
+  it("works for a DM ref — passes it through to api.read() unmodified", async () => {
+    const readSpy = vi.fn(async () => ({ items: [], hasMore: false }));
+    setApiForTesting(stubApi({ read: readSpy }));
+    await main(["channel", "history", "--channel", "/.dm/gustavo#4821", "--limit", "20"]);
+    expect(readSpy).toHaveBeenCalledWith(expect.objectContaining({ channel: "/.dm/gustavo#4821", limit: 20 }));
+  });
+
+  it("API error (e.g. channel not found) surfaces as {error, hint?}", async () => {
+    setApiForTesting(
+      stubApi({
+        read: async () => {
+          throw new Error("channel not found: /s/nope");
+        },
+      }),
+    );
+    await main(["channel", "history", "--channel", "/s/nope"]);
+    const env = parseEnvelope(cap.lines());
+    expect(env).toEqual({ error: "channel not found: /s/nope" });
+  });
+});
+
+describe("channel subscribe", () => {
+  it("subscribe mentions --channel <ref> calls api.subscribeChannel({channel, level:'mentions'})", async () => {
+    const subscribeSpy = vi.fn(async ({ channel, level }: { channel: string; level: string }) => ({ channel, level }));
+    setApiForTesting(stubApi({ subscribeChannel: subscribeSpy }));
+    await main(["channel", "subscribe", "mentions", "--channel", "/demo-workspace/general"]);
+    const env = parseEnvelope(cap.lines());
+    expect(env).toEqual({ success: { channel: "/demo-workspace/general", level: "mentions" } });
+    expect(subscribeSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ channel: "/demo-workspace/general", level: "mentions" }),
+    );
+  });
+
+  it("subscribe all --channel <ref> calls api.subscribeChannel({channel, level:'all'})", async () => {
+    const subscribeSpy = vi.fn(async ({ channel, level }: { channel: string; level: string }) => ({ channel, level }));
+    setApiForTesting(stubApi({ subscribeChannel: subscribeSpy }));
+    await main(["channel", "subscribe", "all", "--channel", "/demo-workspace/general"]);
+    const env = parseEnvelope(cap.lines());
+    expect(env).toEqual({ success: { channel: "/demo-workspace/general", level: "all" } });
+    expect(subscribeSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ channel: "/demo-workspace/general", level: "all" }),
+    );
+  });
+
+  it("invalid LEVEL token is rejected by Commander before any API call", async () => {
+    const subscribeSpy = vi.fn(async () => ({ channel: "/s/c", level: "all" as const }));
+    setApiForTesting(stubApi({ subscribeChannel: subscribeSpy }));
+    await main(["channel", "subscribe", "bogus", "--channel", "/demo-workspace/general"]);
+    const env = parseEnvelope(cap.lines());
+    expect("error" in env).toBe(true);
+    expect(subscribeSpy).not.toHaveBeenCalled();
+  });
+
+  it("missing --channel → CLI error, no API call made", async () => {
+    const subscribeSpy = vi.fn(async () => ({ channel: "/s/c", level: "all" as const }));
+    setApiForTesting(stubApi({ subscribeChannel: subscribeSpy }));
+    await main(["channel", "subscribe", "mentions"]);
+    const env = parseEnvelope(cap.lines());
+    expect(env).toEqual({ error: "channel subscribe: --channel <ref> is required" });
+    expect(subscribeSpy).not.toHaveBeenCalled();
   });
 });

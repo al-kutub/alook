@@ -1,7 +1,7 @@
 "use client"
 
-import { useCallback, useEffect, useState } from "react"
-import { useRouter } from "next/navigation"
+import { useCallback, useEffect, useRef, useState } from "react"
+import { useRouter, useSearchParams } from "next/navigation"
 import { toast } from "sonner"
 import { ChevronLeft, Monitor } from "lucide-react"
 import { useQueryClient } from "@tanstack/react-query"
@@ -27,6 +27,7 @@ import { communityKeys } from "@/lib/query-keys"
 
 export function MachineList({ onBack }: { onBack?: () => void } = {}) {
   const router = useRouter()
+  const searchParams = useSearchParams()
   const queryClient = useQueryClient()
   const { machines, isLoading: machinesLoading } = useMachines()
   const { bots } = useBots()
@@ -70,6 +71,21 @@ export function MachineList({ onBack }: { onBack?: () => void } = {}) {
     useCommunityStore.getState().setPendingMachineTokenId(null)
     setPairOpen(true)
   }, [])
+
+  // Deep-link from BotList's "Bring online" button (`?reconnect=<machineId>`)
+  // — auto-open the same reconnect Sheet MachineCard's "Reconnect…" opens.
+  // Cleared via replace() once handled so a refresh/back-nav doesn't reopen
+  // it; a one-shot ref keyed by the param value stops it re-firing while
+  // `machines` refetches in the background before the replace lands.
+  const handledReconnectRef = useRef<string | null>(null)
+  useEffect(() => {
+    const reconnectId = searchParams.get("reconnect")
+    if (!reconnectId || handledReconnectRef.current === reconnectId || machinesLoading) return
+    handledReconnectRef.current = reconnectId
+    const machine = machines.find((m) => m.id === reconnectId)
+    if (machine) openReconnect(machine)
+    router.replace("/community/me/machines")
+  }, [searchParams, machines, machinesLoading, openReconnect, router])
 
   const closePair = useCallback((open: boolean) => {
     setPairOpen(open)

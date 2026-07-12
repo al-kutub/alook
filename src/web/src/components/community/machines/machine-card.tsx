@@ -51,7 +51,7 @@ export function MachineCard({
                 <span
                   className={[
                     "inline-block size-1.5 rounded-full",
-                    isOnline ? "bg-emerald-500" : "bg-muted-foreground/40",
+                    isOnline ? "bg-status-online" : "bg-muted-foreground",
                   ].join(" ")}
                 />
                 {isOnline ? "Online" : "Offline"}

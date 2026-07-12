@@ -1115,3 +1115,11 @@ export const CommunityAgentJoinServerRequestSchema = z.object({
 export type CommunityAgentJoinServerRequest = z.infer<
   typeof CommunityAgentJoinServerRequestSchema
 >;
+
+export const CommunityAgentSubscribeChannelRequestSchema = z.object({
+  channel: z.string().min(1),
+  level: z.enum(["all", "mentions"]),
+});
+export type CommunityAgentSubscribeChannelRequest = z.infer<
+  typeof CommunityAgentSubscribeChannelRequestSchema
+>;

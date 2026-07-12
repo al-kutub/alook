@@ -1,9 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from "vitest"
 import { NextRequest } from "next/server"
 
-const mockGetChannel = vi.fn()
 const mockGetMember = vi.fn()
-const mockUpdateChannel = vi.fn()
+const mockGetCategory = vi.fn()
+const mockUpdateCategory = vi.fn()
 const mockLogAction = vi.fn()
 const mockFanOut = vi.fn()
 
@@ -18,11 +18,11 @@ vi.mock("@alook/shared", async () => {
   return {
     ...actual,
     queries: {
-      communityChannel: {
-        getChannel: (...a: unknown[]) => mockGetChannel(...a),
-        updateChannel: (...a: unknown[]) => mockUpdateChannel(...a),
-      },
       communityMember: { getMember: (...a: unknown[]) => mockGetMember(...a) },
+      communityCategory: {
+        getCategory: (...a: unknown[]) => mockGetCategory(...a),
+        updateCategory: (...a: unknown[]) => mockUpdateCategory(...a),
+      },
       communityAuditLog: {
         logAction: (...a: unknown[]) => mockLogAction(...a),
       },
@@ -52,53 +52,47 @@ vi.mock("@/lib/middleware/helpers", () => {
 
 import { PATCH } from "./route"
 
-const ctx = { params: { id: "c1" } } as any
+const ctx = { params: { id: "s1", catId: "cat1" } } as any
 
 function patchReq(body: unknown) {
-  return new NextRequest("http://localhost/api/community/channels/c1", {
+  return new NextRequest("http://localhost/api/community/servers/s1/categories/cat1", {
     method: "PATCH",
     body: JSON.stringify(body),
     headers: { "Content-Type": "application/json" },
   })
 }
 
-describe("PATCH /api/community/channels/[id]", () => {
+describe("PATCH /api/community/servers/[id]/categories/[catId]", () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    mockGetChannel.mockResolvedValue({ id: "c1", serverId: "s1", categoryId: null, creatorId: "u1" })
     mockGetMember.mockResolvedValue({ id: "mem_1", userId: "u1", role: "owner" })
+    mockGetCategory.mockResolvedValue({ id: "cat1", serverId: "s1", creatorId: "u1" })
     mockFanOut.mockResolvedValue(undefined)
     mockLogAction.mockResolvedValue(undefined)
   })
 
-  it("normalizes a spaced rename via slugify before calling updateChannel", async () => {
-    mockUpdateChannel.mockResolvedValue({ id: "c1", name: "General-Chat" })
+  it("renames a category", async () => {
+    mockUpdateCategory.mockResolvedValue({ id: "cat1", name: "General" })
 
-    const res = await PATCH(patchReq({ name: "General Chat" }), ctx)
+    const res = await PATCH(patchReq({ name: "General" }), ctx)
     expect(res.status).toBe(200)
-    expect(mockUpdateChannel).toHaveBeenCalledWith(expect.anything(), "c1", { name: "General-Chat" })
+    expect(mockUpdateCategory).toHaveBeenCalledWith(expect.anything(), "cat1", { name: "General" })
   })
 
-  it("returns 400 (and never calls updateChannel) when the renamed name is all disallowed characters", async () => {
-    const res = await PATCH(patchReq({ name: "   " }), ctx)
-    expect(res.status).toBe(400)
-    expect(mockUpdateChannel).not.toHaveBeenCalled()
-  })
-
-  it("returns 409 when renaming onto a name already used by another channel in the server", async () => {
-    mockUpdateChannel.mockRejectedValue(
-      Object.assign(new Error("UNIQUE constraint failed: community_channel.server_id, community_channel.name"), {
+  it("returns 409 when renaming onto a name already used by another category in the server", async () => {
+    mockUpdateCategory.mockRejectedValue(
+      Object.assign(new Error("UNIQUE constraint failed: community_category.server_id, community_category.name"), {
         code: "SQLITE_CONSTRAINT_UNIQUE",
       }),
     )
 
-    const res = await PATCH(patchReq({ name: "general" }), ctx)
+    const res = await PATCH(patchReq({ name: "General" }), ctx)
     expect(res.status).toBe(409)
-    expect(await res.json()).toEqual({ error: "a channel with this name already exists" })
+    expect(await res.json()).toEqual({ error: "a category with this name already exists" })
   })
 
-  it("rethrows non-uniqueness errors from updateChannel", async () => {
-    mockUpdateChannel.mockRejectedValue(new Error("boom"))
-    await expect(PATCH(patchReq({ name: "general" }), ctx)).rejects.toThrow("boom")
+  it("rethrows non-uniqueness errors from updateCategory", async () => {
+    mockUpdateCategory.mockRejectedValue(new Error("boom"))
+    await expect(PATCH(patchReq({ name: "General" }), ctx)).rejects.toThrow("boom")
   })
 })

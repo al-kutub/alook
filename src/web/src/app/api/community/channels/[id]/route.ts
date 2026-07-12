@@ -5,6 +5,7 @@ import { getDb } from "@/lib/db"
 import {
   queries,
   canManageServer,
+  isUniqueConstraintError,
   MAX_CHANNEL_NAME_LENGTH,
   MAX_CHANNEL_TOPIC_LENGTH,
   WS_EVENTS,
@@ -96,7 +97,15 @@ export const PATCH = withAuth(async (req: NextRequest, ctx) => {
     return writeError("no changes provided", 400)
   }
 
-  const updated = await queries.communityChannel.updateChannel(db, channelId, changes)
+  let updated
+  try {
+    updated = await queries.communityChannel.updateChannel(db, channelId, changes)
+  } catch (err) {
+    if (isUniqueConstraintError(err)) {
+      return writeError("a channel with this name already exists", 409)
+    }
+    throw err
+  }
   if (!updated) return writeError("channel not found", 404)
 
   await fanOutToServerMembers(channel.serverId, {

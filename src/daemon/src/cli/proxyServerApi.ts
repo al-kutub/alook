@@ -28,11 +28,13 @@ import type {
   ReadRequest,
   ResolveRequest,
   ListChannelsRequest,
+  ChannelListItem,
   ServerMember,
+  SubscribeChannelRequest,
+  SubscribeChannelResponse,
   Page,
   Message,
   Server,
-  Channel,
   AgentId,
 } from "../server/contract.js";
 
@@ -91,7 +93,7 @@ export function createProxyServerApi(config: ProxyServerApiConfig): ServerApi {
 
   return {
     listServers: (r: { agentId: AgentId }) => call<{ servers: Server[] }>("listServers", r),
-    listChannels: (r: ListChannelsRequest) => call<{ channels: Channel[] }>("listChannels", r),
+    listChannels: (r: ListChannelsRequest) => call<{ channels: ChannelListItem[] }>("listChannels", r),
     inboxPull: (r: InboxPullRequest) => call<InboxPullResponse>("inboxPull", r),
     inboxSnapshot: (r: { agentId: AgentId }) => call<InboxSnapshot>("inboxSnapshot", r),
     ack: (r: AckRequest) => call<void>("ack", r),
@@ -100,5 +102,6 @@ export function createProxyServerApi(config: ProxyServerApiConfig): ServerApi {
     resolve: (r: ResolveRequest) => call<{ message: Message }>("resolve", r),
     listMembers: (r: { agentId: AgentId; server: string }) => call<{ members: ServerMember[] }>("listMembers", r),
     joinServer: (r: { agentId: AgentId; invite: string }) => call<{ server: Server }>("joinServer", r),
+    subscribeChannel: (r: SubscribeChannelRequest) => call<SubscribeChannelResponse>("subscribeChannel", r),
   };
 }

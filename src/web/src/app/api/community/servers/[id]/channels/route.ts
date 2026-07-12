@@ -6,6 +6,7 @@ import {
   queries,
   canManageServer,
   isChannelType,
+  isUniqueConstraintError,
   MAX_CHANNEL_NAME_LENGTH,
   MAX_CHANNEL_TOPIC_LENGTH,
   WS_EVENTS,
@@ -64,14 +65,22 @@ export const POST = withAuth(async (req: NextRequest, ctx) => {
     }
   }
 
-  const row = await queries.communityChannel.createChannel(db, {
-    serverId,
-    categoryId: body.categoryId,
-    name,
-    type: body.type,
-    topic: body.topic,
-    creatorId: ctx.userId,
-  })
+  let row
+  try {
+    row = await queries.communityChannel.createChannel(db, {
+      serverId,
+      categoryId: body.categoryId,
+      name,
+      type: body.type,
+      topic: body.topic,
+      creatorId: ctx.userId,
+    })
+  } catch (err) {
+    if (isUniqueConstraintError(err)) {
+      return writeError("a channel with this name already exists", 409)
+    }
+    throw err
+  }
 
   const channel = {
     id: row.id,
