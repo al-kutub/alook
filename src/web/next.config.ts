@@ -17,6 +17,16 @@ const nextConfig: NextConfig = {
 		root: path.resolve(__dirname, "../.."),
 	},
 	pageExtensions: ["js", "jsx", "md", "mdx", "ts", "tsx"],
+	// Self-hosted boxes (Railway) are reached via a public domain that differs
+	// from the internal host `next dev` binds to. Without this, Next blocks
+	// its own dev/HMR runtime as cross-origin ("Blocked cross-origin request
+	// to Next.js dev resource /_next/webpack-hmr"), which breaks client
+	// hydration for every page served from that domain — buttons render but
+	// their onClick/onSubmit handlers never attach. Mirrors how
+	// BETTER_AUTH_TRUSTED_ORIGINS is derived in scripts/docker-entrypoint.mjs.
+	allowedDevOrigins: [process.env.RAILWAY_PUBLIC_DOMAIN].filter(
+		(v): v is string => Boolean(v),
+	),
 };
 
 const withMDX = createMDX({
