@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { Suspense, useEffect, useState } from "react"
 import { useSearchParams } from "next/navigation"
 import { signIn, signUp, authClient } from "@/lib/auth-client"
 import { parseRetryAfterSeconds } from "@/lib/retry-after"
@@ -339,7 +339,7 @@ function ProductGallery() {
   )
 }
 
-export default function SignInPageClient({ isProd }: { isProd: boolean }) {
+function SignInPageContent({ isProd }: { isProd: boolean }) {
   const searchParams = useSearchParams()
   const postLoginUrl = safeRedirectUrl(searchParams.get("redirect"))
 
@@ -364,5 +364,18 @@ export default function SignInPageClient({ isProd }: { isProd: boolean }) {
         </div>
       </div>
     </div>
+  )
+}
+
+// SignInPageContent calls useSearchParams(), which requires a Suspense
+// boundary in the App Router — without one, Next bails the whole subtree
+// out of static rendering and the client bundle never finishes hydrating,
+// so the sign-in form's onSubmit handler silently never attaches (button
+// clicks do nothing: no fetch, no error, no redirect).
+export default function SignInPageClient({ isProd }: { isProd: boolean }) {
+  return (
+    <Suspense fallback={null}>
+      <SignInPageContent isProd={isProd} />
+    </Suspense>
   )
 }
