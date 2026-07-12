@@ -19,7 +19,7 @@ const agents: Agent[] = [
   { name: "Claude Code", provider: "claude", detail: "Anthropic's CLI agent" },
   { name: "Codex", provider: "codex", detail: "OpenAI's coding agent" },
   { name: "OpenCode", provider: "opencode", detail: "Open-source coding agent" },
-  { name: "Cursor", provider: "cursor", detail: "AI-powered code editor", comingSoon: true },
+  { name: "Cursor", provider: "cursor", detail: "AI-powered code editor" },
   { name: "Hermes", provider: "hermes", detail: "Autonomous coding agent", comingSoon: true },
   { name: "OpenClaw", provider: "openclaw", detail: "Open-source AI agent", comingSoon: true },
 ];

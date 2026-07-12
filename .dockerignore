@@ -1,0 +1,11 @@
+**/node_modules
+**/.turbo
+**/dist
+**/.next
+**/.open-next
+**/.wrangler
+.git
+.alook
+.session_handoff
+**/*.log
+**/.dev.vars

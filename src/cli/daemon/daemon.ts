@@ -287,6 +287,7 @@ export async function startDaemon(
     ["claude", config.claudePath],
     ["codex", config.codexPath],
     ["opencode", config.opencodePath],
+    ["cursor", config.cursorPath],
   ] as const) {
     if (isCommandAvailable(path)) {
       const version = await detectVersion(path);
@@ -678,7 +679,13 @@ export async function startDaemon(
       token: ws.token,
       agentIds: ws.agent_ids ?? [],
     })),
-    runtimes: providers.map((p) => p.type as "claude" | "codex" | "opencode"),
+    // Skill scanner only understands claude/codex/opencode skill-dir conventions;
+    // cursor has no equivalent scan implemented yet, so exclude it here rather
+    // than silently falling through to the opencode scanner (skill-scanner.ts).
+    runtimes: providers
+      .filter((p): p is typeof p & { type: "claude" | "codex" | "opencode" } =>
+        p.type === "claude" || p.type === "codex" || p.type === "opencode")
+      .map((p) => p.type),
     daemonId: config.daemonId,
   }, 60_000);
 
@@ -1235,13 +1242,17 @@ async function handleTask(
       ? config.claudePath
       : provider === "codex"
         ? config.codexPath
-        : config.opencodePath;
+        : provider === "opencode"
+          ? config.opencodePath
+          : config.cursorPath;
   const configModel =
     provider === "claude"
       ? config.claudeModel
       : provider === "codex"
         ? config.codexModel
-        : config.opencodeModel;
+        : provider === "opencode"
+          ? config.opencodeModel
+          : config.cursorModel;
   const agentModel = task.agent?.runtimeConfig?.model;
   const model = (typeof agentModel === "string" && agentModel) ? agentModel : configModel;
 

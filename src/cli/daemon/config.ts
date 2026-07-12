@@ -66,9 +66,11 @@ export interface DaemonConfig {
   claudePath: string;
   codexPath: string;
   opencodePath: string;
+  cursorPath: string;
   claudeModel: string;
   codexModel: string;
   opencodeModel: string;
+  cursorModel: string;
   pollInterval: number;
   wsPollInterval: number;
   heartbeatInterval: number;
@@ -101,9 +103,11 @@ export function loadDaemonConfig(profile?: string): DaemonConfig {
     claudePath: process.env.ALOOK_CLAUDE_PATH || "claude",
     codexPath: process.env.ALOOK_CODEX_PATH || "codex",
     opencodePath: process.env.ALOOK_OPENCODE_PATH || "opencode",
+    cursorPath: process.env.ALOOK_CURSOR_PATH || "cursor-agent",
     claudeModel: process.env.ALOOK_CLAUDE_MODEL || "",
     codexModel: process.env.ALOOK_CODEX_MODEL || "",
     opencodeModel: process.env.ALOOK_OPENCODE_MODEL || "",
+    cursorModel: process.env.ALOOK_CURSOR_MODEL || "",
     pollInterval: parseDuration(
       process.env.ALOOK_DAEMON_POLL_INTERVAL || "3s",
     ),
