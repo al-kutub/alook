@@ -78,8 +78,9 @@ EXPOSE 15210
 # src/cli/lib/config.ts configDir()), workspace checkouts
 # (ALOOK_WORKSPACES_ROOT), and generated .dev.vars secrets. All under /data
 # so a single Railway volume mount covers everything that must survive a
-# redeploy.
-VOLUME /data
+# redeploy. Railway rejects a Dockerfile VOLUME directive ("use Railway
+# Volumes" build error) — the actual volume is attached out-of-band via the
+# Railway service config (mount path /data), not declared here.
 ENV ALOOK_DATA_DIR=/data
 
 ENV ALOOK_CURSOR_PATH=/usr/local/bin/cursor-agent
