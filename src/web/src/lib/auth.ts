@@ -68,8 +68,17 @@ export function createAuth(env: Env) {
         maxAge: 5 * 60,
       },
     },
+    // Self-hosted fork: always on, regardless of NODE_ENV/isProd. Upstream
+    // gates this off in "production" because their SaaS deploy has real
+    // email delivery and prefers OTP-only sign-in there — but a self-hosted
+    // box (this one included) has NO email delivery (see email-worker's own
+    // "Local mode: email send/receive is not available" notice), so an
+    // OTP-only prod gate would strand every self-hosted admin on a sign-in
+    // screen that can never receive its code. Also load-bearing for
+    // scripts/docker-entrypoint.mjs's own boot-time admin bootstrap, which
+    // signs up/in via this same /api/auth/sign-up/email endpoint.
     emailAndPassword: {
-      enabled: !isProd,
+      enabled: true,
       requireEmailVerification: false,
     },
     user: {

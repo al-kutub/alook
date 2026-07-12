@@ -23,7 +23,6 @@ import { SiGithub, SiGoogle } from "@icons-pack/react-simple-icons"
 import Image from "next/image"
 import { GradientBackground } from "@/components/gradient-background"
 import { Logo } from "@/components/logo"
-import { DEV_PASSWORD } from "@alook/shared"
 
 const DEFAULT_POST_LOGIN = "/workspaces?auto"
 
@@ -36,6 +35,7 @@ function safeRedirectUrl(redirect: string | null): string {
 
 function SignInForm({ postLoginUrl, isProd }: { postLoginUrl: string; isProd: boolean }) {
   const [email, setEmail] = useState("")
+  const [password, setPassword] = useState("")
   const [error, setError] = useState("")
   const [loading, setLoading] = useState(false)
 
@@ -108,17 +108,17 @@ function SignInForm({ postLoginUrl, isProd }: { postLoginUrl: string; isProd: bo
     setLoading(false)
   }
 
-  async function handleDevSignIn(e: React.FormEvent) {
+  async function handlePasswordSignIn(e: React.FormEvent) {
     e.preventDefault()
     setError("")
     setLoading(true)
     const { error: signInErr } = await signIn.email(
-      { email, password: DEV_PASSWORD },
+      { email, password },
       { onError: () => {} },
     )
     if (signInErr) {
       const { error: signUpErr } = await signUp.email(
-        { name: email.split("@")[0], email, password: DEV_PASSWORD },
+        { name: email.split("@")[0], email, password },
         { onError: () => {} },
       )
       if (signUpErr) {
@@ -224,7 +224,7 @@ function SignInForm({ postLoginUrl, isProd }: { postLoginUrl: string; isProd: bo
           </>
         )
       ) : (
-        <form onSubmit={handleDevSignIn}>
+        <form onSubmit={handlePasswordSignIn}>
           <FieldGroup>
             <Field>
               <FieldLabel htmlFor="email">Email</FieldLabel>
@@ -236,6 +236,17 @@ function SignInForm({ postLoginUrl, isProd }: { postLoginUrl: string; isProd: bo
                 onChange={(e) => setEmail(e.target.value)}
                 required
                 autoFocus
+              />
+            </Field>
+            <Field>
+              <FieldLabel htmlFor="password">Password</FieldLabel>
+              <Input
+                id="password"
+                type="password"
+                placeholder="••••••••"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                required
               />
             </Field>
             <Field>
