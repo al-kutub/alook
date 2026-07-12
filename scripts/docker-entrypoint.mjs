@@ -380,6 +380,55 @@ function runCli(args, env) {
   });
 }
 
+// `alook register` (see src/cli/lib/activate.ts activateAndSave) auto-starts
+// its OWN detached background daemon whenever no daemon is already running
+// and stdout isn't a TTY — exactly this headless container's shape. We then
+// deliberately start a second, foreground daemon right below so the
+// entrypoint's own supervisor owns it (see Step 5 doc comment above: restart
+// the whole container if the daemon dies, rather than leaving an orphaned
+// background process this script can't see). The two collide on
+// src/cli/daemon/pidfile.ts's lock file and the second one crashes on
+// startup ("Another daemon is already running"), which brings the whole
+// container down. Stop register's auto-started daemon first so the
+// supervised one can acquire the lock cleanly.
+function isPidAlive(pid) {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function stopAutoStartedDaemon() {
+  const pidPath = join(CLI_DATA_DIR, "daemon.pid");
+  if (!existsSync(pidPath)) return;
+  const pid = Number.parseInt(readFileSync(pidPath, "utf-8").trim(), 10);
+  if (!Number.isFinite(pid) || !isPidAlive(pid)) {
+    rmSync(pidPath, { force: true });
+    return;
+  }
+  log("boot", `stopping auto-started daemon from 'register' (pid ${pid})`);
+  try {
+    process.kill(pid, "SIGTERM");
+  } catch {
+    // already gone
+  }
+  const deadline = Date.now() + 5000;
+  while (Date.now() < deadline && isPidAlive(pid)) {
+    await new Promise((r) => setTimeout(r, 200));
+  }
+  if (isPidAlive(pid)) {
+    log("boot", `daemon pid ${pid} still alive after SIGTERM grace period — sending SIGKILL`);
+    try {
+      process.kill(pid, "SIGKILL");
+    } catch {
+      // already gone
+    }
+  }
+  rmSync(pidPath, { force: true });
+}
+
 async function main() {
   mkdirSync(DATA_DIR, { recursive: true });
   mkdirSync(WRANGLER_STATE_DIR, { recursive: true });
@@ -423,6 +472,7 @@ async function main() {
   };
 
   await runCli(["register", "--token", tokenResult.token, "--server", BASE_URL], cliEnv);
+  await stopAutoStartedDaemon();
 
   log("boot", "starting daemon (cursor-agent backend)...");
   spawnService(
