@@ -12,10 +12,20 @@ function isSafeRedirect(path: string): boolean {
 const AUTH_REQUIRED_PREFIXES = ["/invite/", "/w/", "/workspaces", "/dashboard", "/community"]
 
 export async function middleware(request: NextRequest) {
+  // `next dev` (Turbopack) synthesizes x-forwarded-proto: http and resolves
+  // request.nextUrl.hostname to the server's --hostname bind value rather
+  // than the client's actual Host header — even for genuine loopback/
+  // private-network traffic. Binding `--hostname 0.0.0.0` (required so
+  // Railway/containers can reach the dev server from outside the loopback
+  // interface) therefore makes this check fire unconditionally for every
+  // request, redirecting to a https:// origin nothing is listening on.
+  // "0.0.0.0" itself is never a real public host, so it's safe to exempt
+  // alongside the existing localhost/127. dev-loopback exemptions.
   if (
     request.headers.get("x-forwarded-proto") === "http" &&
     !request.nextUrl.hostname.startsWith("localhost") &&
-    !request.nextUrl.hostname.startsWith("127.")
+    !request.nextUrl.hostname.startsWith("127.") &&
+    request.nextUrl.hostname !== "0.0.0.0"
   ) {
     const httpsUrl = request.nextUrl.clone()
     httpsUrl.protocol = "https:"
