@@ -9,11 +9,13 @@
 //      under GNU sed on Linux, so this generates the same files in Node
 //      instead of shelling out to `pnpm predev`)
 //   2. run D1 migrations (idempotent — wrangler skips already-applied ones)
-//   3. start the 3 web-side services (web / email-worker / ws-do) in the
-//      same "dev mode" shape src/app/src/lib/services.ts uses when
-//      ALOOK_PROJECT_ROOT (source root) + NODE_ENV=development are set —
-//      the only shape that works from a source checkout (the non-dev branch
-//      expects a bundled npm-published tarball layout we don't have here)
+//   3. start the 3 web-side services: web serves its REAL
+//      opennextjs-cloudflare production build (baked into the image by the
+//      Dockerfile, see buildWebIfNeeded()) via `wrangler dev --local`;
+//      email-worker/ws-do stay in the source-dir "dev mode" shape
+//      src/app/src/lib/services.ts uses when ALOOK_PROJECT_ROOT (source
+//      root) + NODE_ENV=development are set — genuinely dev-mode Workers
+//      regardless (self-hosted email doesn't work either way)
 //   4. wait for the web server, then register a fixed-email admin account +
 //      workspace + machine token (fetch logic ported from
 //      src/app/src/lib/register.ts, minus the readline email prompt)
@@ -53,12 +55,18 @@ const PORT_WS = Number(process.env.ALOOK_PORT_WS || 15212);
 
 const BASE_URL = `http://127.0.0.1:${PORT_WEB}`;
 const ADMIN_EMAIL = process.env.ALOOK_ADMIN_EMAIL || "admin@alook.local";
-// Dev-mode auth password shared by web + CLI onboarding — see
-// src/shared/src/constants.ts DEV_PASSWORD. Known-insecure, hardcoded
-// upstream (not something this script can silently fix): fine for a
-// single-tenant headless box behind its own auth boundary, NOT something to
-// expose on a public unauthenticated domain.
-const DEV_PASSWORD = "dev-password-000";
+// Real admin password — no hardcoded fallback. Shipping a default password
+// in what's supposed to be a solid production build defeats the point, so
+// this fails loudly at boot instead of silently falling back to the old
+// upstream DEV_PASSWORD constant. Used for this script's own boot-time
+// registerUser() sign-up/sign-in calls; web's emailAndPassword auth (see
+// src/web/src/lib/auth.ts) is unconditionally enabled so the same
+// credential works for real browser sign-in too.
+const ADMIN_PASSWORD = process.env.ALOOK_ADMIN_PASSWORD;
+if (!ADMIN_PASSWORD) {
+  console.error("[entrypoint:boot] fatal: ALOOK_ADMIN_PASSWORD is not set");
+  process.exit(1);
+}
 
 const SECRETS_DIR = join(DATA_DIR, "secrets");
 const WRANGLER_STATE_DIR = join(DATA_DIR, "wrangler-state");
@@ -146,14 +154,13 @@ function ensureDevVars() {
 }
 
 // ---------------------------------------------------------------------------
-// Persist-dir alignment: `next dev` (web) gets its local D1/Miniflare state
-// via src/web/next.config.ts's `initOpenNextCloudflareForDev()` call, which
-// is invoked with NO options — so it (and therefore `getCloudflareContext()`
-// bindings the whole web app reads) resolves wrangler's *default* local
-// persist path: `<cwd>/.wrangler/state`, relative to wherever `next dev`
-// runs (src/web). Migrations run via `wrangler d1 migrations apply
-// alook-app --local` (also cwd=src/web) resolve the SAME default when no
-// `--persist-to` is passed.
+// Persist-dir alignment: web now runs as `wrangler dev --local` directly
+// (serving its real production build, see buildWebIfNeeded()/
+// startWebServices() below), so it resolves wrangler's *default* local
+// persist path the same way any `wrangler dev --local` process does:
+// `<cwd>/.wrangler/state`, relative to wherever it runs (src/web) — no
+// `--persist-to` passed. Migrations run via `wrangler d1 migrations apply
+// alook-app --local` (also cwd=src/web) resolve the SAME default.
 //
 // Critically, `alook-app` (the `DB` binding) is NOT web-exclusive:
 // src/email-worker/wrangler.toml and src/ws-do/wrangler.toml each declare
@@ -253,32 +260,72 @@ process.on("SIGTERM", () => shutdown(0));
 process.on("SIGINT", () => shutdown(0));
 
 // ---------------------------------------------------------------------------
-// Step 3: start web / email-worker / ws-do in source-dir "dev mode" shape
-// (see src/app/src/lib/services.ts's isDevMode branch). We deliberately do
-// NOT import startServices() from @alook/app — it manages a detached,
-// pidfile-tracked background process model built for a developer's own
-// machine (`alook-app start/stop`), which fights a container's own
-// foreground-process + signal-based lifecycle. Spawn shapes are duplicated
-// here instead, kept foreground/attached so this script can supervise them.
+// Step 2b: web's real production build. Baked into the image by the
+// Dockerfile's own `opennextjs-cloudflare build` RUN step (see Dockerfile
+// comment) so boot never pays the multi-minute build cost — this is only a
+// fallback for iterating against a container that wasn't rebuilt from a
+// fresh image (e.g. local `docker run` against a stale image, or the
+// artifact was pruned). Checked every boot; skipped when already present.
+// ---------------------------------------------------------------------------
+const WEB_WORKER_OUTPUT = join(WEB_DIR, ".open-next", "worker.js");
+
+function buildWebIfNeeded() {
+  return new Promise((resolve, reject) => {
+    if (existsSync(WEB_WORKER_OUTPUT)) {
+      log("web-build", `found existing build at ${WEB_WORKER_OUTPUT}, skipping`);
+      resolve();
+      return;
+    }
+    log("web-build", "no baked build found — running opennextjs-cloudflare build now (this is slow; expected to be baked into the image instead)");
+    const child = spawn("npx", ["opennextjs-cloudflare", "build"], {
+      cwd: WEB_DIR,
+      stdio: "inherit",
+      env: process.env,
+    });
+    child.on("exit", (code) => {
+      if (code === 0) resolve();
+      else reject(new Error(`opennextjs-cloudflare build exited with code ${code}`));
+    });
+    child.on("error", reject);
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Step 3: start web / email-worker / ws-do. email-worker and ws-do stay in
+// source-dir "dev mode" shape (see src/app/src/lib/services.ts's isDevMode
+// branch) — genuinely dev-mode Workers regardless of the web tier's build
+// status (self-hosted email doesn't work either way, upstream's own
+// limitation, not something to fix here). web is different: it now serves
+// the REAL compiled Workers bundle built above via `wrangler dev --local`
+// (NOT `next dev` — no Turbopack/HMR/dev-only cross-origin behavior serving
+// production traffic). We deliberately do NOT import startServices() from
+// @alook/app — it manages a detached, pidfile-tracked background process
+// model built for a developer's own machine (`alook-app start/stop`), which
+// fights a container's own foreground-process + signal-based lifecycle.
+// Spawn shapes are duplicated here instead, kept foreground/attached so
+// this script can supervise them.
 // ---------------------------------------------------------------------------
 function startWebServices() {
   const devEnv = { NODE_ENV: "development" };
 
-  // --hostname 0.0.0.0: `next dev`'s bind host is otherwise not guaranteed
-  // to accept connections from outside the container's loopback interface,
+  // --ip 0.0.0.0: `wrangler dev`'s bind host is otherwise localhost-only,
   // which would make the service unreachable behind Railway's proxy despite
-  // looking "up" from inside the container.
+  // looking "up" from inside the container (mirrors the old `next dev
+  // --hostname 0.0.0.0` requirement). No NODE_ENV override here — this is a
+  // real build being served, not a dev-mode process; auth.ts's
+  // emailAndPassword auth is unconditionally enabled regardless of what
+  // NODE_ENV the built worker resolves to (see its comment for why).
   spawnService(
     "web",
     "npx",
-    ["next", "dev", "--hostname", "0.0.0.0", "--port", String(PORT_WEB)],
+    ["wrangler", "dev", "--local", "--ip", "0.0.0.0", "--port", String(PORT_WEB)],
     WEB_DIR,
-    devEnv,
+    {},
   );
   // No --persist-to on either of these — see ensureWranglerPersistSymlink():
   // each service's own <dir>/.wrangler is symlinked onto the volume instead,
-  // so the default persist path (which `wrangler dev` and `next dev` both
-  // resolve the same way) already lands there.
+  // so the default persist path (which every `wrangler dev` process here
+  // resolves the same way) already lands there.
   spawnService(
     "email-worker",
     "npx",
@@ -317,11 +364,11 @@ function extractSessionCookie(res) {
   return cookies.find((c) => c.includes("better-auth.session_token")) || "";
 }
 
-async function registerUser(baseURL, email) {
+async function registerUser(baseURL, email, password) {
   let res = await fetch(`${baseURL}/api/auth/sign-up/email`, {
     method: "POST",
     headers: { "Content-Type": "application/json", Origin: baseURL },
-    body: JSON.stringify({ email, password: DEV_PASSWORD, name: "Admin" }),
+    body: JSON.stringify({ email, password, name: "Admin" }),
     redirect: "manual",
   });
 
@@ -331,7 +378,7 @@ async function registerUser(baseURL, email) {
       res = await fetch(`${baseURL}/api/auth/sign-in/email`, {
         method: "POST",
         headers: { "Content-Type": "application/json", Origin: baseURL },
-        body: JSON.stringify({ email, password: DEV_PASSWORD }),
+        body: JSON.stringify({ email, password }),
         redirect: "manual",
       });
       if (!res.ok) throw new Error(`sign-in failed after existing-account signup (${res.status})`);
@@ -487,13 +534,14 @@ async function main() {
 
   ensureDevVars();
   await runMigrations();
+  await buildWebIfNeeded();
 
   startWebServices();
   log("boot", `waiting for web server at ${BASE_URL} ...`);
   await waitForServer(BASE_URL);
   log("boot", "web server is up");
 
-  const cookie = await registerUser(BASE_URL, ADMIN_EMAIL);
+  const cookie = await registerUser(BASE_URL, ADMIN_EMAIL, ADMIN_PASSWORD);
   const workspace = await createWorkspace(BASE_URL, cookie);
   const tokenResult = await createMachineToken(BASE_URL, cookie, workspace.id);
   log("register", `machine token issued (id=${tokenResult.id})`);

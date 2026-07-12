@@ -4,11 +4,17 @@
 # install/linking, bun for the cli/app packages' own `bun run src/index.ts`
 # dev entrypoints (see src/cli/package.json, src/app/package.json — bun here
 # is just a fast TS runner for those two packages, unrelated to the rest of
-# the stack). The web/email-worker/ws-do services run via `next dev` /
-# `wrangler dev --local` (see scripts/docker-entrypoint.mjs for why: the
-# only non-interactive, source-checkout-compatible way to run them — there's
-# no packaged `next build && next start` / real Cloudflare deploy path wired
-# up for self-hosting in this repo).
+# the stack). email-worker/ws-do run via `wrangler dev --local` directly
+# against source — genuinely dev-mode Workers regardless (self-hosted email
+# doesn't work either way, that's upstream's own limitation). web is
+# different: it's `opennextjs-cloudflare build`'t into a real compiled
+# Workers bundle in this image (see the build RUN step below), then served
+# at boot by `wrangler dev --local` against that bundle (NOT `next dev`) —
+# see scripts/docker-entrypoint.mjs's startWebServices() for why serving a
+# real build matters (no Turbopack/HMR/dev-only cross-origin behavior in
+# production traffic). Still not a real Cloudflare deploy (`opennextjs-cloudflare
+# deploy` pushes to a real CF account, out of scope for this self-hosted box) —
+# just a real build, served locally.
 FROM node:22-bookworm
 
 # git: workspace deps that resolve from a git ref. python3/make/g++: native
@@ -60,10 +66,16 @@ COPY . .
 
 RUN pnpm install --frozen-lockfile
 
-# No build step: the self-hosted runtime this image drives runs `next dev`
-# and `wrangler dev --local` directly against source (see
-# scripts/docker-entrypoint.mjs) rather than a compiled/bundled artifact, so
-# there is nothing to `pnpm build` for the services that actually run.
+# Real production build for the web tier, baked into the image so boot never
+# pays this cost (an OpenNext build takes minutes — running it at container
+# start would blow past Railway's healthcheck window before the web port
+# ever opens). `.dev.vars`/secrets don't exist yet at image-build time — that's
+# fine, this step only compiles Next + bundles the Worker; it never needs
+# runtime secrets. scripts/docker-entrypoint.mjs's startWebServices() checks
+# for this output at boot and serves it via `wrangler dev --local`; it only
+# rebuilds itself if this baked artifact is somehow missing (e.g. iterating
+# without rebuilding the image).
+RUN cd src/web && npx opennextjs-cloudflare build
 
 # Default port; the entrypoint honors Railway's injected $PORT if set (see
 # scripts/docker-entrypoint.mjs), falling back to this value otherwise.
