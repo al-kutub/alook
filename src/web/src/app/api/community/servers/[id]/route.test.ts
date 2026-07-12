@@ -8,6 +8,7 @@ const mockFanOut = vi.fn()
 const mockGetServer = vi.fn()
 const mockListServerChannels = vi.fn()
 const mockListUnreadChannels = vi.fn()
+const mockListVisibleChannelIds = vi.fn()
 const mockFindManyCategories = vi.fn()
 
 vi.mock("@opennextjs/cloudflare", () => ({
@@ -31,7 +32,8 @@ vi.mock("@alook/shared", async () => {
         updateServer: (...a: unknown[]) => mockUpdateServer(...a),
       },
       communityChannel: {
-        listServerChannels: (...a: unknown[]) => mockListServerChannels(...a),
+        listServerChannelsForViewer: (...a: unknown[]) => mockListServerChannels(...a),
+        listVisibleChannelIdsForUser: (...a: unknown[]) => mockListVisibleChannelIds(...a),
       },
       communityInbox: {
         listUnreadChannels: (...a: unknown[]) => mockListUnreadChannels(...a),
@@ -112,6 +114,7 @@ describe("GET /api/community/servers/[id]", () => {
 
   beforeEach(() => {
     vi.clearAllMocks()
+    mockListVisibleChannelIds.mockResolvedValue([])
     mockGetMember.mockResolvedValue({ id: "mem_1", userId: "u1", role: "member" })
     mockGetServer.mockResolvedValue({
       id: "s1",
