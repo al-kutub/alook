@@ -167,7 +167,8 @@ export class TaskService {
     // (failTask still surfaces an error bubble — a failed run must not go silent.)
     await this.reconcileAgentStatus(task.agentId, task.workspaceId);
     this.maybeUpsertUnread(task, workspaceId, null).catch(() => {});
-    return task;
+    const commentStatus = await this.enforceCommentBackstop(task, workspaceId);
+    return { ...task, commentStatus };
   }
 
   async failTask(taskId: string, workspaceId: string, error: string) {
@@ -226,7 +227,99 @@ export class TaskService {
     await this.reconcileAgentStatus(task.agentId, task.workspaceId);
     await this.syncIssueStatusFromTask(task, "failed");
     this.maybeUpsertUnread(task, workspaceId, errorMessageId).catch(() => {});
-    return task;
+    // Only short-circuit the lookup when we KNOW a comment exists (the error
+    // bubble failTask just created). We can't shortcut the negative case: an
+    // empty error here just means failTask itself didn't create a message —
+    // the agent may have already posted one earlier in the run via send-dm.
+    const commentStatus = await this.enforceCommentBackstop(task, workspaceId, {
+      knownHasComment: errorMessageId !== null ? true : undefined,
+    });
+    return { ...task, commentStatus };
+  }
+
+  /**
+   * Comment-required backstop: every non-exempt task reaching a terminal
+   * status (completed/failed — NOT cancelled/superseded, which are
+   * user/system-initiated shutdowns, not agent-reported outcomes) must have
+   * left at least one message. If it didn't, fire exactly one reminder
+   * continuation task carrying a `comment_retry_for` context flag; if THAT
+   * continuation also completes/fails with no message, stop for good
+   * (retry_exhausted) instead of retrying forever.
+   *
+   * heartbeat/kill_task are exempt (heartbeat explicitly tells the agent "no
+   * need to reply" when there's nothing outstanding; kill_task isn't
+   * agent-authored work).
+   */
+  private async enforceCommentBackstop(
+    task: {
+      id: string;
+      agentId: string;
+      workspaceId: string;
+      conversationId: string;
+      type: string;
+      traceId?: string | null;
+      context?: unknown;
+    },
+    workspaceId: string,
+    opts?: { knownHasComment?: boolean },
+  ): Promise<string | null> {
+    if (task.type === TASK_TYPES.HEARTBEAT || task.type === TASK_TYPES.KILL_TASK) {
+      return null;
+    }
+
+    try {
+      const hasComment =
+        opts?.knownHasComment !== undefined
+          ? opts.knownHasComment
+          : await messageQueries.hasMessageForTask(this.db, task.id);
+      const ctx = (task.context ?? {}) as Record<string, unknown>;
+      const retryForTaskId = typeof ctx.comment_retry_for === "string" ? ctx.comment_retry_for : null;
+
+      if (hasComment) {
+        const updated = await taskQueries.setCommentStatus(this.db, task.id, workspaceId, "satisfied");
+        if (retryForTaskId) {
+          await taskQueries.setCommentStatus(this.db, retryForTaskId, workspaceId, "satisfied");
+        }
+        return updated?.commentStatus ?? "satisfied";
+      }
+
+      if (retryForTaskId) {
+        // This task IS the one-and-only retry attempt, and it also produced
+        // no comment. Stop here — no further continuations.
+        await taskQueries.setCommentStatus(this.db, task.id, workspaceId, "retry_exhausted");
+        await taskQueries.setCommentStatus(this.db, retryForTaskId, workspaceId, "retry_exhausted");
+        log.warn("enforceCommentBackstop: retry also produced no comment, giving up", {
+          taskId: task.id,
+          originalTaskId: retryForTaskId,
+        });
+        return "retry_exhausted";
+      }
+
+      // First offense: mark it and wake the agent exactly once more.
+      const retryQueuedAt = new Date().toISOString();
+      await taskQueries.setCommentStatus(this.db, task.id, workspaceId, "retry_queued", retryQueuedAt);
+      try {
+        await this.enqueueTask(
+          task.agentId,
+          task.conversationId,
+          workspaceId,
+          "Your previous task finished without leaving a message explaining the outcome. Please post a " +
+            "brief summary via `alook sync send-dm` describing what happened before finishing.",
+          task.type,
+          {
+            parentTaskId: task.id,
+            traceId: task.traceId ?? null,
+            context: { comment_retry_for: task.id },
+          },
+        );
+      } catch (err) {
+        log.warn("enforceCommentBackstop: failed to dispatch comment-retry task", { taskId: task.id, err });
+      }
+      return "retry_queued";
+    } catch (err) {
+      log.warn("enforceCommentBackstop failed", { taskId: task.id, err });
+      return null;
+    }
   }
 
   private async syncIssueStatusFromTask(

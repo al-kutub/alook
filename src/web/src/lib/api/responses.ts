@@ -114,6 +114,7 @@ export function taskToResponse(t: {
   createdAt: Date | string;
   traceId?: string | null;
   parentTaskId?: string | null;
+  commentStatus?: string | null;
 }) {
   return TaskApiBaseSchema.parse({
     id: t.id,
@@ -135,6 +136,7 @@ export function taskToResponse(t: {
     created_at: formatTimestamp(t.createdAt),
     trace_id: t.traceId ?? null,
     parent_task_id: t.parentTaskId ?? null,
+    comment_status: t.commentStatus ?? null,
   });
 }
 
@@ -310,6 +312,7 @@ export function taskToActivityResponse(t: {
   startedAt: Date | string | null;
   completedAt: Date | string | null;
   error?: string | null;
+  commentStatus?: string | null;
 }) {
   const prompt = t.prompt.length > 120 ? t.prompt.slice(0, 120) : t.prompt;
   return {
@@ -322,6 +325,7 @@ export function taskToActivityResponse(t: {
     started_at: formatTimestampNullable(t.startedAt),
     completed_at: formatTimestampNullable(t.completedAt),
     error: t.error || null,
+    comment_status: t.commentStatus ?? null,
   };
 }
 

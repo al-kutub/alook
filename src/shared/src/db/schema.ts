@@ -360,6 +360,7 @@ export const message = sqliteTable(
   },
   (t) => [
     index("idx_message_conversation_status").on(t.conversationId, t.status),
+    index("idx_message_task_id").on(t.taskId),
   ]
 );
 
@@ -392,6 +393,11 @@ export const agentTaskQueue = sqliteTable(
     error: text("error"),
     traceId: text("trace_id"),
     parentTaskId: text("parent_task_id"),
+    // Comment-required backstop (see TaskService.enforceCommentBackstop):
+    // null = not applicable (non-terminal, or a type that's exempt, e.g.
+    // heartbeat/kill_task) or not yet evaluated.
+    commentStatus: text("comment_status"),
+    commentRetryQueuedAt: text("comment_retry_queued_at"),
   },
   (t) => [
     index("idx_task_queue_pending")

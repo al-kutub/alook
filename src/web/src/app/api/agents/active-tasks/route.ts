@@ -34,6 +34,7 @@ export const GET = withAuth(async (req, ctx) => {
       conversation_id: t.conversationId,
       channel: t.channel ?? "default",
       created_at: t.createdAt,
+      comment_status: t.commentStatus ?? null,
     })),
   });
 });

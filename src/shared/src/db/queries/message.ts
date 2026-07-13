@@ -110,6 +110,23 @@ export async function getMessage(db: Database, id: string) {
   return rows[0] ?? null;
 }
 
+/**
+ * Comment-required backstop (TaskService.enforceCommentBackstop): true iff the
+ * agent left at least one chat message attributed to this task (e.g. via
+ * `alook sync send-dm`, which stamps `task_id` from `$ALOOK_TASK_ID`, or the
+ * runtime-attributed error bubble `failTask` creates). Any row counts —
+ * message.status is irrelevant here, this only answers "did the agent say
+ * anything," not "is it still visible."
+ */
+export async function hasMessageForTask(db: Database, taskId: string): Promise<boolean> {
+  const rows = await db
+    .select({ id: message.id })
+    .from(message)
+    .where(eq(message.taskId, taskId))
+    .limit(1);
+  return rows.length > 0;
+}
+
 export async function updateMessageTaskId(db: Database, messageId: string, taskId: string) {
   await db.update(message).set({ taskId }).where(eq(message.id, messageId));
 }

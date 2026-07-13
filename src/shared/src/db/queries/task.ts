@@ -1,6 +1,6 @@
 import { eq, and, desc, asc, inArray, notInArray, ne, count, lt, or, sql, exists } from "drizzle-orm";
 import { alias } from "drizzle-orm/sqlite-core";
-import { agentTaskQueue, taskMessage, conversation } from "../schema";
+import { agentTaskQueue, taskMessage, message, conversation } from "../schema";
 import type { Database } from "../index";
 import { ClaimedTaskRowSchema } from "../../schemas";
 import { TASK_TYPES } from "../../constants";
@@ -539,6 +539,7 @@ export async function listActiveTasksByWorkspace(
       conversationId: agentTaskQueue.conversationId,
       createdAt: agentTaskQueue.createdAt,
       channel: conversation.channel,
+      commentStatus: agentTaskQueue.commentStatus,
     })
     .from(agentTaskQueue)
     .innerJoin(conversation, eq(agentTaskQueue.conversationId, conversation.id))
@@ -683,16 +684,51 @@ export async function failStaleRunningTasks(db: Database, workspaceId: string, s
   if (staleRows.length === 0) return [];
 
   const staleIds = staleRows.map((r) => r.id);
+  // Visibility only, no retry dispatch here: the daemon that owned this task
+  // is presumed dead/gone (that's *why* it went stale), so waking it again
+  // would just go stale a second time. We still want "did it ever say
+  // anything before it died" to be visible on the row, distinct from a task
+  // that completed cleanly with no comment (which DOES get a retry — see
+  // TaskService.enforceCommentBackstop). heartbeat/kill_task stay exempt
+  // (comment_status left NULL), matching enforceCommentBackstop's own rule.
   const rows = await db
     .update(agentTaskQueue)
     .set({
       status: "failed",
       completedAt: new Date().toISOString(),
       error: `timed out in running state (no message activity for ${Math.round(staleSeconds / 60)} minutes)`,
+      commentStatus: sql`CASE
+        WHEN ${agentTaskQueue.type} IN (${TASK_TYPES.KILL_TASK}, ${TASK_TYPES.HEARTBEAT}) THEN NULL
+        WHEN EXISTS (SELECT 1 FROM ${message} WHERE ${message.taskId} = ${agentTaskQueue.id}) THEN 'satisfied'
+        ELSE 'retry_exhausted'
+      END`,
     })
     .where(and(inArray(agentTaskQueue.id, staleIds), eq(agentTaskQueue.status, "running")))
     .returning({ agentId: agentTaskQueue.agentId, workspaceId: agentTaskQueue.workspaceId, conversationId: agentTaskQueue.conversationId });
   return rows;
+}
+
+/**
+ * Comment-required backstop (TaskService.enforceCommentBackstop). Status is
+ * one of "satisfied" | "retry_queued" | "retry_exhausted". `retryQueuedAt`
+ * is only written when transitioning to "retry_queued" — pass it explicitly
+ * (or omit to leave the existing value alone).
+ */
+export async function setCommentStatus(
+  db: Database,
+  id: string,
+  workspaceId: string,
+  status: string,
+  retryQueuedAt?: string,
+) {
+  const values: { commentStatus: string; commentRetryQueuedAt?: string } = { commentStatus: status };
+  if (retryQueuedAt !== undefined) values.commentRetryQueuedAt = retryQueuedAt;
+  const rows = await db
+    .update(agentTaskQueue)
+    .set(values)
+    .where(and(eq(agentTaskQueue.id, id), eq(agentTaskQueue.workspaceId, workspaceId)))
+    .returning({ id: agentTaskQueue.id, commentStatus: agentTaskQueue.commentStatus });
+  return rows[0] ?? null;
 }
 
 export async function getOutstandingTasksForHeartbeat(

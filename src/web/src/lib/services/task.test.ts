@@ -9,6 +9,7 @@ vi.mock("@alook/shared", () => ({
     CALENDAR_EVENT: "calendar_event",
     ISSUE_EVENT: "issue_event",
     KILL_TASK: "kill_task",
+    HEARTBEAT: "heartbeat",
   },
   MAX_TASKS_PER_TRACE: 256,
   queries: {
@@ -30,6 +31,7 @@ vi.mock("@alook/shared", () => ({
       cancelTask: vi.fn(),
       dispatchTaskById: vi.fn().mockResolvedValue(null),
       findSteerableReplacement: vi.fn().mockResolvedValue(null),
+      setCommentStatus: vi.fn().mockResolvedValue({ id: "t1", commentStatus: null }),
     },
     agent: {
       getAgent: vi.fn(),
@@ -39,6 +41,7 @@ vi.mock("@alook/shared", () => ({
     message: {
       createMessage: vi.fn(),
       updateMessageTaskId: vi.fn().mockResolvedValue(undefined),
+      hasMessageForTask: vi.fn().mockResolvedValue(false),
     },
     conversation: {
       getConversation: vi.fn(),
@@ -106,6 +109,13 @@ describe("TaskService", () => {
     vi.clearAllMocks();
     // Default: no kill tasks to claim
     taskQ.claimKillTasks.mockResolvedValue([]);
+    // Default: no comment on the task and no agent to retry-dispatch to —
+    // clearAllMocks() only clears call history, not implementations set via
+    // .mockResolvedValue in earlier tests, so pin these explicitly each run
+    // to stop the comment-backstop's best-effort retry path (see
+    // enforceCommentBackstop) from leaking agent/message state across tests.
+    messageQ.hasMessageForTask.mockResolvedValue(false);
+    agentQ.getAgent.mockResolvedValue(null);
   });
 
   // ── enqueueTask ──────────────────────────────────────────────────
@@ -423,6 +433,109 @@ describe("TaskService", () => {
       // Agent now controls issue status via CLI — completeTask no longer auto-syncs
       expect(issueQ.updateIssue).not.toHaveBeenCalled();
     });
+
+    // ── comment-required backstop ─────────────────────────────────
+
+    it("completeTask_noMessage_marksRetryQueuedAndDispatchesReminder", async () => {
+      const task = {
+        id: "t1",
+        agentId: "a1",
+        workspaceId: "w1",
+        conversationId: "c1",
+        type: "user_dm_message",
+        status: "completed",
+      };
+      taskQ.completeTask.mockResolvedValue(task);
+      taskQ.countRunningTasks.mockResolvedValue(0);
+      agentQ.updateAgentStatus.mockResolvedValue(undefined);
+      messageQ.hasMessageForTask.mockResolvedValue(false);
+      taskQ.setCommentStatus.mockResolvedValue({ id: "t1", commentStatus: "retry_queued" });
+      agentQ.getAgent.mockResolvedValue({ id: "a1", runtimeId: "rt1" });
+      taskQ.createTask.mockResolvedValue({ id: "t2", agentId: "a1", runtimeId: "rt1", workspaceId: "w1", conversationId: "c1" });
+
+      const result = await service.completeTask("t1", "w1", JSON.stringify({}), "sess-1");
+
+      expect(messageQ.hasMessageForTask).toHaveBeenCalledWith({}, "t1");
+      expect(taskQ.setCommentStatus).toHaveBeenCalledWith({}, "t1", "w1", "retry_queued", expect.any(String));
+      expect(taskQ.createTask).toHaveBeenCalledWith(
+        {},
+        expect.objectContaining({
+          agentId: "a1",
+          conversationId: "c1",
+          parentTaskId: "t1",
+          context: { comment_retry_for: "t1" },
+        })
+      );
+      expect(result.commentStatus).toBe("retry_queued");
+    });
+
+    it("completeTask_withMessage_marksSatisfiedAndDoesNotRetry", async () => {
+      const task = {
+        id: "t1",
+        agentId: "a1",
+        workspaceId: "w1",
+        conversationId: "c1",
+        type: "user_dm_message",
+        status: "completed",
+      };
+      taskQ.completeTask.mockResolvedValue(task);
+      taskQ.countRunningTasks.mockResolvedValue(0);
+      agentQ.updateAgentStatus.mockResolvedValue(undefined);
+      messageQ.hasMessageForTask.mockResolvedValue(true);
+      taskQ.setCommentStatus.mockResolvedValue({ id: "t1", commentStatus: "satisfied" });
+
+      const result = await service.completeTask("t1", "w1", JSON.stringify({}), "sess-1");
+
+      expect(taskQ.setCommentStatus).toHaveBeenCalledWith({}, "t1", "w1", "satisfied");
+      expect(taskQ.createTask).not.toHaveBeenCalled();
+      expect(result.commentStatus).toBe("satisfied");
+    });
+
+    it("completeTask_retryTaskAlsoSilent_marksRetryExhaustedOnBothAndStops", async () => {
+      // This IS the reminder continuation (context.comment_retry_for points
+      // back at the original task) — it also completed with no message.
+      const retryTask = {
+        id: "t2",
+        agentId: "a1",
+        workspaceId: "w1",
+        conversationId: "c1",
+        type: "user_dm_message",
+        status: "completed",
+        context: { comment_retry_for: "t1" },
+      };
+      taskQ.completeTask.mockResolvedValue(retryTask);
+      taskQ.countRunningTasks.mockResolvedValue(0);
+      agentQ.updateAgentStatus.mockResolvedValue(undefined);
+      messageQ.hasMessageForTask.mockResolvedValue(false);
+
+      const result = await service.completeTask("t2", "w1", JSON.stringify({}), "sess-1");
+
+      expect(taskQ.setCommentStatus).toHaveBeenCalledWith({}, "t2", "w1", "retry_exhausted");
+      expect(taskQ.setCommentStatus).toHaveBeenCalledWith({}, "t1", "w1", "retry_exhausted");
+      // Bounded: no second continuation is ever dispatched.
+      expect(taskQ.createTask).not.toHaveBeenCalled();
+      expect(result.commentStatus).toBe("retry_exhausted");
+    });
+
+    it("completeTask_heartbeatType_skipsBackstopEntirely", async () => {
+      const task = {
+        id: "t1",
+        agentId: "a1",
+        workspaceId: "w1",
+        conversationId: "c1",
+        type: "heartbeat",
+        status: "completed",
+      };
+      taskQ.completeTask.mockResolvedValue(task);
+      taskQ.countRunningTasks.mockResolvedValue(0);
+      agentQ.updateAgentStatus.mockResolvedValue(undefined);
+
+      const result = await service.completeTask("t1", "w1", JSON.stringify({}), "sess-1");
+
+      expect(messageQ.hasMessageForTask).not.toHaveBeenCalled();
+      expect(taskQ.setCommentStatus).not.toHaveBeenCalled();
+      expect(result.commentStatus).toBeNull();
+    });
   });
 
   // ── failTask ─────────────────────────────────────────────────────
@@ -520,6 +633,63 @@ describe("TaskService", () => {
       await service.failTask("t1", "w1", "");
 
       expect(messageQ.createMessage).not.toHaveBeenCalled();
+    });
+
+    it("failTask_emptyError_noAutoMessage_stillQueuesCommentRetry", async () => {
+      // Bug-fix audit: failTask's own error-attribution branch only creates a
+      // message when `error` is truthy — an empty-string fail (allowed by
+      // FailTaskRequestSchema) is just as silent as a no-message complete.
+      // The backstop must catch this path too, not just completeTask's.
+      const task = {
+        id: "t1",
+        agentId: "a1",
+        workspaceId: "w1",
+        conversationId: "c1",
+        type: "user_dm_message",
+        status: "failed",
+      };
+      taskQ.failTask.mockResolvedValue(task);
+      taskQ.countRunningTasks.mockResolvedValue(0);
+      agentQ.updateAgentStatus.mockResolvedValue(undefined);
+      messageQ.hasMessageForTask.mockResolvedValue(false);
+      taskQ.setCommentStatus.mockResolvedValue({ id: "t1", commentStatus: "retry_queued" });
+      agentQ.getAgent.mockResolvedValue({ id: "a1", runtimeId: "rt1" });
+      taskQ.createTask.mockResolvedValue({ id: "t2", agentId: "a1", runtimeId: "rt1", workspaceId: "w1", conversationId: "c1" });
+
+      const result = await service.failTask("t1", "w1", "");
+
+      // Empty error only tells us failTask itself didn't create a message —
+      // the agent may have already posted one earlier via send-dm, so this
+      // must still query rather than assume silence.
+      expect(messageQ.hasMessageForTask).toHaveBeenCalledWith({}, "t1");
+      expect(taskQ.setCommentStatus).toHaveBeenCalledWith({}, "t1", "w1", "retry_queued", expect.any(String));
+      expect(result.commentStatus).toBe("retry_queued");
+    });
+
+    it("failTask_emptyError_priorSendDmExists_doesNotRetry", async () => {
+      // The agent DM'd earlier in the run, then failed with an empty error
+      // string (e.g. a clean early-exit). knownHasComment must NOT
+      // short-circuit this to "no comment" — it has to actually check.
+      const task = {
+        id: "t1",
+        agentId: "a1",
+        workspaceId: "w1",
+        conversationId: "c1",
+        type: "user_dm_message",
+        status: "failed",
+      };
+      taskQ.failTask.mockResolvedValue(task);
+      taskQ.countRunningTasks.mockResolvedValue(0);
+      agentQ.updateAgentStatus.mockResolvedValue(undefined);
+      messageQ.hasMessageForTask.mockResolvedValue(true);
+      taskQ.setCommentStatus.mockResolvedValue({ id: "t1", commentStatus: "satisfied" });
+
+      const result = await service.failTask("t1", "w1", "");
+
+      expect(messageQ.hasMessageForTask).toHaveBeenCalledWith({}, "t1");
+      expect(taskQ.setCommentStatus).toHaveBeenCalledWith({}, "t1", "w1", "satisfied");
+      expect(taskQ.createTask).not.toHaveBeenCalled();
+      expect(result.commentStatus).toBe("satisfied");
     });
 
     it("calls reconcileAgentStatus", async () => {
