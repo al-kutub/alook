@@ -326,7 +326,8 @@ describe("AgentResponse shape", () => {
       maxConcurrentTasks: 3, ...baseFields(),
     });
     expect(Object.keys(res).sort()).toEqual([
-      "avatar_url", "created_at", "description", "email_handle", "id", "instructions", "max_concurrent_tasks",
+      "avatar_url", "created_at", "description", "email_handle", "heartbeat_enabled",
+      "heartbeat_interval_seconds", "id", "instructions", "last_heartbeat_at", "max_concurrent_tasks",
       "name", "owner_id", "runtime_config", "runtime_id", "runtime_mode", "status",
       "updated_at", "visibility", "workspace_id",
     ]);

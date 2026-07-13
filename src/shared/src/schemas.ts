@@ -509,6 +509,8 @@ export const UpdateAgentRequestSchema = z
     runtime_config: RuntimeConfigSchema,
     visibility: z.enum(["public", "private"]).optional(),
     avatar_url: z.string().max(2000).nullable().optional(),
+    heartbeat_enabled: z.boolean().optional(),
+    heartbeat_interval_seconds: z.number().int().min(60).max(86400).optional(),
   })
   .refine(
     (v) =>
@@ -518,7 +520,9 @@ export const UpdateAgentRequestSchema = z
       v.runtime_id !== undefined ||
       v.runtime_config !== undefined ||
       v.visibility !== undefined ||
-      v.avatar_url !== undefined,
+      v.avatar_url !== undefined ||
+      v.heartbeat_enabled !== undefined ||
+      v.heartbeat_interval_seconds !== undefined,
     { message: "at least one field is required" },
   );
 export type UpdateAgentRequest = z.infer<typeof UpdateAgentRequestSchema>;

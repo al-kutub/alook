@@ -60,12 +60,14 @@ export const PATCH = withAuth(async (req, ctx) => {
   }
   if (body.visibility !== undefined) data.visibility = body.visibility;
   if (body.avatar_url !== undefined) data.avatarUrl = body.avatar_url;
+  if (body.heartbeat_enabled !== undefined) data.heartbeatEnabled = body.heartbeat_enabled;
+  if (body.heartbeat_interval_seconds !== undefined) data.heartbeatIntervalSeconds = body.heartbeat_interval_seconds;
 
   const existing = await queries.agent.getAgent(db, id, ws.workspaceId, ctx.userId);
   if (!existing) return writeError("agent not found", 404);
   if (existing.ownerId !== ctx.userId) return writeError("agent owner access required", 403);
 
-  const updated = await queries.agent.updateAgent(db, id, ws.workspaceId, data as { name?: string; description?: string; instructions?: string; runtimeId?: string; runtimeConfig?: unknown; visibility?: string; avatarUrl?: string | null }, ctx.userId);
+  const updated = await queries.agent.updateAgent(db, id, ws.workspaceId, data as { name?: string; description?: string; instructions?: string; runtimeId?: string; runtimeConfig?: unknown; visibility?: string; avatarUrl?: string | null; heartbeatEnabled?: boolean; heartbeatIntervalSeconds?: number }, ctx.userId);
   if (!updated) {
     return writeError("agent not found", 404);
   }

@@ -65,6 +65,9 @@ export function agentToResponse(a: AgentRow) {
     avatar_url: a.avatarUrl ?? null,
     visibility: a.visibility ?? "private",
     owner_id: a.ownerId ?? null,
+    heartbeat_enabled: !!a.heartbeatEnabled,
+    heartbeat_interval_seconds: a.heartbeatIntervalSeconds,
+    last_heartbeat_at: formatTimestampNullable(a.lastHeartbeatAt),
     created_at: formatTimestamp(a.createdAt),
     updated_at: formatTimestamp(a.updatedAt),
   };

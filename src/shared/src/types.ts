@@ -36,6 +36,9 @@ export interface Agent {
   avatar_url: string | null;
   visibility: string;
   owner_id: string | null;
+  heartbeat_enabled: boolean;
+  heartbeat_interval_seconds: number;
+  last_heartbeat_at: string | null;
   created_at: string;
   updated_at: string;
 }

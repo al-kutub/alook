@@ -70,6 +70,10 @@ export const POST = withAuth(async (req: NextRequest, ctx) => {
 
   const sanitizedRc: Record<string, unknown> | null = body.model ? { model: body.model } : null;
 
+  // CEO agents get a heartbeat by default — no dedicated "role" concept exists
+  // yet, so we match on name until one does.
+  const isCeoHire = agentName.trim().toLowerCase() === "ceo";
+
   const newAgent = await queries.agent.createAgent(db, {
     workspaceId: ws.workspaceId,
     name: agentName,
@@ -83,6 +87,7 @@ export const POST = withAuth(async (req: NextRequest, ctx) => {
     ownerId: ctx.userId,
     emailHandle: handle,
     avatarUrl: serializeAvatarConfig(randomConfig()),
+    ...(isCeoHire ? { heartbeatEnabled: true, heartbeatIntervalSeconds: 1800 } : {}),
   });
 
   const link = await queries.agentLink.create(db, {

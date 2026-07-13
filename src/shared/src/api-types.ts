@@ -125,6 +125,8 @@ export interface UpdateAgentRequest {
   email_handle?: string;
   visibility?: string;
   avatar_url?: string | null;
+  heartbeat_enabled?: boolean;
+  heartbeat_interval_seconds?: number;
 }
 
 export interface SendMessageRequest {
