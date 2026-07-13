@@ -127,6 +127,7 @@ export interface UpdateAgentRequest {
   avatar_url?: string | null;
   heartbeat_enabled?: boolean;
   heartbeat_interval_seconds?: number;
+  reports_to?: string | null;
 }
 
 export interface SendMessageRequest {

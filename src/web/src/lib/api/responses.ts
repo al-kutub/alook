@@ -74,6 +74,7 @@ export function agentToResponse(a: AgentRow, extra?: { spentMonthlyCents?: numbe
     spent_monthly_cents: spentMonthlyCents,
     budget_utilization_percent: computeBudgetUtilizationPercent(budgetMonthlyCents, spentMonthlyCents),
     paused_reason: a.pausedReason ?? null,
+    reports_to: a.reportsTo ?? null,
     created_at: formatTimestamp(a.createdAt),
     updated_at: formatTimestamp(a.updatedAt),
   };

@@ -64,6 +64,15 @@ export const PATCH = withAuth(async (req, ctx) => {
   if (body.heartbeat_enabled !== undefined) data.heartbeatEnabled = body.heartbeat_enabled;
   if (body.heartbeat_interval_seconds !== undefined) data.heartbeatIntervalSeconds = body.heartbeat_interval_seconds;
   if (body.budget_monthly_cents !== undefined) data.budgetMonthlyCents = body.budget_monthly_cents;
+  if (body.reports_to !== undefined) {
+    if (body.reports_to !== null) {
+      const manager = await queries.agent.getAgent(db, body.reports_to, ws.workspaceId);
+      if (!manager) return writeError("reports_to agent not found in workspace", 400);
+      const cycle = await queries.agent.wouldCreateCycle(db, id, body.reports_to, ws.workspaceId);
+      if (cycle) return writeError("reports_to would create a cycle in the org hierarchy", 400);
+    }
+    data.reportsTo = body.reports_to;
+  }
 
   const existing = await queries.agent.getAgent(db, id, ws.workspaceId, ctx.userId);
   if (!existing) return writeError("agent not found", 404);
@@ -80,7 +89,7 @@ export const PATCH = withAuth(async (req, ctx) => {
     data.pausedReason = null;
   }
 
-  const updated = await queries.agent.updateAgent(db, id, ws.workspaceId, data as { name?: string; description?: string; instructions?: string; runtimeId?: string; runtimeConfig?: unknown; visibility?: string; avatarUrl?: string | null; heartbeatEnabled?: boolean; heartbeatIntervalSeconds?: number; budgetMonthlyCents?: number | null; pausedReason?: string | null }, ctx.userId);
+  const updated = await queries.agent.updateAgent(db, id, ws.workspaceId, data as { name?: string; description?: string; instructions?: string; runtimeId?: string; runtimeConfig?: unknown; visibility?: string; avatarUrl?: string | null; heartbeatEnabled?: boolean; heartbeatIntervalSeconds?: number; budgetMonthlyCents?: number | null; pausedReason?: string | null; reportsTo?: string | null }, ctx.userId);
   if (!updated) {
     return writeError("agent not found", 404);
   }

@@ -121,6 +121,7 @@ export async function updateAgent(
     heartbeatIntervalSeconds?: number;
     budgetMonthlyCents?: number | null;
     pausedReason?: string | null;
+    reportsTo?: string | null;
   },
   ownerId?: string
 ) {
@@ -213,4 +214,65 @@ export async function getAllHandlesForWorkspace(db: Database, workspaceId: strin
     .select({ id: agent.id, emailHandle: agent.emailHandle })
     .from(agent)
     .where(eq(agent.workspaceId, workspaceId));
+}
+
+// ── Enforced org hierarchy ───────────────────────────────────────────────
+// See 0063_agent_org_hierarchy.sql. reportsTo is a strict single-parent
+// tree, distinct from agent_link (a free-form collaboration graph).
+
+export interface OrgChartNode {
+  id: string;
+  name: string;
+  reportsTo: string | null;
+  status: string;
+}
+
+/** Flat list of every agent in the workspace with id/name/reportsTo/status
+ * — enough for a caller to build the tree client-side. A "chart" query
+ * (rather than a tree-shaped one) keeps this cheap and lets the caller
+ * decide how to render orphaned/cyclic edges if the data is ever
+ * inconsistent (shouldn't happen given updateAgent's cycle guard, but a
+ * flat list degrades gracefully either way). */
+export async function getOrgChart(db: Database, workspaceId: string): Promise<OrgChartNode[]> {
+  const rows = await db
+    .select({ id: agent.id, name: agent.name, reportsTo: agent.reportsTo, status: agent.status })
+    .from(agent)
+    .where(eq(agent.workspaceId, workspaceId));
+  return rows;
+}
+
+/** Walks reportsTo from `agentId` up to the root (the agent with
+ * reportsTo = null), returning the chain of managers (NOT including
+ * `agentId` itself), closest manager first. Used for escalation. Bounded
+ * by the workspace's total agent count so a data-integrity bug (a cycle
+ * that somehow got past updateAgent's guard) can't loop forever. */
+export async function getChainOfCommand(db: Database, agentId: string, workspaceId: string): Promise<OrgChartNode[]> {
+  const chart = await getOrgChart(db, workspaceId);
+  const byId = new Map(chart.map((a) => [a.id, a]));
+  const chain: OrgChartNode[] = [];
+  const visited = new Set<string>([agentId]);
+  let current = byId.get(agentId)?.reportsTo ?? null;
+  while (current && !visited.has(current) && chain.length < chart.length) {
+    const manager = byId.get(current);
+    if (!manager) break;
+    chain.push(manager);
+    visited.add(manager.id);
+    current = manager.reportsTo;
+  }
+  return chain;
+}
+
+/** True if setting `agentId`'s manager to `candidateManagerId` would
+ * create a cycle (i.e. `agentId` is already an ancestor of
+ * `candidateManagerId`, or they're the same agent). Call BEFORE
+ * persisting a reportsTo change — see PATCH /api/agents/{id}. */
+export async function wouldCreateCycle(
+  db: Database,
+  agentId: string,
+  candidateManagerId: string,
+  workspaceId: string
+): Promise<boolean> {
+  if (agentId === candidateManagerId) return true;
+  const chainOfCandidate = await getChainOfCommand(db, candidateManagerId, workspaceId);
+  return chainOfCandidate.some((a) => a.id === agentId);
 }

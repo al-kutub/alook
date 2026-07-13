@@ -278,10 +278,18 @@ export const agent = sqliteTable(
     // budget; cleared automatically once back under budget. Independent of
     // `status` — see 0061_cost_budget.sql.
     pausedReason: text("paused_reason"),
+    // Enforced org hierarchy — see queries/agent.ts getOrgChart/
+    // getChainOfCommand and updateAgent's reportsTo cycle validation.
+    // null = root (e.g. the CEO). Distinct from agent_link (a free-form
+    // many-to-many collaboration graph, not a strict tree).
+    reportsTo: text("reports_to"),
     createdAt: text("created_at").notNull().$defaultFn(() => new Date().toISOString()),
     updatedAt: text("updated_at").notNull().$defaultFn(() => new Date().toISOString()),
   },
-  (t) => [primaryKey({ columns: [t.id, t.workspaceId] })]
+  (t) => [
+    primaryKey({ columns: [t.id, t.workspaceId] }),
+    index("idx_agent_reports_to").on(t.workspaceId, t.reportsTo),
+  ]
 );
 
 export const agentWhitelist = sqliteTable(

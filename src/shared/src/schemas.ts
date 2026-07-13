@@ -612,6 +612,9 @@ export const UpdateAgentRequestSchema = z
     heartbeat_interval_seconds: z.number().int().min(60).max(86400).optional(),
     // null clears the budget (unlimited). 0 is a valid zero-tolerance budget.
     budget_monthly_cents: z.number().int().min(0).nullable().optional(),
+    // null = root (no manager). Cycle/self-report validated server-side —
+    // see wouldCreateCycle() in queries/agent.ts.
+    reports_to: z.string().min(1).nullable().optional(),
   })
   .refine(
     (v) =>
@@ -624,7 +627,8 @@ export const UpdateAgentRequestSchema = z
       v.avatar_url !== undefined ||
       v.heartbeat_enabled !== undefined ||
       v.heartbeat_interval_seconds !== undefined ||
-      v.budget_monthly_cents !== undefined,
+      v.budget_monthly_cents !== undefined ||
+      v.reports_to !== undefined,
     { message: "at least one field is required" },
   );
 export type UpdateAgentRequest = z.infer<typeof UpdateAgentRequestSchema>;
