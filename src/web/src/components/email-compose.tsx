@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef } from "react";
+import { useState, useRef, useMemo } from "react";
 import { useEditor, EditorContent } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import Placeholder from "@tiptap/extension-placeholder";
@@ -16,6 +16,11 @@ import type { EmailAttachment } from "@alook/shared";
 import { toast } from "sonner";
 import { Send, X, Loader2, Paperclip, File as FileIcon } from "lucide-react";
 
+interface AgentSuggestion {
+  name: string;
+  email: string;
+}
+
 interface EmailComposeProps {
   fromAddress: string;
   onSend: (to: string, subject: string, htmlBody: string, attachments: EmailAttachment[], threading?: { inReplyTo?: string; references?: string }) => Promise<boolean>;
@@ -26,6 +31,7 @@ interface EmailComposeProps {
   initialAttachments?: EmailAttachment[];
   inReplyTo?: string;
   references?: string;
+  agentSuggestions?: AgentSuggestion[];
 }
 
 function formatFileSize(bytes: number): string {
@@ -44,13 +50,23 @@ export function EmailCompose({
   initialAttachments = [],
   inReplyTo,
   references,
+  agentSuggestions = [],
 }: EmailComposeProps) {
   const [to, setTo] = useState(initialTo);
   const [subject, setSubject] = useState(initialSubject);
   const [sending, setSending] = useState(false);
   const [attachments, setAttachments] = useState<EmailAttachment[]>(initialAttachments);
   const [uploading, setUploading] = useState(false);
+  const [toSuggestionsOpen, setToSuggestionsOpen] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const filteredSuggestions = useMemo(() => {
+    const query = to.trim().toLowerCase();
+    if (!query) return agentSuggestions;
+    return agentSuggestions.filter(
+      (a) => a.email.toLowerCase().includes(query) || a.name.toLowerCase().includes(query)
+    );
+  }, [agentSuggestions, to]);
 
   const editor = useEditor({
     immediatelyRender: false,
@@ -164,18 +180,36 @@ export function EmailCompose({
           <span className="text-muted-foreground w-16 shrink-0">From</span>
           <span className="text-muted-foreground truncate min-w-0">{fromAddress}</span>
         </div>
-        <div className="flex items-center gap-2 text-sm min-w-0">
+        <div className="flex items-center gap-2 text-sm min-w-0 relative">
           <span className="text-muted-foreground w-16 shrink-0">To</span>
           <div className="flex-1 min-w-0 -ml-2 rounded-md bg-muted/40">
             <Input
               type="email"
               value={to}
               onChange={(e) => setTo(e.target.value)}
+              onFocus={() => setToSuggestionsOpen(true)}
+              onBlur={() => setTimeout(() => setToSuggestionsOpen(false), 150)}
               placeholder="recipient@example.com"
               className="h-7 text-sm border-0 bg-transparent px-2 shadow-none focus-visible:ring-0 placeholder:text-muted-foreground/50"
               disabled={sending}
             />
           </div>
+          {toSuggestionsOpen && filteredSuggestions.length > 0 && (
+            <div className="absolute left-16 right-0 top-full mt-1 z-10 rounded-lg border border-border bg-popover shadow-md py-1 max-h-50 overflow-y-auto thin-scrollbar">
+              {filteredSuggestions.map((a) => (
+                <button
+                  key={a.email}
+                  type="button"
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={() => { setTo(a.email); setToSuggestionsOpen(false); }}
+                  className="flex items-center gap-2 w-full px-2 py-2 text-left text-xs transition-colors text-muted-foreground hover:bg-accent/50 hover:text-foreground"
+                >
+                  <span className="font-medium text-foreground">{a.name}</span>
+                  <span className="truncate text-muted-foreground/70">{a.email}</span>
+                </button>
+              ))}
+            </div>
+          )}
         </div>
         <div className="flex items-center gap-2 text-sm min-w-0">
           <span className="text-muted-foreground w-16 shrink-0">Subject</span>

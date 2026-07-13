@@ -89,6 +89,17 @@ export default function AgentEmailPage() {
   const activeAddress = activeMailbox?.address ?? "";
   const activeAccountId = activeMailbox?.type === "custom" ? activeMailbox.accountId : undefined;
 
+  // Teammate suggestions for the compose "To" field — every other agent in
+  // the workspace with an alook email address, so the user doesn't have to
+  // remember/type <handle>@alook.ai by hand.
+  const agentEmailSuggestions = useMemo(
+    () =>
+      agents
+        .filter((a) => a.id !== agentId && a.email_handle)
+        .map((a) => ({ name: a.name, email: toAlookAddress(a.email_handle!) })),
+    [agents, agentId]
+  );
+
   const selected = emails.find((e) => e.id === selectedId) ?? null;
 
   const loadEmails = useCallback(async (dir: string, address?: string) => {
@@ -502,6 +513,7 @@ export default function AgentEmailPage() {
           initialAttachments={composeInitial.attachments}
           inReplyTo={composeInitial.inReplyTo}
           references={composeInitial.references}
+          agentSuggestions={agentEmailSuggestions}
         />
       ) : !selected ? (
         <div className="flex items-center justify-center h-full text-sm text-muted-foreground">
