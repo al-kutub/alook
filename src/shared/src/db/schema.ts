@@ -398,6 +398,16 @@ export const agentTaskQueue = sqliteTable(
     // heartbeat/kill_task) or not yet evaluated.
     commentStatus: text("comment_status"),
     commentRetryQueuedAt: text("comment_retry_queued_at"),
+    // Execution policy (review/approval gates) — see
+    // TaskService.routeThroughExecutionPolicy / recordExecutionDecision.
+    // null = no policy, task completes normally. Shape: { mode, stages: [{
+    // id, type: "review"|"approval", participants: [...] }] }.
+    executionPolicy: text("execution_policy", { mode: "json" }),
+    // Runtime cursor through the policy: { status, currentStageId,
+    // currentStageIndex, currentStageType, currentParticipant,
+    // returnAssignee, completedStageIds, lastDecisionId, lastDecisionOutcome
+    // }. null until a policy is set and the task first finishes.
+    executionState: text("execution_state", { mode: "json" }),
   },
   (t) => [
     index("idx_task_queue_pending")
@@ -821,6 +831,32 @@ export const agentSkill = sqliteTable(
       columns: [t.agentId, t.workspaceId],
       foreignColumns: [agent.id, agent.workspaceId],
     }).onDelete("cascade"),
+  ]
+);
+
+// Audit trail for execution-policy review/approval decisions. See
+// TaskService.recordExecutionDecision.
+export const taskExecutionDecision = sqliteTable(
+  "task_execution_decision",
+  {
+    id: text("id").primaryKey().$defaultFn(() => "ted_" + nanoid()),
+    taskId: text("task_id")
+      .notNull()
+      .references(() => agentTaskQueue.id, { onDelete: "cascade" }),
+    workspaceId: text("workspace_id")
+      .notNull()
+      .references(() => workspace.id, { onDelete: "cascade" }),
+    stageId: text("stage_id").notNull(),
+    stageType: text("stage_type").notNull(),
+    actorAgentId: text("actor_agent_id"),
+    actorUserId: text("actor_user_id"),
+    outcome: text("outcome").notNull(),
+    body: text("body").notNull(),
+    createdAt: text("created_at").notNull().$defaultFn(() => new Date().toISOString()),
+  },
+  (t) => [
+    index("idx_task_execution_decision_task").on(t.taskId, t.createdAt),
+    index("idx_task_execution_decision_workspace").on(t.workspaceId, t.createdAt),
   ]
 );
 

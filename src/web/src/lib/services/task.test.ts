@@ -32,6 +32,10 @@ vi.mock("@alook/shared", () => ({
       dispatchTaskById: vi.fn().mockResolvedValue(null),
       findSteerableReplacement: vi.fn().mockResolvedValue(null),
       setCommentStatus: vi.fn().mockResolvedValue({ id: "t1", commentStatus: null }),
+      routeTaskToReview: vi.fn(),
+      advanceExecutionState: vi.fn(),
+      returnTaskToExecutor: vi.fn(),
+      setExecutionPolicy: vi.fn(),
     },
     agent: {
       getAgent: vi.fn(),
@@ -58,6 +62,12 @@ vi.mock("@alook/shared", () => ({
       isUnreadEligible: vi.fn().mockReturnValue(false),
       upsertUnreadEntry: vi.fn().mockResolvedValue(undefined),
       findLatestAssistantMessageId: vi.fn().mockResolvedValue(null),
+    },
+    executionDecision: {
+      createExecutionDecision: vi.fn().mockResolvedValue({ id: "ted_1" }),
+    },
+    member: {
+      getMemberByUserAndWorkspace: vi.fn(),
     },
   },
 }));
@@ -101,6 +111,12 @@ const issueQ = (queries as any).issue as {
 const runtimeQ = (queries as any).runtime as {
   getAgentRuntime: ReturnType<typeof vi.fn>;
 };
+const executionDecisionQ = (queries as any).executionDecision as {
+  createExecutionDecision: ReturnType<typeof vi.fn>;
+};
+const memberQ = (queries as any).member as {
+  getMemberByUserAndWorkspace: ReturnType<typeof vi.fn>;
+};
 
 const service = new TaskService({} as any);
 
@@ -116,6 +132,10 @@ describe("TaskService", () => {
     // enforceCommentBackstop) from leaking agent/message state across tests.
     messageQ.hasMessageForTask.mockResolvedValue(false);
     agentQ.getAgent.mockResolvedValue(null);
+    // Default: no task row found by id — completeTask's execution-policy
+    // lookup should no-op unless a test explicitly wires a task with a
+    // policy (same "pin defaults" rationale as above).
+    taskQ.getTask.mockResolvedValue(undefined);
   });
 
   // ── enqueueTask ──────────────────────────────────────────────────
@@ -535,6 +555,363 @@ describe("TaskService", () => {
       expect(messageQ.hasMessageForTask).not.toHaveBeenCalled();
       expect(taskQ.setCommentStatus).not.toHaveBeenCalled();
       expect(result.commentStatus).toBeNull();
+    });
+  });
+
+  // ── execution policy (review/approval gates) ────────────────────
+
+  describe("execution policy", () => {
+    const reviewPolicy = {
+      mode: "normal",
+      stages: [
+        { id: "s_review", type: "review", participants: [{ type: "agent", agentId: "reviewer1" }] },
+        { id: "s_approval", type: "approval", participants: [{ type: "agent", agentId: "approver1" }] },
+      ],
+    };
+
+    describe("completeTask routing (finish while a policy is active)", () => {
+      it("routes to review on first finish instead of completing", async () => {
+        const task = {
+          id: "t1",
+          agentId: "executor1",
+          workspaceId: "w1",
+          conversationId: "c1",
+          type: "user_dm_message",
+          status: "running",
+          executionPolicy: reviewPolicy,
+          executionState: null,
+        };
+        taskQ.getTask.mockResolvedValue(task);
+        taskQ.routeTaskToReview.mockResolvedValue({ ...task, status: "in_review" });
+        taskQ.countRunningTasks.mockResolvedValue(0);
+        agentQ.updateAgentStatus.mockResolvedValue(undefined);
+
+        const result = await service.completeTask("t1", "w1", JSON.stringify({ output: "done" }), "sess-1");
+
+        expect(taskQ.completeTask).not.toHaveBeenCalled();
+        expect(taskQ.routeTaskToReview).toHaveBeenCalledWith(
+          {},
+          "t1",
+          "w1",
+          {
+            result: { output: "done" },
+            sessionId: "sess-1",
+            executionState: expect.objectContaining({
+              status: "pending",
+              currentStageId: "s_review",
+              currentStageIndex: 0,
+              currentStageType: "review",
+              currentParticipant: { type: "agent", agentId: "reviewer1" },
+              returnAssignee: "executor1",
+            }),
+          },
+        );
+        // The executor's runtime finished (left "running") — reconcile now,
+        // not just on the eventual real completion.
+        expect(agentQ.updateAgentStatus).toHaveBeenCalledWith({}, "executor1", "w1", "idle");
+        expect(result.status).toBe("in_review");
+        expect(result.commentStatus).toBeNull();
+      });
+
+      it("excludes the original executor from stage-0 eligibility (no self-review)", async () => {
+        const selfPolicy = {
+          mode: "normal",
+          stages: [
+            {
+              id: "s_review",
+              type: "review",
+              // executor is listed first — must be skipped in favor of reviewer1
+              participants: [{ type: "agent", agentId: "executor1" }, { type: "agent", agentId: "reviewer1" }],
+            },
+          ],
+        };
+        const task = {
+          id: "t1",
+          agentId: "executor1",
+          workspaceId: "w1",
+          conversationId: "c1",
+          type: "user_dm_message",
+          status: "running",
+          executionPolicy: selfPolicy,
+          executionState: null,
+        };
+        taskQ.getTask.mockResolvedValue(task);
+        taskQ.routeTaskToReview.mockResolvedValue({ ...task, status: "in_review" });
+        taskQ.countRunningTasks.mockResolvedValue(0);
+
+        await service.completeTask("t1", "w1", JSON.stringify({}), "sess-1");
+
+        expect(taskQ.routeTaskToReview).toHaveBeenCalledWith(
+          {},
+          "t1",
+          "w1",
+          expect.objectContaining({
+            executionState: expect.objectContaining({
+              currentParticipant: { type: "agent", agentId: "reviewer1" },
+            }),
+          }),
+        );
+      });
+
+      it("loops back to the SAME (non-zero) stage after changes_requested, not stage 0", async () => {
+        const task = {
+          id: "t1",
+          agentId: "executor1",
+          workspaceId: "w1",
+          conversationId: "c1",
+          type: "user_dm_message",
+          status: "running",
+          executionPolicy: reviewPolicy,
+          executionState: {
+            status: "changes_requested",
+            currentStageId: "s_approval",
+            currentStageIndex: 1,
+            currentStageType: "approval",
+            currentParticipant: { type: "agent", agentId: "executor1" },
+            returnAssignee: "executor1",
+            completedStageIds: ["s_review"],
+          },
+        };
+        taskQ.getTask.mockResolvedValue(task);
+        taskQ.routeTaskToReview.mockResolvedValue({ ...task, status: "in_review" });
+        taskQ.countRunningTasks.mockResolvedValue(0);
+
+        await service.completeTask("t1", "w1", JSON.stringify({}), "sess-2");
+
+        expect(taskQ.routeTaskToReview).toHaveBeenCalledWith(
+          {},
+          "t1",
+          "w1",
+          expect.objectContaining({
+            executionState: expect.objectContaining({
+              currentStageId: "s_approval",
+              currentStageIndex: 1,
+              currentStageType: "approval",
+              currentParticipant: { type: "agent", agentId: "approver1" },
+              completedStageIds: ["s_review"],
+            }),
+          }),
+        );
+      });
+
+      it("does not intercept once executionState.status is already completed", async () => {
+        const task = {
+          id: "t1",
+          agentId: "executor1",
+          workspaceId: "w1",
+          conversationId: "c1",
+          type: "user_dm_message",
+          status: "in_review",
+          executionPolicy: reviewPolicy,
+          executionState: { status: "completed", currentStageId: null, currentStageIndex: null, currentStageType: null, currentParticipant: null, returnAssignee: "executor1", completedStageIds: ["s_review", "s_approval"] },
+        };
+        taskQ.getTask.mockResolvedValue(task);
+        taskQ.completeTask.mockResolvedValue({ ...task, status: "completed" });
+        taskQ.countRunningTasks.mockResolvedValue(0);
+        messageQ.hasMessageForTask.mockResolvedValue(true);
+
+        const result = await service.completeTask("t1", "w1", JSON.stringify({}), "sess-3");
+
+        expect(taskQ.routeTaskToReview).not.toHaveBeenCalled();
+        expect(taskQ.completeTask).toHaveBeenCalled();
+        expect(result.status).toBe("completed");
+      });
+    });
+
+    describe("recordExecutionDecision", () => {
+      const reviewPendingTask = {
+        id: "t1",
+        agentId: "executor1",
+        workspaceId: "w1",
+        conversationId: "c1",
+        type: "user_dm_message",
+        status: "in_review",
+        result: { output: "done" },
+        sessionId: "sess-1",
+        executionPolicy: reviewPolicy,
+        executionState: {
+          status: "pending",
+          currentStageId: "s_review",
+          currentStageIndex: 0,
+          currentStageType: "review",
+          currentParticipant: { type: "agent", agentId: "reviewer1" },
+          returnAssignee: "executor1",
+          completedStageIds: [],
+        },
+      };
+
+      it("rejects a decision from anyone other than the current participant", async () => {
+        taskQ.getTask.mockResolvedValue(reviewPendingTask);
+
+        await expect(
+          service.recordExecutionDecision("t1", "w1", { agentId: "someone-else" }, "approved", "looks fine")
+        ).rejects.toThrow(/forbidden/);
+
+        expect(executionDecisionQ.createExecutionDecision).not.toHaveBeenCalled();
+        expect(taskQ.advanceExecutionState).not.toHaveBeenCalled();
+        expect(taskQ.returnTaskToExecutor).not.toHaveBeenCalled();
+      });
+
+      it("rejects an empty body for either outcome", async () => {
+        taskQ.getTask.mockResolvedValue(reviewPendingTask);
+
+        await expect(
+          service.recordExecutionDecision("t1", "w1", { agentId: "reviewer1" }, "approved", "")
+        ).rejects.toThrow(/body is required/);
+        await expect(
+          service.recordExecutionDecision("t1", "w1", { agentId: "reviewer1" }, "changes_requested", "")
+        ).rejects.toThrow(/body is required/);
+
+        expect(executionDecisionQ.createExecutionDecision).not.toHaveBeenCalled();
+      });
+
+      it("review approve advances to the approval stage (task stays in_review, new participant)", async () => {
+        taskQ.getTask.mockResolvedValue(reviewPendingTask);
+        taskQ.advanceExecutionState.mockResolvedValue({
+          ...reviewPendingTask,
+          executionState: {
+            ...reviewPendingTask.executionState,
+            status: "pending",
+            currentStageId: "s_approval",
+            currentStageIndex: 1,
+            currentStageType: "approval",
+            currentParticipant: { type: "agent", agentId: "approver1" },
+          },
+        });
+
+        const result = await service.recordExecutionDecision("t1", "w1", { agentId: "reviewer1" }, "approved", "looks good");
+
+        expect(executionDecisionQ.createExecutionDecision).toHaveBeenCalledWith({}, expect.objectContaining({
+          taskId: "t1",
+          stageId: "s_review",
+          stageType: "review",
+          actorAgentId: "reviewer1",
+          outcome: "approved",
+          body: "looks good",
+        }));
+        expect(taskQ.advanceExecutionState).toHaveBeenCalledWith({}, "t1", "w1", expect.objectContaining({
+          status: "pending",
+          currentStageId: "s_approval",
+          currentStageIndex: 1,
+          currentStageType: "approval",
+          currentParticipant: { type: "agent", agentId: "approver1" },
+          completedStageIds: ["s_review"],
+        }));
+        expect(taskQ.completeTask).not.toHaveBeenCalled();
+        expect(result.executionState.currentStageId).toBe("s_approval");
+      });
+
+      it("approval approve on the last stage actually completes the task", async () => {
+        const approvalPendingTask = {
+          ...reviewPendingTask,
+          executionState: {
+            status: "pending",
+            currentStageId: "s_approval",
+            currentStageIndex: 1,
+            currentStageType: "approval",
+            currentParticipant: { type: "agent", agentId: "approver1" },
+            returnAssignee: "executor1",
+            completedStageIds: ["s_review"],
+          },
+        };
+        // First getTask call is recordExecutionDecision's own lookup; the
+        // second is completeTask's internal policy check after
+        // executionState has been advanced to "completed" on the row.
+        taskQ.getTask
+          .mockResolvedValueOnce(approvalPendingTask)
+          .mockResolvedValueOnce({
+            ...approvalPendingTask,
+            executionState: { ...approvalPendingTask.executionState, status: "completed" },
+          });
+        taskQ.advanceExecutionState.mockResolvedValue({ ...approvalPendingTask, executionState: { status: "completed" } });
+        taskQ.completeTask.mockResolvedValue({ ...approvalPendingTask, status: "completed" });
+        taskQ.countRunningTasks.mockResolvedValue(0);
+        agentQ.updateAgentStatus.mockResolvedValue(undefined);
+        messageQ.hasMessageForTask.mockResolvedValue(true);
+        taskQ.setCommentStatus.mockResolvedValue({ id: "t1", commentStatus: "satisfied" });
+
+        const result = await service.recordExecutionDecision("t1", "w1", { agentId: "approver1" }, "approved", "shipping it");
+
+        expect(taskQ.advanceExecutionState).toHaveBeenCalledWith({}, "t1", "w1", expect.objectContaining({
+          status: "completed",
+          completedStageIds: ["s_review", "s_approval"],
+        }));
+        expect(taskQ.completeTask).toHaveBeenCalled();
+        expect(result.status).toBe("completed");
+      });
+
+      it("changes_requested returns the task to the original executor on the same stage", async () => {
+        taskQ.getTask.mockResolvedValue(reviewPendingTask);
+        taskQ.returnTaskToExecutor.mockResolvedValue({
+          ...reviewPendingTask,
+          status: "queued",
+          executionState: {
+            ...reviewPendingTask.executionState,
+            status: "changes_requested",
+            currentParticipant: { type: "agent", agentId: "executor1" },
+          },
+        });
+        agentQ.updateAgentStatus.mockResolvedValue(undefined);
+        taskQ.countRunningTasks.mockResolvedValue(0);
+
+        const result = await service.recordExecutionDecision("t1", "w1", { agentId: "reviewer1" }, "changes_requested", "please fix the typo");
+
+        expect(executionDecisionQ.createExecutionDecision).toHaveBeenCalledWith({}, expect.objectContaining({
+          outcome: "changes_requested",
+          body: "please fix the typo",
+        }));
+        expect(taskQ.returnTaskToExecutor).toHaveBeenCalledWith({}, "t1", "w1", expect.objectContaining({
+          status: "changes_requested",
+          currentStageId: "s_review",
+          currentStageIndex: 0,
+          currentParticipant: { type: "agent", agentId: "executor1" },
+          returnAssignee: "executor1",
+        }));
+        expect(result.status).toBe("queued");
+      });
+
+      it("rejects a decision when the task isn't in_review", async () => {
+        taskQ.getTask.mockResolvedValue({ ...reviewPendingTask, status: "running" });
+
+        await expect(
+          service.recordExecutionDecision("t1", "w1", { agentId: "reviewer1" }, "approved", "x")
+        ).rejects.toThrow(/in 'running' status/);
+      });
+    });
+
+    describe("setExecutionPolicy", () => {
+      it("drops a stage whose only participant is the task's own executor, nulling the policy", async () => {
+        const task = { id: "t1", agentId: "executor1", workspaceId: "w1", status: "queued" };
+        taskQ.getTask.mockResolvedValue(task);
+        taskQ.setExecutionPolicy.mockResolvedValue({ ...task, executionPolicy: null });
+
+        const policy = {
+          mode: "normal",
+          stages: [{ id: "s1", type: "review", participants: [{ type: "agent", agentId: "executor1" }] }],
+        };
+
+        await service.setExecutionPolicy("t1", "w1", policy as any);
+
+        expect(taskQ.setExecutionPolicy).toHaveBeenCalledWith({}, "t1", "w1", null);
+      });
+
+      it("keeps a stage with a valid non-executor agent participant", async () => {
+        const task = { id: "t1", agentId: "executor1", workspaceId: "w1", status: "queued" };
+        taskQ.getTask.mockResolvedValue(task);
+        agentQ.getAgent.mockResolvedValue({ id: "reviewer1" });
+        taskQ.setExecutionPolicy.mockResolvedValue({ ...task, executionPolicy: {} });
+
+        const policy = {
+          mode: "normal",
+          stages: [{ id: "s1", type: "review", participants: [{ type: "agent", agentId: "reviewer1" }] }],
+        };
+
+        await service.setExecutionPolicy("t1", "w1", policy as any);
+
+        expect(taskQ.setExecutionPolicy).toHaveBeenCalledWith({}, "t1", "w1", expect.objectContaining({
+          stages: [{ id: "s1", type: "review", participants: [{ type: "agent", agentId: "reviewer1" }] }],
+        }));
+      });
     });
   });
 

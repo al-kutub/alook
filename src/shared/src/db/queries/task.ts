@@ -19,6 +19,7 @@ export async function createTask(
     context?: Record<string, unknown>;
     traceId?: string | null;
     parentTaskId?: string | null;
+    executionPolicy?: unknown;
   }
 ) {
   const rows = await db
@@ -35,6 +36,7 @@ export async function createTask(
       context: data.context ?? undefined,
       traceId: data.traceId ?? null,
       parentTaskId: data.parentTaskId ?? null,
+      executionPolicy: data.executionPolicy ?? undefined,
     })
     .returning();
   return rows[0]!;
@@ -293,7 +295,11 @@ export async function completeTask(
   db: Database,
   id: string,
   workspaceId: string,
-  data: { result: unknown; sessionId: string | null }
+  data: { result: unknown; sessionId: string | null },
+  // "running" -> "completed" is the normal path. The execution-policy final
+  // approval also routes through this query, but the row is at "in_review"
+  // at that point (see TaskService.recordExecutionDecision), not "running".
+  fromStatuses: string[] = ["running"],
 ) {
   const rows = await db
     .update(agentTaskQueue)
@@ -304,7 +310,105 @@ export async function completeTask(
       sessionId: data.sessionId,
     })
     .where(
+      and(eq(agentTaskQueue.id, id), eq(agentTaskQueue.workspaceId, workspaceId), inArray(agentTaskQueue.status, fromStatuses))
+    )
+    .returning();
+  return rows[0] ?? null;
+}
+
+/**
+ * Execution-policy gate: task finished running but is parked pending a
+ * review/approval decision instead of completing. See TaskService.
+ * routeThroughExecutionPolicy.
+ */
+export async function routeTaskToReview(
+  db: Database,
+  id: string,
+  workspaceId: string,
+  data: { result: unknown; sessionId: string | null; executionState: unknown },
+) {
+  const rows = await db
+    .update(agentTaskQueue)
+    .set({
+      status: "in_review",
+      result: data.result,
+      sessionId: data.sessionId,
+      executionState: data.executionState,
+    })
+    .where(
       and(eq(agentTaskQueue.id, id), eq(agentTaskQueue.workspaceId, workspaceId), eq(agentTaskQueue.status, "running"))
+    )
+    .returning();
+  return rows[0] ?? null;
+}
+
+/**
+ * Approve-and-advance: task stays "in_review" but executionState moves to
+ * the next stage (new currentParticipant, etc). Only valid while the task is
+ * still in_review — see TaskService.recordExecutionDecision.
+ */
+export async function advanceExecutionState(
+  db: Database,
+  id: string,
+  workspaceId: string,
+  executionState: unknown,
+) {
+  const rows = await db
+    .update(agentTaskQueue)
+    .set({ executionState })
+    .where(
+      and(eq(agentTaskQueue.id, id), eq(agentTaskQueue.workspaceId, workspaceId), eq(agentTaskQueue.status, "in_review"))
+    )
+    .returning();
+  return rows[0] ?? null;
+}
+
+/**
+ * Changes-requested: task returns to "queued" (agentId is unchanged — still
+ * the original executor — so their runtime naturally re-claims it via the
+ * normal poll/claim path) with executionState parked on the same stage.
+ */
+export async function returnTaskToExecutor(
+  db: Database,
+  id: string,
+  workspaceId: string,
+  executionState: unknown,
+) {
+  const rows = await db
+    .update(agentTaskQueue)
+    .set({
+      status: "queued",
+      dispatchedAt: null,
+      startedAt: null,
+      executionState,
+    })
+    .where(
+      and(eq(agentTaskQueue.id, id), eq(agentTaskQueue.workspaceId, workspaceId), eq(agentTaskQueue.status, "in_review"))
+    )
+    .returning();
+  return rows[0] ?? null;
+}
+
+/**
+ * Set (or clear, with null) the execution policy on a task. Only valid
+ * before the task has entered the review flow (still queued/dispatched/
+ * running) — once in_review the policy is locked for that run.
+ */
+export async function setExecutionPolicy(
+  db: Database,
+  id: string,
+  workspaceId: string,
+  executionPolicy: unknown,
+) {
+  const rows = await db
+    .update(agentTaskQueue)
+    .set({ executionPolicy })
+    .where(
+      and(
+        eq(agentTaskQueue.id, id),
+        eq(agentTaskQueue.workspaceId, workspaceId),
+        inArray(agentTaskQueue.status, ["queued", "dispatched", "running"]),
+      )
     )
     .returning();
   return rows[0] ?? null;

@@ -107,6 +107,9 @@ export {
   communityBotSyntheticEmail,
   SELF_BOT_FRIENDSHIP_PREFIX,
   isSelfBotFriendship,
+  ExecutionStageType,
+  ExecutionDecisionOutcome,
+  ExecutionStateStatus,
 } from "./constants";
 
 export {
@@ -174,6 +177,9 @@ export type {
   MessageRoleType,
   MeetingStatusType,
   DevPortProfile,
+  ExecutionStageTypeType,
+  ExecutionDecisionOutcomeType,
+  ExecutionStateStatusType,
 } from "./constants";
 
 // Schemas
@@ -196,6 +202,12 @@ export {
   DeregisterRequestSchema,
   CompleteTaskRequestSchema,
   FailTaskRequestSchema,
+  ExecutionParticipantSchema,
+  ExecutionStageSchema,
+  ExecutionPolicySchema,
+  ExecutionStateSchema,
+  SetExecutionPolicyRequestSchema,
+  ExecutionDecisionRequestSchema,
   MessageItemSchema,
   ReportMessagesRequestSchema,
   RepeatIntervalSchema,
@@ -288,6 +300,12 @@ export type {
   DeregisterRequest,
   CompleteTaskRequest,
   FailTaskRequest,
+  ExecutionParticipant,
+  ExecutionStage,
+  ExecutionPolicy,
+  ExecutionState,
+  SetExecutionPolicyRequest,
+  ExecutionDecisionRequest,
   AgentDmRequest,
   MessageItem,
   ReportMessagesRequest,

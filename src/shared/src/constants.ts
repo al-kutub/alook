@@ -19,6 +19,12 @@ export const TaskStatus = {
   QUEUED: "queued",
   DISPATCHED: "dispatched",
   RUNNING: "running",
+  // Execution-policy gate: the task finished executing but is parked
+  // pending a review or approval decision (see TaskService.
+  // routeThroughExecutionPolicy). Not terminal — either advances to the
+  // next stage, loops back to "queued" for the executor on changes
+  // requested, or completes for real once the last stage approves.
+  IN_REVIEW: "in_review",
   COMPLETED: "completed",
   FAILED: "failed",
   CANCELLED: "cancelled",
@@ -77,6 +83,30 @@ export const TERMINAL_ISSUE_STATUSES: readonly IssueStatusType[] = [
 export function isTerminalIssueStatus(status: string): boolean {
   return (TERMINAL_ISSUE_STATUSES as readonly string[]).includes(status);
 }
+
+// ── Execution policy (review/approval gates) ────────────────────────────────
+// See TaskService.routeThroughExecutionPolicy / recordExecutionDecision
+// (src/web/src/lib/services/task.ts).
+
+export const ExecutionStageType = {
+  REVIEW: "review",
+  APPROVAL: "approval",
+} as const;
+export type ExecutionStageTypeType = (typeof ExecutionStageType)[keyof typeof ExecutionStageType];
+
+export const ExecutionDecisionOutcome = {
+  APPROVED: "approved",
+  CHANGES_REQUESTED: "changes_requested",
+} as const;
+export type ExecutionDecisionOutcomeType = (typeof ExecutionDecisionOutcome)[keyof typeof ExecutionDecisionOutcome];
+
+export const ExecutionStateStatus = {
+  IDLE: "idle",
+  PENDING: "pending",
+  CHANGES_REQUESTED: "changes_requested",
+  COMPLETED: "completed",
+} as const;
+export type ExecutionStateStatusType = (typeof ExecutionStateStatus)[keyof typeof ExecutionStateStatus];
 
 export const MessageRole = {
   USER: "user",

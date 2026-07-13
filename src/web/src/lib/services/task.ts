@@ -1,4 +1,4 @@
-import type { Database } from "@alook/shared";
+import type { Database, ExecutionPolicy, ExecutionState, ExecutionParticipant } from "@alook/shared";
 import { queries, TASK_TYPES, MAX_TASKS_PER_TRACE } from "@alook/shared";
 import { log } from "@/lib/logger";
 import { broadcastToUser, broadcastToDaemon } from "@/lib/broadcast";
@@ -12,6 +12,8 @@ const messageQueries = queries.message;
 const conversationQueries = queries.conversation;
 const issueQueries = queries.issue;
 const inboxQueries = queries.inbox;
+const executionDecisionQueries = queries.executionDecision;
+const memberQueries = queries.member;
 
 export class TaskService {
   constructor(private db: Database) {}
@@ -147,10 +149,32 @@ export class TaskService {
       parsed = { raw: result };
     }
 
-    const task = await taskQueries.completeTask(this.db, taskId, workspaceId, {
-      result: parsed,
-      sessionId: sessionId || null,
-    });
+    // Execution-policy gate: if this task carries a review/approval policy
+    // that hasn't been fully approved yet, park it in "in_review" instead of
+    // completing. See routeThroughExecutionPolicy. (Skipped when this call
+    // is itself the final-approval re-entry from recordExecutionDecision —
+    // routeThroughExecutionPolicy returns null once executionState.status
+    // is "completed".)
+    const existing = await taskQueries.getTask(this.db, taskId, workspaceId);
+    if (existing) {
+      const routed = await this.routeThroughExecutionPolicy(existing, workspaceId, {
+        result: parsed,
+        sessionId: sessionId || null,
+      });
+      if (routed) {
+        return { ...routed, commentStatus: null };
+      }
+    }
+
+    // "running" is the normal source status; "in_review" only applies when
+    // the last review/approval stage just approved (see recordExecutionDecision).
+    const task = await taskQueries.completeTask(
+      this.db,
+      taskId,
+      workspaceId,
+      { result: parsed, sessionId: sessionId || null },
+      ["running", "in_review"],
+    );
 
     if (!task) {
       const existing = await taskQueries.getTask(this.db, taskId);
@@ -322,6 +346,271 @@ export class TaskService {
     }
   }
 
+  /**
+   * Execution-policy gate. If `task.executionPolicy` has stages and hasn't
+   * been fully approved (executionState.status !== "completed"), park the
+   * task at "in_review" on the first eligible stage/participant instead of
+   * letting it complete — returns the updated (in_review) task. Returns
+   * null when there's no policy to intercept, letting the caller fall
+   * through to normal completion.
+   *
+   * Loop-back: when the executor re-finishes after a "changes_requested"
+   * decision, this re-enters the SAME stage (not stage 0) and — if the
+   * previous reviewer is still eligible — reassigns the same participant.
+   */
+  private async routeThroughExecutionPolicy(
+    task: { id: string; agentId: string; workspaceId: string; conversationId: string; executionPolicy?: unknown; executionState?: unknown },
+    workspaceId: string,
+    data: { result: unknown; sessionId: string | null },
+  ) {
+    const policy = (task.executionPolicy ?? null) as ExecutionPolicy | null;
+    if (!policy || !policy.stages || policy.stages.length === 0) return null;
+
+    const state = (task.executionState ?? null) as ExecutionState | null;
+    if (state?.status === "completed") return null;
+
+    const stageIndex =
+      state?.status === "changes_requested" && state.currentStageIndex !== null
+        ? state.currentStageIndex
+        : 0;
+    const stage = policy.stages[stageIndex];
+    if (!stage) {
+      log.warn("routeThroughExecutionPolicy: no stage at index, falling back to normal completion", {
+        taskId: task.id,
+        stageIndex,
+      });
+      return null;
+    }
+
+    const participant = this.pickEligibleParticipant(stage, task.agentId);
+    if (!participant) {
+      log.warn("routeThroughExecutionPolicy: no eligible participant for stage, falling back to normal completion", {
+        taskId: task.id,
+        stageId: stage.id,
+      });
+      return null;
+    }
+
+    const newState: ExecutionState = {
+      status: "pending",
+      currentStageId: stage.id,
+      currentStageIndex: stageIndex,
+      currentStageType: stage.type,
+      currentParticipant: participant,
+      returnAssignee: task.agentId,
+      completedStageIds: state?.completedStageIds ?? [],
+      lastDecisionId: state?.lastDecisionId ?? null,
+      lastDecisionOutcome: state?.lastDecisionOutcome ?? null,
+    };
+
+    const routed = await taskQueries.routeTaskToReview(this.db, task.id, workspaceId, {
+      result: data.result,
+      sessionId: data.sessionId,
+      executionState: newState,
+    });
+    if (!routed) return null;
+
+    await this.reconcileAgentStatus(routed.agentId, routed.workspaceId);
+    return routed;
+  }
+
+  /** First stage participant that isn't the original executor (self-review/approval is never allowed). */
+  private pickEligibleParticipant(
+    stage: { participants: ExecutionParticipant[] },
+    executorAgentId: string,
+  ): ExecutionParticipant | null {
+    for (const p of stage.participants) {
+      if (p.type === "agent" && p.agentId === executorAgentId) continue;
+      return p;
+    }
+    return null;
+  }
+
+  /**
+   * Drop stages with no eligible participant (agent doesn't exist in this
+   * workspace, user isn't a member, or the only participant IS the task's
+   * executor). Returns null if zero valid stages remain — the caller should
+   * treat that as "no policy" (falls back to normal completion).
+   */
+  async sanitizeExecutionPolicy(
+    policy: ExecutionPolicy | null,
+    workspaceId: string,
+    executorAgentId: string,
+  ): Promise<ExecutionPolicy | null> {
+    if (!policy || !policy.stages || policy.stages.length === 0) return null;
+
+    const stages: ExecutionPolicy["stages"] = [];
+    for (const stage of policy.stages) {
+      const validParticipants: ExecutionParticipant[] = [];
+      for (const p of stage.participants) {
+        if (p.type === "agent") {
+          if (p.agentId === executorAgentId) continue; // self-review/approval never valid
+          const agent = await agentQueries.getAgent(this.db, p.agentId, workspaceId);
+          if (agent) validParticipants.push(p);
+        } else {
+          const member = await memberQueries.getMemberByUserAndWorkspace(this.db, p.userId, workspaceId);
+          if (member) validParticipants.push(p);
+        }
+      }
+      if (validParticipants.length > 0) {
+        stages.push({ ...stage, participants: validParticipants });
+      }
+    }
+
+    if (stages.length === 0) return null;
+    return { ...policy, stages };
+  }
+
+  /**
+   * Record a review/approval decision on the task's current stage. Only the
+   * currentParticipant may act. Both outcomes require a non-empty `body`.
+   *
+   * - "changes_requested": task returns to the original executor (status
+   *   "queued", executionState parked on the SAME stage so a subsequent
+   *   finish loops back here, not stage 0).
+   * - "approved": advances to the next stage (reassigning to its first
+   *   eligible participant), or — on the last stage — actually completes
+   *   the task (comment-backstop still applies at that point).
+   */
+  async recordExecutionDecision(
+    taskId: string,
+    workspaceId: string,
+    actor: { agentId?: string | null; userId?: string | null },
+    outcome: "approved" | "changes_requested",
+    body: string,
+  ) {
+    if (!body || !body.trim()) {
+      throw new Error("body is required");
+    }
+
+    const task = await taskQueries.getTask(this.db, taskId, workspaceId);
+    if (!task) throw new Error("task not found");
+    if (task.status !== "in_review") {
+      throw new Error(`cannot record execution decision: task is in '${task.status}' status`);
+    }
+
+    const state = (task.executionState ?? null) as ExecutionState | null;
+    if (!state || state.status !== "pending" || !state.currentParticipant || !state.currentStageId || !state.currentStageType) {
+      throw new Error("task has no pending execution decision");
+    }
+
+    const participant = state.currentParticipant;
+    const isMatch =
+      (participant.type === "agent" && !!actor.agentId && participant.agentId === actor.agentId) ||
+      (participant.type === "user" && !!actor.userId && participant.userId === actor.userId);
+    if (!isMatch) {
+      throw new Error("forbidden: caller is not the current participant for this stage");
+    }
+
+    await executionDecisionQueries.createExecutionDecision(this.db, {
+      taskId: task.id,
+      workspaceId,
+      stageId: state.currentStageId,
+      stageType: state.currentStageType,
+      actorAgentId: participant.type === "agent" ? participant.agentId : null,
+      actorUserId: participant.type === "user" ? participant.userId : null,
+      outcome,
+      body,
+    });
+
+    await this.postExecutionDecisionMessage(task, state, outcome, body);
+
+    if (outcome === "changes_requested") {
+      const newState: ExecutionState = {
+        status: "changes_requested",
+        currentStageId: state.currentStageId,
+        currentStageIndex: state.currentStageIndex,
+        currentStageType: state.currentStageType,
+        currentParticipant: { type: "agent", agentId: state.returnAssignee ?? task.agentId },
+        returnAssignee: state.returnAssignee,
+        completedStageIds: state.completedStageIds,
+        lastDecisionId: null,
+        lastDecisionOutcome: "changes_requested",
+      };
+      const updated = await taskQueries.returnTaskToExecutor(this.db, task.id, workspaceId, newState);
+      if (!updated) throw new Error("failed to return task to executor");
+      await this.reconcileAgentStatus(updated.agentId, updated.workspaceId);
+      return updated;
+    }
+
+    // approved
+    const policy = (task.executionPolicy ?? null) as ExecutionPolicy | null;
+    if (!policy) throw new Error("task has no execution policy");
+
+    const completedStageIds = [...state.completedStageIds, state.currentStageId];
+    const nextIndex = (state.currentStageIndex ?? 0) + 1;
+    const nextStage = policy.stages[nextIndex];
+    const nextParticipant = nextStage ? this.pickEligibleParticipant(nextStage, task.agentId) : null;
+
+    if (nextStage && nextParticipant) {
+      const newState: ExecutionState = {
+        status: "pending",
+        currentStageId: nextStage.id,
+        currentStageIndex: nextIndex,
+        currentStageType: nextStage.type,
+        currentParticipant: nextParticipant,
+        returnAssignee: state.returnAssignee,
+        completedStageIds,
+        lastDecisionId: null,
+        lastDecisionOutcome: "approved",
+      };
+      const updated = await taskQueries.advanceExecutionState(this.db, task.id, workspaceId, newState);
+      if (!updated) throw new Error("failed to advance execution state");
+      return updated;
+    }
+
+    // Last stage approved (or every remaining stage has no eligible
+    // participant, which is inert by the same rule applied at policy-set
+    // time) — actually complete the task now.
+    const finalState: ExecutionState = {
+      status: "completed",
+      currentStageId: null,
+      currentStageIndex: null,
+      currentStageType: null,
+      currentParticipant: null,
+      returnAssignee: state.returnAssignee,
+      completedStageIds,
+      lastDecisionId: null,
+      lastDecisionOutcome: "approved",
+    };
+    const advanced = await taskQueries.advanceExecutionState(this.db, task.id, workspaceId, finalState);
+    if (!advanced) throw new Error("failed to advance execution state");
+    return this.completeTask(task.id, workspaceId, JSON.stringify(task.result ?? {}), task.sessionId ?? "");
+  }
+
+  private async postExecutionDecisionMessage(
+    task: { id: string; conversationId: string; workspaceId: string },
+    state: ExecutionState,
+    outcome: "approved" | "changes_requested",
+    body: string,
+  ) {
+    const content =
+      outcome === "approved"
+        ? `Execution decision: approved (${state.currentStageType}) — ${body}`
+        : `Execution decision: changes requested (${state.currentStageType}) — ${body}`;
+
+    const msg = await messageQueries.createMessage(this.db, {
+      conversationId: task.conversationId,
+      role: "event",
+      content,
+      taskId: task.id,
+      metadata: JSON.stringify({ kind: "execution_decision", outcome, stageId: state.currentStageId }),
+    });
+
+    try {
+      const conversation = await conversationQueries.getConversation(this.db, task.conversationId, task.workspaceId);
+      if (conversation) {
+        broadcastToUser(conversation.userId, {
+          type: "conversation.message",
+          conversationId: task.conversationId,
+          message: messageToResponse(msg),
+        }).catch(() => {});
+      }
+    } catch {
+      // non-critical: don't let broadcast failure block the decision
+    }
+  }
+
   private async syncIssueStatusFromTask(
     task: { id: string; type?: string | null; contextKey?: string | null; workspaceId: string; conversationId: string },
     status: "failed",
@@ -381,6 +670,18 @@ export class TaskService {
       completedAt: task.completedAt,
       latestMessageId,
     });
+  }
+
+  async setExecutionPolicy(taskId: string, workspaceId: string, policy: ExecutionPolicy | null) {
+    const task = await taskQueries.getTask(this.db, taskId, workspaceId);
+    if (!task) throw new Error("task not found");
+
+    const sanitized = policy ? await this.sanitizeExecutionPolicy(policy, workspaceId, task.agentId) : null;
+    const updated = await taskQueries.setExecutionPolicy(this.db, taskId, workspaceId, sanitized ?? null);
+    if (!updated) {
+      throw new Error(`cannot set execution policy: task is in '${task.status}' status`);
+    }
+    return { ...task, ...updated, executionPolicy: sanitized };
   }
 
   async supersedeTask(taskId: string, workspaceId: string) {

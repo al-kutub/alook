@@ -40,7 +40,10 @@ export const POST = withAuth(async (req: NextRequest, ctx) => {
     const conv = await queries.conversation.getConversation(db, task.conversationId, ctx.workspaceId);
     if (conv) {
       invalidateInboxCounts(conv.userId, ctx.workspaceId).catch(() => {});
-      broadcastToUser(conv.userId, { type: "task.updated", taskId, agentId: task.agentId, status: "completed" }).catch(() => {});
+      // The task may have been parked at "in_review" instead of completing
+      // (see TaskService.routeThroughExecutionPolicy) — broadcast the
+      // actual resulting status, not an assumed "completed".
+      broadcastToUser(conv.userId, { type: "task.updated", taskId, agentId: task.agentId, status: task.status }).catch(() => {});
     }
     return writeJSON(taskToResponse(task));
   } catch (e: unknown) {

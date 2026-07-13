@@ -115,6 +115,8 @@ export function taskToResponse(t: {
   traceId?: string | null;
   parentTaskId?: string | null;
   commentStatus?: string | null;
+  executionPolicy?: unknown;
+  executionState?: unknown;
 }) {
   return TaskApiBaseSchema.parse({
     id: t.id,
@@ -137,6 +139,8 @@ export function taskToResponse(t: {
     trace_id: t.traceId ?? null,
     parent_task_id: t.parentTaskId ?? null,
     comment_status: t.commentStatus ?? null,
+    execution_policy: (t.executionPolicy as never) ?? null,
+    execution_state: (t.executionState as never) ?? null,
   });
 }
 

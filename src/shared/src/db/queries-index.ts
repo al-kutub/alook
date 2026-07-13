@@ -28,6 +28,7 @@ export * as conversationMap from "./queries/conversation-map";
 export * as agentLink from "./queries/agent-link";
 export * as inbox from "./queries/inbox";
 export * as issue from "./queries/issue";
+export * as executionDecision from "./queries/execution-decision";
 export * as issueComment from "./queries/issue-comment";
 export * as messageFlag from "./queries/message-flag";
 export * as communityServer from "./queries/community/server";

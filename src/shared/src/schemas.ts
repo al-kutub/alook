@@ -10,11 +10,61 @@ export const TaskStatusSchema = z.enum([
   "queued",
   "dispatched",
   "running",
+  "in_review",
   "completed",
   "failed",
   "cancelled",
   "superseded",
 ]);
+
+// ---------------------------------------------------------------------------
+// Execution policy (review/approval gates) — see TaskService.
+// routeThroughExecutionPolicy / recordExecutionDecision.
+// ---------------------------------------------------------------------------
+
+export const ExecutionParticipantSchema = z.union([
+  z.object({ type: z.literal("agent"), agentId: z.string().min(1) }),
+  z.object({ type: z.literal("user"), userId: z.string().min(1) }),
+]);
+export type ExecutionParticipant = z.infer<typeof ExecutionParticipantSchema>;
+
+export const ExecutionStageSchema = z.object({
+  id: z.string().min(1),
+  type: z.enum(["review", "approval"]),
+  participants: z.array(ExecutionParticipantSchema).min(1),
+});
+export type ExecutionStage = z.infer<typeof ExecutionStageSchema>;
+
+export const ExecutionPolicySchema = z.object({
+  mode: z.enum(["normal", "auto"]).default("normal"),
+  stages: z.array(ExecutionStageSchema).min(1),
+});
+export type ExecutionPolicy = z.infer<typeof ExecutionPolicySchema>;
+
+export const ExecutionStateSchema = z.object({
+  status: z.enum(["idle", "pending", "changes_requested", "completed"]),
+  currentStageId: z.string().nullable(),
+  currentStageIndex: z.number().int().nullable(),
+  currentStageType: z.enum(["review", "approval"]).nullable(),
+  currentParticipant: ExecutionParticipantSchema.nullable(),
+  returnAssignee: z.string().nullable(),
+  completedStageIds: z.array(z.string()).default([]),
+  lastDecisionId: z.string().nullable().optional(),
+  lastDecisionOutcome: z.enum(["approved", "changes_requested"]).nullable().optional(),
+});
+export type ExecutionState = z.infer<typeof ExecutionStateSchema>;
+
+export const SetExecutionPolicyRequestSchema = z.object({
+  execution_policy: ExecutionPolicySchema.nullable(),
+});
+export type SetExecutionPolicyRequest = z.infer<typeof SetExecutionPolicyRequestSchema>;
+
+export const ExecutionDecisionRequestSchema = z.object({
+  outcome: z.enum(["approved", "changes_requested"]),
+  body: z.string().min(1, "body is required"),
+  actor_agent_id: z.string().min(1).optional(),
+});
+export type ExecutionDecisionRequest = z.infer<typeof ExecutionDecisionRequestSchema>;
 
 // ---------------------------------------------------------------------------
 // Raw SQL row from agent_task_queue (boundary: DB -> App)
@@ -93,6 +143,8 @@ export const TaskApiBaseSchema = z.object({
   parent_task_id: z.string().nullable().optional(),
   channel: z.string().nullable().optional(),
   comment_status: z.string().nullable().optional(),
+  execution_policy: ExecutionPolicySchema.nullable().optional(),
+  execution_state: ExecutionStateSchema.nullable().optional(),
 });
 export type TaskApiBase = z.infer<typeof TaskApiBaseSchema>;
 
