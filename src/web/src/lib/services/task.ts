@@ -15,6 +15,7 @@ const inboxQueries = queries.inbox;
 const executionDecisionQueries = queries.executionDecision;
 const memberQueries = queries.member;
 const costEventQueries = queries.costEvent;
+const goalQueries = queries.goal;
 
 export class TaskService {
   constructor(private db: Database) {}
@@ -25,7 +26,7 @@ export class TaskService {
     workspaceId: string,
     prompt: string,
     type: string = TASK_TYPES.USER_DM_MESSAGE,
-    opts?: { contextKey?: string | null; context?: Record<string, unknown>; traceId?: string | null; parentTaskId?: string | null; executionPolicy?: ExecutionPolicy | null },
+    opts?: { contextKey?: string | null; context?: Record<string, unknown>; traceId?: string | null; parentTaskId?: string | null; executionPolicy?: ExecutionPolicy | null; goalId?: string | null },
   ) {
     const agent = await agentQueries.getAgent(this.db, agentId, workspaceId);
     if (!agent) {
@@ -33,6 +34,23 @@ export class TaskService {
     }
     if (!agent.runtimeId) {
       throw new Error("agent has no runtime");
+    }
+
+    // Company goals gate: a task can't be created against a goal until that
+    // goal has an APPROVED strategy proposal — see queries/goal.ts and
+    // heartbeat.ts (which nudges the CEO-like agent to propose one). Tasks
+    // with no goal_id are entirely unaffected.
+    if (opts?.goalId) {
+      const goal = await goalQueries.getGoal(this.db, opts.goalId, workspaceId);
+      if (!goal) {
+        throw new Error("goal not found");
+      }
+      const approved = await goalQueries.hasApprovedStrategy(this.db, opts.goalId, workspaceId);
+      if (!approved) {
+        throw new Error(
+          `cannot create task: goal "${goal.title}" (${goal.id}) has no approved strategy yet — propose one via POST /api/goals/${goal.id}/strategy and have it approved first`
+        );
+      }
     }
 
     // Budget gate: block new dispatch once an agent is at/over its monthly
@@ -82,6 +100,7 @@ export class TaskService {
       traceId: opts?.traceId ?? null,
       parentTaskId: opts?.parentTaskId ?? null,
       executionPolicy,
+      goalId: opts?.goalId ?? null,
     });
     invalidate(cacheKeys.activeTaskCounts(workspaceId)).catch(() => {});
     // Push task to daemon via WS (best-effort). Awaited to ensure task state

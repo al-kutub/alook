@@ -123,6 +123,7 @@ export function taskToResponse(t: {
   commentStatus?: string | null;
   executionPolicy?: unknown;
   executionState?: unknown;
+  goalId?: string | null;
 }) {
   return TaskApiBaseSchema.parse({
     id: t.id,
@@ -147,7 +148,56 @@ export function taskToResponse(t: {
     comment_status: t.commentStatus ?? null,
     execution_policy: (t.executionPolicy as never) ?? null,
     execution_state: (t.executionState as never) ?? null,
+    goal_id: t.goalId ?? null,
   });
+}
+
+export function goalToResponse(g: {
+  id: string;
+  workspaceId: string;
+  title: string;
+  description: string;
+  status: string;
+  createdByUserId: string;
+  createdAt: Date | string;
+  updatedAt: Date | string;
+}) {
+  return {
+    id: g.id,
+    workspace_id: g.workspaceId,
+    title: g.title,
+    description: g.description,
+    status: g.status,
+    created_by_user_id: g.createdByUserId,
+    created_at: formatTimestamp(g.createdAt),
+    updated_at: formatTimestamp(g.updatedAt),
+  };
+}
+
+export function strategyToResponse(s: {
+  id: string;
+  goalId: string;
+  workspaceId: string;
+  proposedByAgentId: string;
+  content: string;
+  status: string;
+  decidedByUserId: string | null;
+  decisionComment: string | null;
+  createdAt: Date | string;
+  decidedAt: Date | string | null;
+}) {
+  return {
+    id: s.id,
+    goal_id: s.goalId,
+    workspace_id: s.workspaceId,
+    proposed_by_agent_id: s.proposedByAgentId,
+    content: s.content,
+    status: s.status,
+    decided_by_user_id: s.decidedByUserId ?? null,
+    decision_comment: s.decisionComment ?? null,
+    created_at: formatTimestamp(s.createdAt),
+    decided_at: formatTimestampNullable(s.decidedAt),
+  };
 }
 
 export function conversationToResponse(c: Partial<ConversationRow> & Pick<ConversationRow, "id" | "agentId" | "title" | "createdAt"> & { messageCount?: number }) {

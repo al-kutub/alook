@@ -12,6 +12,14 @@ import { TaskService } from "./task";
 const RECENTLY_ACTIVE_THRESHOLD_MS = 5 * 60 * 1000;
 
 type OutstandingTask = Awaited<ReturnType<typeof queries.task.getOutstandingTasksForHeartbeat>>[number];
+type GoalNeedingStrategy = Awaited<ReturnType<typeof queries.goal.getGoalsNeedingStrategy>>[number];
+
+// Same name-match heuristic used by the agent-hire routes to auto-enable
+// heartbeat for a CEO (src/web/src/app/api/agents/route.ts,
+// agents/recruit/route.ts) — alook has no formal "role" field yet.
+function looksLikeCeo(name: string): boolean {
+  return name.trim().toLowerCase() === "ceo";
+}
 
 function msAgo(iso: string): number {
   return Date.now() - new Date(iso).getTime();
@@ -23,14 +31,35 @@ function formatAge(ms: number): string {
   return `${Math.round(minutes / 60)}h`;
 }
 
-function buildHeartbeatPrompt(outstanding: OutstandingTask[]): string {
+function buildGoalStrategySection(goalsNeedingStrategy: GoalNeedingStrategy[]): string[] {
+  if (goalsNeedingStrategy.length === 0) return [];
+  const lines = goalsNeedingStrategy.map(({ goal, reason }) => {
+    const note = reason === "rejected"
+      ? "strategy was REJECTED — read the decision comment and revise"
+      : "no strategy proposed yet";
+    return `- [${note}] "${goal.title}" (${goal.id}): ${goal.description || "(no description)"}`;
+  });
+  return [
+    "",
+    "Company goals needing a strategy from you:",
+    ...lines,
+    "",
+    "For each: propose (or revise) a strategy via POST /api/goals/{goal_id}/strategy with your " +
+      "breakdown of how you'll approach it. A goal's tasks can't be created until a human approves " +
+      "its strategy, so this is blocking — do it now, don't just note it for later.",
+  ];
+}
+
+function buildHeartbeatPrompt(outstanding: OutstandingTask[], goalsNeedingStrategy: GoalNeedingStrategy[] = []): string {
+  const goalSection = buildGoalStrategySection(goalsNeedingStrategy);
+
   if (outstanding.length === 0) {
-    return (
+    const base =
       "Heartbeat check-in. You have no outstanding tasks right now. Proactively check whether " +
       "the company/product has unfinished follow-through — e.g. a shipped feature nobody verified, " +
       "a PR nobody merged, a message nobody replied to — and take concrete action on anything you " +
-      "find. If there's genuinely nothing that needs attention, no need to reply."
-    );
+      "find. If there's genuinely nothing that needs attention, no need to reply.";
+    return goalSection.length > 0 ? [base, ...goalSection].join("\n") : base;
   }
 
   const lines = outstanding.map((t) => {
@@ -45,6 +74,7 @@ function buildHeartbeatPrompt(outstanding: OutstandingTask[]): string {
     "For each item above: take concrete next action right now if you can, or clearly report what's " +
       "blocking it. Don't just restate the plan — actually move something forward, or leave a clear " +
       "status note so the next check-in can pick up cleanly.",
+    ...goalSection,
   ].join("\n");
 }
 
@@ -82,7 +112,10 @@ export async function dispatchDueHeartbeats(db: Database, workspaceId: string) {
         continue;
       }
 
-      const prompt = buildHeartbeatPrompt(outstanding);
+      const goalsNeedingStrategy = looksLikeCeo(agent.name)
+        ? await queries.goal.getGoalsNeedingStrategy(db, workspaceId)
+        : [];
+      const prompt = buildHeartbeatPrompt(outstanding, goalsNeedingStrategy);
       const conversation = await queries.conversation.getOrCreateAgentConversation(
         db,
         workspaceId,

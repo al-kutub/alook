@@ -66,6 +66,29 @@ export const ExecutionDecisionRequestSchema = z.object({
 });
 export type ExecutionDecisionRequest = z.infer<typeof ExecutionDecisionRequestSchema>;
 
+export const CreateGoalRequestSchema = z.object({
+  title: z.string().min(1, "title is required"),
+  description: z.string().optional(),
+});
+export type CreateGoalRequest = z.infer<typeof CreateGoalRequestSchema>;
+
+export const UpdateGoalRequestSchema = z.object({
+  status: z.enum(["active", "completed", "archived"]),
+});
+export type UpdateGoalRequest = z.infer<typeof UpdateGoalRequestSchema>;
+
+export const ProposeStrategyRequestSchema = z.object({
+  content: z.string().min(1, "content is required"),
+  actor_agent_id: z.string().min(1).optional(),
+});
+export type ProposeStrategyRequest = z.infer<typeof ProposeStrategyRequestSchema>;
+
+export const DecideStrategyRequestSchema = z.object({
+  outcome: z.enum(["approved", "rejected"]),
+  comment: z.string().min(1, "comment is required"),
+});
+export type DecideStrategyRequest = z.infer<typeof DecideStrategyRequestSchema>;
+
 // ---------------------------------------------------------------------------
 // Raw SQL row from agent_task_queue (boundary: DB -> App)
 // ---------------------------------------------------------------------------
@@ -145,6 +168,7 @@ export const TaskApiBaseSchema = z.object({
   comment_status: z.string().nullable().optional(),
   execution_policy: ExecutionPolicySchema.nullable().optional(),
   execution_state: ExecutionStateSchema.nullable().optional(),
+  goal_id: z.string().nullable().optional(),
 });
 export type TaskApiBase = z.infer<typeof TaskApiBaseSchema>;
 

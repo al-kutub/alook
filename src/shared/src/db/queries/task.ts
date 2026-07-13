@@ -20,6 +20,7 @@ export async function createTask(
     traceId?: string | null;
     parentTaskId?: string | null;
     executionPolicy?: unknown;
+    goalId?: string | null;
   }
 ) {
   const rows = await db
@@ -37,6 +38,7 @@ export async function createTask(
       traceId: data.traceId ?? null,
       parentTaskId: data.parentTaskId ?? null,
       executionPolicy: data.executionPolicy ?? undefined,
+      goalId: data.goalId ?? null,
     })
     .returning();
   return rows[0]!;

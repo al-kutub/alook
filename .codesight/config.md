@@ -1,0 +1,102 @@
+# Config
+
+## Environment Variables
+
+- `ALOOK_ADMIN_EMAIL` **required** — scripts/docker-entrypoint.mjs
+- `ALOOK_ADMIN_PASSWORD` **required** — scripts/docker-entrypoint.mjs
+- `ALOOK_AGENT_ID` **required** — src/cli/lib/flags.test.ts
+- `ALOOK_AGENT_TIMEOUT` **required** — src/cli/daemon/config.ts
+- `ALOOK_BRIDGE_PORT` **required** — src/daemon/scripts/smoke.ts
+- `ALOOK_BRIDGE_URL` **required** — src/daemon/scripts/smoke.ts
+- `ALOOK_CLAUDE_MODEL` **required** — src/cli/daemon/config.ts
+- `ALOOK_CLAUDE_PATH` **required** — src/cli/daemon/config.ts
+- `ALOOK_CMD_PREFIX` **required** — src/cli/daemon/update-handler.ts
+- `ALOOK_CODEX_MODEL` **required** — src/cli/daemon/config.ts
+- `ALOOK_CODEX_PATH` **required** — src/cli/daemon/config.ts
+- `ALOOK_CONVERSATION_ID` **required** — src/cli/commands/calendar.ts
+- `ALOOK_CURSOR_MODEL` **required** — scripts/docker-entrypoint.mjs
+- `ALOOK_CURSOR_PATH` **required** — scripts/docker-entrypoint.mjs
+- `ALOOK_DAEMON_DEVICE_NAME` **required** — src/cli/daemon/config.ts
+- `ALOOK_DAEMON_HEARTBEAT_INTERVAL` **required** — src/cli/daemon/config.ts
+- `ALOOK_DAEMON_ID` **required** — src/cli/daemon/config.test.ts
+- `ALOOK_DAEMON_MAX_CONCURRENT_TASKS` **required** — src/cli/daemon/config.test.ts
+- `ALOOK_DAEMON_POLL_INTERVAL` **required** — src/cli/daemon/config.test.ts
+- `ALOOK_DAEMON_SWEEP_INTERVAL` **required** — src/cli/daemon/config.ts
+- `ALOOK_DAEMON_WS_POLL_INTERVAL` **required** — src/cli/daemon/config.ts
+- `ALOOK_DATA_DIR` **required** — scripts/docker-entrypoint.mjs
+- `ALOOK_DEVICE_CLIENT_ID` **required** — src/cli/commands/login.ts
+- `ALOOK_DOMAIN` **required** — src/shared/src/utils/email.ts
+- `ALOOK_ENABLE_STEERING` **required** — src/cli/daemon/config.ts
+- `ALOOK_GIT_AUTHOR_EMAIL` **required** — scripts/docker-entrypoint.mjs
+- `ALOOK_GIT_AUTHOR_NAME` **required** — scripts/docker-entrypoint.mjs
+- `ALOOK_HEALTH_PORT` **required** — src/cli/commands/update.ts
+- `ALOOK_ID` **required** — src/daemon/src/cli/index.ts
+- `ALOOK_KILL_GRACE_MS` **required** — src/cli/daemon/daemon.test.ts
+- `ALOOK_KILL_TASK_MAX_WAIT_MS` **required** — src/cli/daemon/daemon.test.ts
+- `ALOOK_KILL_TASK_POLL_MS` **required** — src/cli/daemon/daemon.test.ts
+- `ALOOK_KILL_VERIFY_MS` **required** — src/cli/daemon/daemon.test.ts
+- `ALOOK_LOG_LEVEL` **required** — src/cli/lib/logger.ts
+- `ALOOK_MACHINE_KEY` **required** — src/daemon/scripts/daemon.ts
+- `ALOOK_MESSAGE_BATCH_SIZE` **required** — src/cli/daemon/session-runner.ts
+- `ALOOK_MESSAGE_FLUSH_INTERVAL_MS` **required** — src/cli/daemon/session-runner.ts
+- `ALOOK_MESSAGE_INACTIVITY_TIMEOUT` **required** — src/cli/daemon/config.test.ts
+- `ALOOK_OPENCODE_MODEL` **required** — src/cli/daemon/config.ts
+- `ALOOK_OPENCODE_PATH` **required** — src/cli/daemon/config.ts
+- `ALOOK_PORT_EMAIL` **required** — scripts/docker-entrypoint.mjs
+- `ALOOK_PORT_WEB` **required** — scripts/docker-entrypoint.mjs
+- `ALOOK_PORT_WS` **required** — scripts/docker-entrypoint.mjs
+- `ALOOK_PROJECT_ROOT` **required** — src/app/src/commands/onboard.ts
+- `ALOOK_REPO_ROOT` **required** — scripts/docker-entrypoint.mjs
+- `ALOOK_SERVER_PORT` **required** — src/daemon/scripts/mock-server.ts
+- `ALOOK_SERVER_URL` **required** — src/cli/daemon/config.test.ts
+- `ALOOK_SERVER_WS_PORT` **required** — src/daemon/scripts/mock-server.ts
+- `ALOOK_SERVER_WS_URL` **required** — src/daemon/scripts/daemon.ts
+- `ALOOK_SHUTDOWN_TIMEOUT_MS` **required** — src/cli/commands/daemon.test.ts
+- `ALOOK_STALE_DISPATCH_TIMEOUT_S` **required** — src/shared/src/db/queries/task.ts
+- `ALOOK_STALE_RUNNING_TIMEOUT_S` **required** — src/shared/src/db/queries/task.ts
+- `ALOOK_STEER_WARMUP_GRACE_MS` **required** — src/cli/daemon/execenv/timeline.ts
+- `ALOOK_TASK_ID` **required** — src/cli/commands/sync.ts
+- `ALOOK_TOKEN` **required** — src/cli/lib/resolve-client.test.ts
+- `ALOOK_TRACE_ID` **required** — src/cli/lib/context-env.test.ts
+- `ALOOK_WORKSPACE_ID` **required** — src/cli/lib/resolve-client.test.ts
+- `ALOOK_WORKSPACES_ROOT` **required** — src/cli/daemon/config.test.ts
+- `ALOOK_WS_DO_PORT` **required** — src/cli/daemon/ws-client.ts
+- `ANTHROPIC_API_KEY` **required** — src/daemon/src/drivers/claudeProviderIsolation.ts
+- `ANTHROPIC_BASE_URL` **required** — src/daemon/src/drivers/claudeProviderIsolation.ts
+- `APP_URL` **required** — src/web/src/test/e2e/agent-email-accounts.test.ts
+- `CI` **required** — src/shared/test/browser/meet-browser.test.ts
+- `CURSOR_API_KEY` **required** — scripts/docker-entrypoint.mjs
+- `DEV_EMAIL_WORKER_URL` **required** — src/shared/src/constants.ts
+- `DEV_WAKE_WORKER_URL` **required** — src/shared/src/constants.ts
+- `DEV_WS_DO_URL` **required** — src/shared/src/constants.ts
+- `EMAIL_WORKER_URL` **required** — tests/utils/src/email.ts
+- `EVENT_POLL_INTERVAL_MS` **required** — src/shared/src/constants.ts
+- `FORCE_COLOR` **required** — src/cli/lib/logger.ts
+- `GH_TOKEN` **required** — scripts/docker-entrypoint.mjs
+- `HOME` **required** — src/daemon/src/drivers/claudeProviderIsolation.ts
+- `LOCALAPPDATA` **required** — src/shared/src/browser/chrome-finder.ts
+- `NEXT_PUBLIC_APP_URL` **required** — src/web/src/app/onboard.md/route.test.ts
+- `NEXT_PUBLIC_APP_VERSION` **required** — src/web/src/app/(app)/w/[slug]/settings/page.tsx
+- `NEXT_PUBLIC_MOCK_NETWORK` **required** — src/web/src/components/mock-network-banner.tsx
+- `NEXT_PUBLIC_MOCK_NETWORK_DELAY_MS` **required** — src/web/src/components/mock-network-banner.tsx
+- `NEXT_PUBLIC_WS_DO_PORT` **required** — src/web/src/lib/utils.ts
+- `NEXT_PUBLIC_WS_RECONNECT_DELAY_MS` **required** — src/web/src/lib/use-user-ws.ts
+- `NEXT_PUBLIC_WS_RECONNECT_MAX_DELAY_MS` **required** — src/web/src/lib/use-user-ws.ts
+- `NO_COLOR` **required** — src/cli/lib/logger.test.ts
+- `NO_PROXY` **required** — src/daemon/src/drivers/cliTransport.ts
+- `NODE_ENV` **required** — src/app/src/lib/services.ts
+- `OFFLINE_THRESHOLD_MS` **required** — src/shared/src/constants.ts
+- `PATH` **required** — src/cli/lib/shell-env.test.ts
+- `POLL_INTERVAL_MS` **required** — src/shared/src/constants.ts
+- `PORT` **required** — scripts/docker-entrypoint.mjs
+- `RAILWAY_PUBLIC_DOMAIN` **required** — scripts/docker-entrypoint.mjs
+- `SHELL` **required** — src/cli/lib/shell-env.test.ts
+- `TEST_FLAG_ENV` **required** — src/cli/lib/flags.test.ts
+- `USERPROFILE` **required** — src/daemon/src/drivers/cliTransport.ts
+- `WS_DO_URL` **required** — tests/integration/cli/ws-push-poll.test.ts
+
+## Config Files
+
+- `.env.example`
+- `Dockerfile`
+- `src/web/next.config.ts`

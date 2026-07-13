@@ -113,6 +113,8 @@ export {
   BUDGET_PAUSED_REASON_EXCEEDED,
   computeBudgetUtilizationPercent,
   isOverBudget,
+  GoalStatus,
+  GoalStrategyStatus,
 } from "./constants";
 
 export {
@@ -212,6 +214,10 @@ export {
   ExecutionStateSchema,
   SetExecutionPolicyRequestSchema,
   ExecutionDecisionRequestSchema,
+  CreateGoalRequestSchema,
+  UpdateGoalRequestSchema,
+  ProposeStrategyRequestSchema,
+  DecideStrategyRequestSchema,
   MessageItemSchema,
   ReportMessagesRequestSchema,
   RepeatIntervalSchema,
@@ -311,6 +317,10 @@ export type {
   ExecutionState,
   SetExecutionPolicyRequest,
   ExecutionDecisionRequest,
+  CreateGoalRequest,
+  UpdateGoalRequest,
+  ProposeStrategyRequest,
+  DecideStrategyRequest,
   AgentDmRequest,
   MessageItem,
   ReportMessagesRequest,

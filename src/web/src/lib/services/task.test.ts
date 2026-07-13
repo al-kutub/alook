@@ -76,6 +76,10 @@ vi.mock("@alook/shared", () => ({
       getMonthlySpentCents: vi.fn().mockResolvedValue(0),
       createCostEvent: vi.fn().mockResolvedValue({ id: "cev_1" }),
     },
+    goal: {
+      getGoal: vi.fn(),
+      hasApprovedStrategy: vi.fn(),
+    },
   },
 }));
 
@@ -127,6 +131,10 @@ const executionDecisionQ = (queries as any).executionDecision as {
 };
 const memberQ = (queries as any).member as {
   getMemberByUserAndWorkspace: ReturnType<typeof vi.fn>;
+};
+const goalQ = (queries as any).goal as {
+  getGoal: ReturnType<typeof vi.fn>;
+  hasApprovedStrategy: ReturnType<typeof vi.fn>;
 };
 
 const service = new TaskService({} as any);
@@ -187,6 +195,7 @@ describe("TaskService", () => {
         traceId: null,
         parentTaskId: null,
         executionPolicy: null,
+        goalId: null,
       });
       expect(result).toEqual({ id: "t1" });
     });
@@ -268,6 +277,50 @@ describe("TaskService", () => {
 
       expect(result).toEqual({ id: "kt1" });
       expect(costEventQ.getMonthlySpentCents).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("enqueueTask company goals gate", () => {
+    it("allows dispatch with no goalId regardless of any goal state", async () => {
+      agentQ.getAgent.mockResolvedValue({ id: "a1", runtimeId: "r1" });
+      taskQ.createTask.mockResolvedValue({ id: "t1" });
+
+      const result = await service.enqueueTask("a1", "c1", "w1", "do stuff");
+
+      expect(result).toEqual({ id: "t1" });
+      expect(goalQ.getGoal).not.toHaveBeenCalled();
+    });
+
+    it("throws when the referenced goal doesn't exist", async () => {
+      agentQ.getAgent.mockResolvedValue({ id: "a1", runtimeId: "r1" });
+      goalQ.getGoal.mockResolvedValue(null);
+
+      await expect(
+        service.enqueueTask("a1", "c1", "w1", "do stuff", "user_dm_message", { goalId: "goal_missing" })
+      ).rejects.toThrow("goal not found");
+    });
+
+    it("blocks dispatch when the goal has no approved strategy", async () => {
+      agentQ.getAgent.mockResolvedValue({ id: "a1", runtimeId: "r1" });
+      goalQ.getGoal.mockResolvedValue({ id: "goal_1", title: "Ship the launch" });
+      goalQ.hasApprovedStrategy.mockResolvedValue(false);
+
+      await expect(
+        service.enqueueTask("a1", "c1", "w1", "do stuff", "user_dm_message", { goalId: "goal_1" })
+      ).rejects.toThrow(/goal "Ship the launch".*no approved strategy/);
+      expect(taskQ.createTask).not.toHaveBeenCalled();
+    });
+
+    it("allows dispatch once the goal has an approved strategy", async () => {
+      agentQ.getAgent.mockResolvedValue({ id: "a1", runtimeId: "r1" });
+      goalQ.getGoal.mockResolvedValue({ id: "goal_1", title: "Ship the launch" });
+      goalQ.hasApprovedStrategy.mockResolvedValue(true);
+      taskQ.createTask.mockResolvedValue({ id: "t1" });
+
+      const result = await service.enqueueTask("a1", "c1", "w1", "do stuff", "user_dm_message", { goalId: "goal_1" });
+
+      expect(result).toEqual({ id: "t1" });
+      expect(taskQ.createTask).toHaveBeenCalledWith({}, expect.objectContaining({ goalId: "goal_1" }));
     });
   });
 

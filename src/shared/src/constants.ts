@@ -108,6 +108,23 @@ export const ExecutionStateStatus = {
 } as const;
 export type ExecutionStateStatusType = (typeof ExecutionStateStatus)[keyof typeof ExecutionStateStatus];
 
+// ── Company goals + CEO strategy approval gate ──────────────────────────────
+// See queries/goal.ts, TaskService.enqueueTask (goal gate), heartbeat.ts.
+
+export const GoalStatus = {
+  ACTIVE: "active",
+  COMPLETED: "completed",
+  ARCHIVED: "archived",
+} as const;
+export type GoalStatusType = (typeof GoalStatus)[keyof typeof GoalStatus];
+
+export const GoalStrategyStatus = {
+  PENDING: "pending",
+  APPROVED: "approved",
+  REJECTED: "rejected",
+} as const;
+export type GoalStrategyStatusType = (typeof GoalStrategyStatus)[keyof typeof GoalStrategyStatus];
+
 export const MessageRole = {
   USER: "user",
   ASSISTANT: "assistant",

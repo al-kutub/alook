@@ -415,8 +415,12 @@ export const agentTaskQueue = sqliteTable(
     // returnAssignee, completedStageIds, lastDecisionId, lastDecisionOutcome
     // }. null until a policy is set and the task first finishes.
     executionState: text("execution_state", { mode: "json" }),
+    // Company goals gate (see queries/goal.ts, TaskService.enqueueTask).
+    // null = task is unrelated to any goal, entirely unaffected by the gate.
+    goalId: text("goal_id"),
   },
   (t) => [
+    index("idx_task_queue_goal").on(t.goalId),
     index("idx_task_queue_pending")
       .on(t.agentId, t.status)
       .where(sql`status IN ('queued', 'dispatched')`),
@@ -891,6 +895,53 @@ export const costEvent = sqliteTable(
     index("idx_cost_event_agent_created").on(t.agentId, t.workspaceId, t.createdAt),
     index("idx_cost_event_workspace_created").on(t.workspaceId, t.createdAt),
     index("idx_cost_event_task").on(t.taskId),
+  ]
+);
+
+// Company goals + CEO strategy approval gate — see queries/goal.ts,
+// TaskService.enqueueTask (goal gate), and heartbeat.ts (strategy nudge).
+export const companyGoal = sqliteTable(
+  "company_goal",
+  {
+    id: text("id").primaryKey().$defaultFn(() => "goal_" + nanoid()),
+    workspaceId: text("workspace_id")
+      .notNull()
+      .references(() => workspace.id, { onDelete: "cascade" }),
+    title: text("title").notNull(),
+    description: text("description").notNull().default(""),
+    status: text("status").notNull().default("active"),
+    createdByUserId: text("created_by_user_id").notNull(),
+    createdAt: text("created_at").notNull().$defaultFn(() => new Date().toISOString()),
+    updatedAt: text("updated_at").notNull().$defaultFn(() => new Date().toISOString()),
+  },
+  (t) => [
+    index("idx_company_goal_workspace_status").on(t.workspaceId, t.status),
+  ]
+);
+
+// One row per proposal — append-only, mirrors task_execution_decision.
+// Only the latest row per goal matters for the gate check.
+export const goalStrategy = sqliteTable(
+  "goal_strategy",
+  {
+    id: text("id").primaryKey().$defaultFn(() => "gs_" + nanoid()),
+    goalId: text("goal_id")
+      .notNull()
+      .references(() => companyGoal.id, { onDelete: "cascade" }),
+    workspaceId: text("workspace_id")
+      .notNull()
+      .references(() => workspace.id, { onDelete: "cascade" }),
+    proposedByAgentId: text("proposed_by_agent_id").notNull(),
+    content: text("content").notNull(),
+    status: text("status").notNull().default("pending"),
+    decidedByUserId: text("decided_by_user_id"),
+    decisionComment: text("decision_comment"),
+    createdAt: text("created_at").notNull().$defaultFn(() => new Date().toISOString()),
+    decidedAt: text("decided_at"),
+  },
+  (t) => [
+    index("idx_goal_strategy_goal_created").on(t.goalId, t.createdAt),
+    index("idx_goal_strategy_workspace_status").on(t.workspaceId, t.status),
   ]
 );
 
