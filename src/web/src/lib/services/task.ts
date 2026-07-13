@@ -1,5 +1,5 @@
 import type { Database, ExecutionPolicy, ExecutionState, ExecutionParticipant } from "@alook/shared";
-import { queries, TASK_TYPES, MAX_TASKS_PER_TRACE } from "@alook/shared";
+import { queries, TASK_TYPES, MAX_TASKS_PER_TRACE, BUDGET_PAUSED_REASON_EXCEEDED, isOverBudget } from "@alook/shared";
 import { log } from "@/lib/logger";
 import { broadcastToUser, broadcastToDaemon } from "@/lib/broadcast";
 import { messageToResponse } from "@/lib/api/responses";
@@ -14,6 +14,7 @@ const issueQueries = queries.issue;
 const inboxQueries = queries.inbox;
 const executionDecisionQueries = queries.executionDecision;
 const memberQueries = queries.member;
+const costEventQueries = queries.costEvent;
 
 export class TaskService {
   constructor(private db: Database) {}
@@ -32,6 +33,27 @@ export class TaskService {
     }
     if (!agent.runtimeId) {
       throw new Error("agent has no runtime");
+    }
+
+    // Budget gate: block new dispatch once an agent is at/over its monthly
+    // budget. kill_task must always get through (it's how a runaway agent
+    // gets stopped). In-flight tasks are unaffected — this only guards task
+    // *creation*. See queries/cost-event.ts for the live SUM computation.
+    if (type !== TASK_TYPES.KILL_TASK && agent.budgetMonthlyCents !== null && agent.budgetMonthlyCents !== undefined) {
+      const spentMonthlyCents = await costEventQueries.getMonthlySpentCents(this.db, agentId, workspaceId);
+      if (isOverBudget(agent.budgetMonthlyCents, spentMonthlyCents)) {
+        if (agent.pausedReason !== BUDGET_PAUSED_REASON_EXCEEDED) {
+          await agentQueries.updateAgent(this.db, agentId, workspaceId, { pausedReason: BUDGET_PAUSED_REASON_EXCEEDED }).catch(() => {});
+        }
+        throw new Error(
+          `agent is over its monthly budget (spent ${spentMonthlyCents}c / budget ${agent.budgetMonthlyCents}c) — dispatch blocked until budget is raised or the month rolls over`
+        );
+      }
+      // Back under budget (new month, or budget raised/cleared) — clear a
+      // stale pause instead of waiting for an operator to notice.
+      if (agent.pausedReason === BUDGET_PAUSED_REASON_EXCEEDED) {
+        await agentQueries.updateAgent(this.db, agentId, workspaceId, { pausedReason: null }).catch(() => {});
+      }
     }
 
     if (opts?.traceId && opts.parentTaskId) {
@@ -77,6 +99,16 @@ export class TaskService {
   private async claimTaskWithAgent(agentId: string, workspaceId: string, agent: Awaited<ReturnType<typeof agentQueries.getAgent>>) {
     if (!agent) {
       return null;
+    }
+
+    // Secondary budget guard (primary is enqueueTask's reject-with-reason).
+    // A task queued before the budget was hit should not get claimed once
+    // over budget — leaves it queued rather than killing anything in flight.
+    if (agent.budgetMonthlyCents !== null && agent.budgetMonthlyCents !== undefined) {
+      const spentMonthlyCents = await costEventQueries.getMonthlySpentCents(this.db, agentId, workspaceId);
+      if (isOverBudget(agent.budgetMonthlyCents, spentMonthlyCents)) {
+        return null;
+      }
     }
 
     const running = await taskQueries.countRunningTasks(this.db, agentId, workspaceId);
@@ -147,7 +179,8 @@ export class TaskService {
     taskId: string,
     workspaceId: string,
     result: string,
-    sessionId: string
+    sessionId: string,
+    usage?: { provider?: string; model?: string; inputTokens?: number; outputTokens?: number; costCents?: number }
   ) {
     let parsed: unknown;
     try {
@@ -198,6 +231,21 @@ export class TaskService {
     // (failTask still surfaces an error bubble — a failed run must not go silent.)
     await this.reconcileAgentStatus(task.agentId, task.workspaceId);
     this.maybeUpsertUnread(task, workspaceId, null).catch(() => {});
+    // Best-effort cost recording — must never fail the completion. Records a
+    // row even when the backend reports no usage/cost at all (e.g. cursor's
+    // stream-json today), which still gives an honest per-task count signal.
+    costEventQueries
+      .createCostEvent(this.db, {
+        workspaceId: task.workspaceId,
+        agentId: task.agentId,
+        taskId: task.id,
+        provider: usage?.provider ?? null,
+        model: usage?.model ?? null,
+        inputTokens: usage?.inputTokens ?? null,
+        outputTokens: usage?.outputTokens ?? null,
+        costCents: usage?.costCents ?? null,
+      })
+      .catch((e) => log.warn("completeTask: failed to record cost event", { taskId: task.id, err: e instanceof Error ? e.message : String(e) }));
     const commentStatus = await this.enforceCommentBackstop(task, workspaceId);
     return { ...task, commentStatus };
   }

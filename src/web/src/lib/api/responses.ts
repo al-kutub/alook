@@ -2,7 +2,7 @@ import {
   formatTimestamp,
   formatTimestampNullable,
 } from "@/lib/middleware/helpers";
-import { TaskApiBaseSchema, isOnline, TASK_TYPES, schema, type Message } from "@alook/shared";
+import { TaskApiBaseSchema, isOnline, TASK_TYPES, schema, computeBudgetUtilizationPercent, type Message } from "@alook/shared";
 
 type WorkspaceRow = typeof schema.workspace.$inferSelect;
 type AgentRow = typeof schema.agent.$inferSelect;
@@ -47,9 +47,11 @@ export function workspaceToResponse(w: WorkspaceRow) {
   };
 }
 
-export function agentToResponse(a: AgentRow) {
+export function agentToResponse(a: AgentRow, extra?: { spentMonthlyCents?: number }) {
   let rc = a.runtimeConfig;
   if (!rc) rc = {};
+  const budgetMonthlyCents = a.budgetMonthlyCents ?? null;
+  const spentMonthlyCents = extra?.spentMonthlyCents ?? 0;
   return {
     id: a.id,
     workspace_id: a.workspaceId,
@@ -68,6 +70,10 @@ export function agentToResponse(a: AgentRow) {
     heartbeat_enabled: !!a.heartbeatEnabled,
     heartbeat_interval_seconds: a.heartbeatIntervalSeconds,
     last_heartbeat_at: formatTimestampNullable(a.lastHeartbeatAt),
+    budget_monthly_cents: budgetMonthlyCents,
+    spent_monthly_cents: spentMonthlyCents,
+    budget_utilization_percent: computeBudgetUtilizationPercent(budgetMonthlyCents, spentMonthlyCents),
+    paused_reason: a.pausedReason ?? null,
     created_at: formatTimestamp(a.createdAt),
     updated_at: formatTimestamp(a.updatedAt),
   };

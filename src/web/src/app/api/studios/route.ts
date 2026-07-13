@@ -275,7 +275,7 @@ export const POST = withAuth(async (req: NextRequest, ctx) => {
     studio: { name: finalWorkspace?.name || body.name || "" },
     workspace: workspaceToResponse(finalWorkspace || updatedWorkspace),
     leader_agent_id: leaderAgent.id,
-    agents: studioAgents.map(agentToResponse),
+    agents: studioAgents.map((a) => agentToResponse(a)),
     links: createdLinks.map(agentLinkToResponse),
   }, 201);
 });

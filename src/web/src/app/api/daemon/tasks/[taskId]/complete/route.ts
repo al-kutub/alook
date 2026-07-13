@@ -33,7 +33,14 @@ export const POST = withAuth(async (req: NextRequest, ctx) => {
       taskId,
       ctx.workspaceId,
       result,
-      sessionId
+      sessionId,
+      {
+        provider: body.provider,
+        model: body.model,
+        inputTokens: body.input_tokens,
+        outputTokens: body.output_tokens,
+        costCents: body.cost_cents,
+      }
     );
     const dateStr = new Date().toISOString().slice(0, 10);
     invalidate(cacheKeys.overviewTaskStats(ctx.workspaceId, dateStr)).catch(() => {});

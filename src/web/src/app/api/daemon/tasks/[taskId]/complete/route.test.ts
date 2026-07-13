@@ -81,7 +81,7 @@ describe("POST /api/daemon/tasks/[taskId]/complete", () => {
 
     expect(res.status).toBe(200);
     expect(body).toEqual({ id: "t1", status: "completed" });
-    expect(mockCompleteTask).toHaveBeenCalledWith("t1", "w1", expect.any(String), "");
+    expect(mockCompleteTask).toHaveBeenCalledWith("t1", "w1", expect.any(String), "", expect.any(Object));
     const { broadcastToUser } = await import("@/lib/broadcast");
     expect(broadcastToUser).toHaveBeenCalledWith("owner-u2", expect.objectContaining({ type: "task.updated", status: "completed" }));
     const { invalidateInboxCounts } = await import("@/lib/cache");
@@ -106,6 +106,6 @@ describe("POST /api/daemon/tasks/[taskId]/complete", () => {
     const body = await res.json();
 
     expect(res.status).toBe(400);
-    expect(mockCompleteTask).toHaveBeenCalledWith("t-other", "w1", expect.any(String), "");
+    expect(mockCompleteTask).toHaveBeenCalledWith("t-other", "w1", expect.any(String), "", expect.any(Object));
   });
 });

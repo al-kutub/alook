@@ -130,6 +130,27 @@ export const EVENT_POLL_INTERVAL_MS = Number(process.env.EVENT_POLL_INTERVAL_MS)
 export const AGENT_HANDLE_MIN_LENGTH = 4;
 export const MAX_TASKS_PER_TRACE = 256;
 
+// ── Cost/budget tracking ─────────────────────────────────────────────────
+// See TaskService.checkBudget (src/web/src/lib/services/task.ts) and
+// queries/cost-event.ts. budgetMonthlyCents = null means unlimited.
+export const BUDGET_PAUSED_REASON_EXCEEDED = "budget_exceeded";
+
+export function computeBudgetUtilizationPercent(
+  budgetMonthlyCents: number | null,
+  spentMonthlyCents: number
+): number | null {
+  if (budgetMonthlyCents === null) return null;
+  // A zero budget is a zero-tolerance budget — always "at limit", matching
+  // isOverBudget's unconditional block for budgetMonthlyCents === 0.
+  if (budgetMonthlyCents === 0) return 100;
+  return Math.round((spentMonthlyCents / budgetMonthlyCents) * 100);
+}
+
+export function isOverBudget(budgetMonthlyCents: number | null, spentMonthlyCents: number): boolean {
+  if (budgetMonthlyCents === null) return false;
+  return spentMonthlyCents >= budgetMonthlyCents;
+}
+
 export const MeetingStatus = {
   PENDING: "pending",
   SCHEDULED: "scheduled",

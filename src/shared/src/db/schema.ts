@@ -271,6 +271,13 @@ export const agent = sqliteTable(
     heartbeatEnabled: integer("heartbeat_enabled", { mode: "boolean" }).notNull().default(false),
     heartbeatIntervalSeconds: integer("heartbeat_interval_seconds").notNull().default(1800),
     lastHeartbeatAt: text("last_heartbeat_at"),
+    // Cost/budget tracking — see queries/cost-event.ts. null = unlimited.
+    // spentMonthlyCents is NOT a column; it's computed live from cost_event.
+    budgetMonthlyCents: integer("budget_monthly_cents"),
+    // Set to "budget_exceeded" when a dispatch is rejected for being at/over
+    // budget; cleared automatically once back under budget. Independent of
+    // `status` — see 0061_cost_budget.sql.
+    pausedReason: text("paused_reason"),
     createdAt: text("created_at").notNull().$defaultFn(() => new Date().toISOString()),
     updatedAt: text("updated_at").notNull().$defaultFn(() => new Date().toISOString()),
   },
@@ -857,6 +864,33 @@ export const taskExecutionDecision = sqliteTable(
   (t) => [
     index("idx_task_execution_decision_task").on(t.taskId, t.createdAt),
     index("idx_task_execution_decision_workspace").on(t.workspaceId, t.createdAt),
+  ]
+);
+
+// Cost/budget tracking — see queries/cost-event.ts and TaskService's
+// budget gate in enqueueTask. Best-effort: token/cost columns are nullable
+// since not every backend/adapter reports real usage (e.g. cursor-agent's
+// stream-json result event has no usage/cost field today).
+export const costEvent = sqliteTable(
+  "cost_event",
+  {
+    id: text("id").primaryKey().$defaultFn(() => "cev_" + nanoid()),
+    workspaceId: text("workspace_id")
+      .notNull()
+      .references(() => workspace.id, { onDelete: "cascade" }),
+    agentId: text("agent_id").notNull(),
+    taskId: text("task_id").references(() => agentTaskQueue.id, { onDelete: "set null" }),
+    provider: text("provider"),
+    model: text("model"),
+    inputTokens: integer("input_tokens"),
+    outputTokens: integer("output_tokens"),
+    costCents: integer("cost_cents"),
+    createdAt: text("created_at").notNull().$defaultFn(() => new Date().toISOString()),
+  },
+  (t) => [
+    index("idx_cost_event_agent_created").on(t.agentId, t.workspaceId, t.createdAt),
+    index("idx_cost_event_workspace_created").on(t.workspaceId, t.createdAt),
+    index("idx_cost_event_task").on(t.taskId),
   ]
 );
 

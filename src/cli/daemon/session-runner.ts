@@ -397,6 +397,13 @@ export async function runSession(input: SessionRunnerInput): Promise<void> {
   const pendingSteeredTasks = new Set<string>();
   const pendingAcks: { seq: string; sessionId: string }[] = [];
   let hasReceivedProgressEvent = false;
+  // Best-effort cost/usage capture — only backends that emit a "telemetry"
+  // ParsedEvent (currently ClaudeBackend, via its result-event usage/
+  // total_cost_usd fields) populate this. Forwarded to the server on
+  // completion below; stays undefined (no-op) for backends that don't
+  // report it, e.g. CursorBackend — cursor-agent's stream-json has no
+  // usage/cost field today.
+  let lastUsageTelemetry: Record<string, unknown> | undefined;
 
   if (input.steeringEnabled && input.steeringMailboxDir && task.contextKey) {
     const descriptor = session.descriptor;
@@ -420,6 +427,10 @@ export async function runSession(input: SessionRunnerInput): Promise<void> {
             // Record recent event for diagnostics
             const recentResult = reduceApmGatedRecentEvent(apmState, { event: event.kind });
             apmState = recentResult.nextState;
+
+            if (event.kind === "telemetry" && event.name === "token_usage") {
+              lastUsageTelemetry = event.attrs;
+            }
 
             // Classify errors for structured diagnostics + update APM state
             if (event.kind === "error") {
@@ -799,11 +810,29 @@ export async function runSession(input: SessionRunnerInput): Promise<void> {
 
   // Report to server
   if (result.status === "completed") {
-    const body: { output: string; session_id?: string; branch_name?: string } = {
+    const body: {
+      output: string;
+      session_id?: string;
+      branch_name?: string;
+      provider?: string;
+      model?: string;
+      input_tokens?: number;
+      output_tokens?: number;
+      cost_cents?: number;
+    } = {
       output: result.output || "",
     };
     if (result.sessionId) body.session_id = result.sessionId;
     // branchName is currently always undefined — forward-compat passthrough
+    if (lastUsageTelemetry) {
+      const inputTokens = lastUsageTelemetry.inputTokens;
+      const outputTokens = lastUsageTelemetry.outputTokens;
+      const totalCostUsd = lastUsageTelemetry.totalCostUsd;
+      if (typeof inputTokens === "number") body.input_tokens = inputTokens;
+      if (typeof outputTokens === "number") body.output_tokens = outputTokens;
+      if (typeof totalCostUsd === "number") body.cost_cents = Math.round(totalCostUsd * 100);
+      body.provider = "anthropic";
+    }
     await reportToServer(
       () => client.completeTask(token, task.id, body),
       { taskId: task.id, type: "complete", payload: body, token, serverURL, createdAt: new Date().toISOString() },

@@ -110,6 +110,9 @@ export {
   ExecutionStageType,
   ExecutionDecisionOutcome,
   ExecutionStateStatus,
+  BUDGET_PAUSED_REASON_EXCEEDED,
+  computeBudgetUtilizationPercent,
+  isOverBudget,
 } from "./constants";
 
 export {
@@ -202,6 +205,7 @@ export {
   DeregisterRequestSchema,
   CompleteTaskRequestSchema,
   FailTaskRequestSchema,
+  CreateCostEventRequestSchema,
   ExecutionParticipantSchema,
   ExecutionStageSchema,
   ExecutionPolicySchema,
@@ -300,6 +304,7 @@ export type {
   DeregisterRequest,
   CompleteTaskRequest,
   FailTaskRequest,
+  CreateCostEventRequest,
   ExecutionParticipant,
   ExecutionStage,
   ExecutionPolicy,

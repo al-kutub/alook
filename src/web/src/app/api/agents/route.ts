@@ -20,7 +20,7 @@ export const GET = withAuth(async (req, ctx) => {
     cached(cacheKeys.allAgentAccess(ws.workspaceId), 300, () => queries.agentAccess.getAllAgentAccessForWorkspace(db, ws.workspaceId)),
   ]);
   const agents = filterVisibleAgents(allAgents, ctx.userId, allAccess);
-  return writeJSON(agents.map(agentToResponse));
+  return writeJSON(agents.map((a) => agentToResponse(a)));
 });
 
 export const POST = withAuth(async (req: NextRequest, ctx) => {

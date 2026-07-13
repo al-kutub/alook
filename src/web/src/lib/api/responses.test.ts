@@ -326,9 +326,11 @@ describe("AgentResponse shape", () => {
       maxConcurrentTasks: 3, ...baseFields(),
     });
     expect(Object.keys(res).sort()).toEqual([
-      "avatar_url", "created_at", "description", "email_handle", "heartbeat_enabled",
+      "avatar_url", "budget_monthly_cents", "budget_utilization_percent", "created_at",
+      "description", "email_handle", "heartbeat_enabled",
       "heartbeat_interval_seconds", "id", "instructions", "last_heartbeat_at", "max_concurrent_tasks",
-      "name", "owner_id", "runtime_config", "runtime_id", "runtime_mode", "status",
+      "name", "owner_id", "paused_reason", "runtime_config", "runtime_id", "runtime_mode",
+      "spent_monthly_cents", "status",
       "updated_at", "visibility", "workspace_id",
     ]);
   });

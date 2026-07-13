@@ -29,6 +29,7 @@ export * as agentLink from "./queries/agent-link";
 export * as inbox from "./queries/inbox";
 export * as issue from "./queries/issue";
 export * as executionDecision from "./queries/execution-decision";
+export * as costEvent from "./queries/cost-event";
 export * as issueComment from "./queries/issue-comment";
 export * as messageFlag from "./queries/message-flag";
 export * as communityServer from "./queries/community/server";

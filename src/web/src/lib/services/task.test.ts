@@ -12,6 +12,8 @@ vi.mock("@alook/shared", () => ({
     HEARTBEAT: "heartbeat",
   },
   MAX_TASKS_PER_TRACE: 256,
+  BUDGET_PAUSED_REASON_EXCEEDED: "budget_exceeded",
+  isOverBudget: (budget: number | null, spent: number) => budget !== null && spent >= budget,
   queries: {
     task: {
       createTask: vi.fn(),
@@ -41,6 +43,7 @@ vi.mock("@alook/shared", () => ({
       getAgent: vi.fn(),
       getAgentsByIds: vi.fn(),
       updateAgentStatus: vi.fn(),
+      updateAgent: vi.fn().mockResolvedValue(null),
     },
     message: {
       createMessage: vi.fn(),
@@ -68,6 +71,10 @@ vi.mock("@alook/shared", () => ({
     },
     member: {
       getMemberByUserAndWorkspace: vi.fn(),
+    },
+    costEvent: {
+      getMonthlySpentCents: vi.fn().mockResolvedValue(0),
+      createCostEvent: vi.fn().mockResolvedValue({ id: "cev_1" }),
     },
   },
 }));
@@ -99,6 +106,10 @@ const agentQ = queries.agent as {
 };
 const messageQ = queries.message as {
   [K in keyof typeof queries.message]: ReturnType<typeof vi.fn>;
+};
+const costEventQ = (queries as any).costEvent as {
+  getMonthlySpentCents: ReturnType<typeof vi.fn>;
+  createCostEvent: ReturnType<typeof vi.fn>;
 };
 const conversationQ = (queries as any).conversation as {
   getConversation: ReturnType<typeof vi.fn>;
@@ -195,6 +206,68 @@ describe("TaskService", () => {
       expect(taskQ.createTask).toHaveBeenCalledWith({}, expect.objectContaining({
         executionPolicy: policy,
       }));
+    });
+  });
+
+  describe("enqueueTask budget gate", () => {
+    it("allows dispatch when spent is under budget", async () => {
+      agentQ.getAgent.mockResolvedValue({ id: "a1", runtimeId: "r1", budgetMonthlyCents: 1000, pausedReason: null });
+      costEventQ.getMonthlySpentCents.mockResolvedValue(500);
+      taskQ.createTask.mockResolvedValue({ id: "t1" });
+
+      const result = await service.enqueueTask("a1", "c1", "w1", "do stuff");
+
+      expect(result).toEqual({ id: "t1" });
+      expect(agentQ.updateAgent).not.toHaveBeenCalled();
+    });
+
+    it("blocks dispatch and sets paused_reason once spent >= budget", async () => {
+      agentQ.getAgent.mockResolvedValue({ id: "a1", runtimeId: "r1", budgetMonthlyCents: 1000, pausedReason: null });
+      costEventQ.getMonthlySpentCents.mockResolvedValue(1000);
+
+      await expect(service.enqueueTask("a1", "c1", "w1", "do stuff")).rejects.toThrow(/over its monthly budget/);
+
+      expect(taskQ.createTask).not.toHaveBeenCalled();
+      expect(agentQ.updateAgent).toHaveBeenCalledWith({}, "a1", "w1", { pausedReason: "budget_exceeded" });
+    });
+
+    it("blocks dispatch when spent exceeds budget (not just equal)", async () => {
+      agentQ.getAgent.mockResolvedValue({ id: "a1", runtimeId: "r1", budgetMonthlyCents: 1000, pausedReason: null });
+      costEventQ.getMonthlySpentCents.mockResolvedValue(1500);
+
+      await expect(service.enqueueTask("a1", "c1", "w1", "do stuff")).rejects.toThrow(/over its monthly budget/);
+      expect(taskQ.createTask).not.toHaveBeenCalled();
+    });
+
+    it("never blocks when budget is null (unlimited)", async () => {
+      agentQ.getAgent.mockResolvedValue({ id: "a1", runtimeId: "r1", budgetMonthlyCents: null, pausedReason: null });
+      costEventQ.getMonthlySpentCents.mockResolvedValue(999_999);
+      taskQ.createTask.mockResolvedValue({ id: "t1" });
+
+      const result = await service.enqueueTask("a1", "c1", "w1", "do stuff");
+
+      expect(result).toEqual({ id: "t1" });
+    });
+
+    it("clears a stale paused_reason once back under budget", async () => {
+      agentQ.getAgent.mockResolvedValue({ id: "a1", runtimeId: "r1", budgetMonthlyCents: 1000, pausedReason: "budget_exceeded" });
+      costEventQ.getMonthlySpentCents.mockResolvedValue(0);
+      taskQ.createTask.mockResolvedValue({ id: "t1" });
+
+      const result = await service.enqueueTask("a1", "c1", "w1", "do stuff");
+
+      expect(result).toEqual({ id: "t1" });
+      expect(agentQ.updateAgent).toHaveBeenCalledWith({}, "a1", "w1", { pausedReason: null });
+    });
+
+    it("always lets kill_task through even when over budget", async () => {
+      agentQ.getAgent.mockResolvedValue({ id: "a1", runtimeId: "r1", budgetMonthlyCents: 1000, pausedReason: "budget_exceeded" });
+      taskQ.createTask.mockResolvedValue({ id: "kt1" });
+
+      const result = await service.enqueueTask("a1", "c1", "w1", "stop", "kill_task");
+
+      expect(result).toEqual({ id: "kt1" });
+      expect(costEventQ.getMonthlySpentCents).not.toHaveBeenCalled();
     });
   });
 

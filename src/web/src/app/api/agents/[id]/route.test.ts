@@ -8,6 +8,7 @@ const mockGetAgent = vi.fn();
 const mockDeleteAgent = vi.fn();
 const mockUpdateAgent = vi.fn();
 const mockGetAgentRuntimeForWorkspace = vi.fn();
+const mockGetMonthlySpentCents = vi.fn().mockResolvedValue(0);
 
 vi.mock("@/lib/db", () => ({ getDb: vi.fn(() => ({})) }));
 
@@ -24,6 +25,9 @@ vi.mock("@alook/shared", async () => {
       },
       runtime: {
         getAgentRuntimeForWorkspace: (...args: unknown[]) => mockGetAgentRuntimeForWorkspace(...args),
+      },
+      costEvent: {
+        getMonthlySpentCents: (...args: unknown[]) => mockGetMonthlySpentCents(...args),
       },
     },
   };

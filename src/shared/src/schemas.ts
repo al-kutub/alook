@@ -289,6 +289,14 @@ export const CompleteTaskRequestSchema = z.object({
   output: z.string().optional(),
   session_id: z.string().optional(),
   branch_name: z.string().optional(),
+  // Best-effort cost/usage, forwarded from whatever the backend's adapter
+  // actually reports (see CostEvent recording in TaskService.completeTask).
+  // Most backends don't report this today — all optional/nullable.
+  provider: z.string().optional(),
+  model: z.string().optional(),
+  input_tokens: z.number().int().min(0).optional(),
+  output_tokens: z.number().int().min(0).optional(),
+  cost_cents: z.number().int().min(0).optional(),
 });
 export type CompleteTaskRequest = z.infer<typeof CompleteTaskRequestSchema>;
 
@@ -296,6 +304,20 @@ export const FailTaskRequestSchema = z.object({
   error: z.string().optional().default(""),
 });
 export type FailTaskRequest = z.infer<typeof FailTaskRequestSchema>;
+
+// ---------------------------------------------------------------------------
+// Cost events (daemon-reported, best-effort token/cost tracking)
+// ---------------------------------------------------------------------------
+
+export const CreateCostEventRequestSchema = z.object({
+  task_id: z.string().optional(),
+  provider: z.string().optional(),
+  model: z.string().optional(),
+  input_tokens: z.number().int().min(0).optional(),
+  output_tokens: z.number().int().min(0).optional(),
+  cost_cents: z.number().int().min(0).optional(),
+});
+export type CreateCostEventRequest = z.infer<typeof CreateCostEventRequestSchema>;
 
 export const MessageItemSchema = z.object({
   seq: z.number(),
@@ -564,6 +586,8 @@ export const UpdateAgentRequestSchema = z
     avatar_url: z.string().max(2000).nullable().optional(),
     heartbeat_enabled: z.boolean().optional(),
     heartbeat_interval_seconds: z.number().int().min(60).max(86400).optional(),
+    // null clears the budget (unlimited). 0 is a valid zero-tolerance budget.
+    budget_monthly_cents: z.number().int().min(0).nullable().optional(),
   })
   .refine(
     (v) =>
@@ -575,7 +599,8 @@ export const UpdateAgentRequestSchema = z
       v.visibility !== undefined ||
       v.avatar_url !== undefined ||
       v.heartbeat_enabled !== undefined ||
-      v.heartbeat_interval_seconds !== undefined,
+      v.heartbeat_interval_seconds !== undefined ||
+      v.budget_monthly_cents !== undefined,
     { message: "at least one field is required" },
   );
 export type UpdateAgentRequest = z.infer<typeof UpdateAgentRequestSchema>;

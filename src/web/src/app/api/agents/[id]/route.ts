@@ -1,4 +1,4 @@
-import { queries, UpdateAgentRequestSchema } from "@alook/shared"
+import { queries, UpdateAgentRequestSchema, BUDGET_PAUSED_REASON_EXCEEDED, isOverBudget } from "@alook/shared"
 import { getDb } from "@/lib/db"
 import { withAuth } from "@/lib/middleware/auth";
 import { withWorkspaceMember } from "@/lib/middleware/workspace";
@@ -22,7 +22,8 @@ export const GET = withAuth(async (req, ctx) => {
     return writeError("agent not found", 404);
   }
 
-  return writeJSON(agentToResponse(agent));
+  const spentMonthlyCents = await queries.costEvent.getMonthlySpentCents(db, id, ws.workspaceId);
+  return writeJSON(agentToResponse(agent, { spentMonthlyCents }));
 });
 
 export const PATCH = withAuth(async (req, ctx) => {
@@ -62,12 +63,24 @@ export const PATCH = withAuth(async (req, ctx) => {
   if (body.avatar_url !== undefined) data.avatarUrl = body.avatar_url;
   if (body.heartbeat_enabled !== undefined) data.heartbeatEnabled = body.heartbeat_enabled;
   if (body.heartbeat_interval_seconds !== undefined) data.heartbeatIntervalSeconds = body.heartbeat_interval_seconds;
+  if (body.budget_monthly_cents !== undefined) data.budgetMonthlyCents = body.budget_monthly_cents;
 
   const existing = await queries.agent.getAgent(db, id, ws.workspaceId, ctx.userId);
   if (!existing) return writeError("agent not found", 404);
   if (existing.ownerId !== ctx.userId) return writeError("agent owner access required", 403);
 
-  const updated = await queries.agent.updateAgent(db, id, ws.workspaceId, data as { name?: string; description?: string; instructions?: string; runtimeId?: string; runtimeConfig?: unknown; visibility?: string; avatarUrl?: string | null; heartbeatEnabled?: boolean; heartbeatIntervalSeconds?: number }, ctx.userId);
+  const spentMonthlyCents = await queries.costEvent.getMonthlySpentCents(db, id, ws.workspaceId);
+  // Budget just changed (or cleared) — reconcile the paused flag immediately
+  // instead of waiting for the next dispatch attempt to notice.
+  if (
+    body.budget_monthly_cents !== undefined &&
+    existing.pausedReason === BUDGET_PAUSED_REASON_EXCEEDED &&
+    !isOverBudget(body.budget_monthly_cents, spentMonthlyCents)
+  ) {
+    data.pausedReason = null;
+  }
+
+  const updated = await queries.agent.updateAgent(db, id, ws.workspaceId, data as { name?: string; description?: string; instructions?: string; runtimeId?: string; runtimeConfig?: unknown; visibility?: string; avatarUrl?: string | null; heartbeatEnabled?: boolean; heartbeatIntervalSeconds?: number; budgetMonthlyCents?: number | null; pausedReason?: string | null }, ctx.userId);
   if (!updated) {
     return writeError("agent not found", 404);
   }
@@ -78,7 +91,7 @@ export const PATCH = withAuth(async (req, ctx) => {
     invalidate(cacheKeys.allAgentAccess(ws.workspaceId)),
   ]);
 
-  return writeJSON(agentToResponse(updated));
+  return writeJSON(agentToResponse(updated, { spentMonthlyCents }));
 });
 
 export const DELETE = withAuth(async (req, ctx) => {

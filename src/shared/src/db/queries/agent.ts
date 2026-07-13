@@ -119,6 +119,8 @@ export async function updateAgent(
     avatarUrl?: string | null;
     heartbeatEnabled?: boolean;
     heartbeatIntervalSeconds?: number;
+    budgetMonthlyCents?: number | null;
+    pausedReason?: string | null;
   },
   ownerId?: string
 ) {
