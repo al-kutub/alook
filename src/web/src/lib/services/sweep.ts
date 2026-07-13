@@ -1,7 +1,9 @@
 import type { Database } from "@alook/shared";
 import { queries } from "@alook/shared";
 import { TaskService } from "./task";
+import { dispatchDueHeartbeats } from "./heartbeat";
 import { throttled, invalidate, cacheKeys } from "@/lib/cache";
+import { log } from "@/lib/logger";
 
 const SWEEP_INTERVAL_S = 30;
 
@@ -22,6 +24,12 @@ export async function sweepStaleState(db: Database, workspaceId: string) {
     shouldRun = true;
   }
   if (!shouldRun) return;
+
+  // 0. Wake any agents whose heartbeat is due (own per-agent cadence via
+  // heartbeatIntervalSeconds; this just checks due-ness on the shared 30s tick).
+  await dispatchDueHeartbeats(db, workspaceId).catch((err) =>
+    log.warn("sweepStaleState: dispatchDueHeartbeats failed", { workspaceId, err })
+  );
 
   // 1. Fail tasks stuck in "dispatched" for >20s (daemon crashed between claim and start)
   const staleDispatched = await queries.task.failStaleDispatchedTasks(db, workspaceId);
