@@ -24,3 +24,4 @@ plans/
 .lighthouseci/
 src/cli/LICENSE
 .superpowers/
+.codesight/
