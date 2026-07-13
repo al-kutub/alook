@@ -437,6 +437,9 @@ export type {
 export { RUNTIME_CONFIG_VERSION, makeRuntimeConfig } from "./runtime-config";
 
 export { sendWakeToMachine, buildUnreadWakeCommand, dispatchOneUnreadWake } from "./community/wake-dispatch";
+
+export type { MentionableAgent } from "./mentions";
+export { extractMentionTokens, resolveMentionedAgents } from "./mentions";
 export type { DispatchOneWakeResult } from "./community/wake-dispatch";
 export type { WakePayload, BuildUnreadWakeResult } from "./community/wake-dispatch";
 

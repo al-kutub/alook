@@ -66,6 +66,16 @@ export const POST = withAuth(async (req: NextRequest, ctx) => {
     comment: response,
   }).catch(() => {});
 
+  // @-mention wake — a comment can nudge OTHER agents into looking, distinct
+  // from the issue's own single assignee re-dispatch below. Best-effort,
+  // never blocks the response.
+  new TaskService(db)
+    .dispatchMentions(body.content, ws.workspaceId, {
+      excludeAgentId: authorType === "agent" ? authorId : null,
+      sourceLabel: `a comment on issue "${issue.title}"`,
+    })
+    .catch(() => {});
+
   // Re-dispatch agent when user comments on a non-terminal, non-working issue
   if (authorType === "user" && !isTerminalIssueStatus(issue.status) && issue.agentId && issue.conversationId) {
     const activeTask = await queries.task.getActiveTaskByConversation(

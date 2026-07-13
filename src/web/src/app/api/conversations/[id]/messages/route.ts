@@ -190,6 +190,20 @@ export const POST = withAuth(async (req: NextRequest, ctx) => {
   // Auto-title: conditional WHERE title = '' ensures only the first message sets it
   queries.conversation.updateConversationTitle(db, id, truncateTitle(content)).catch(() => {});
 
+  // @-mention wake — distinct from the existing mention-CONTEXT enrichment
+  // below (which just annotates the prompt sent to conversation.agentId).
+  // This actually wakes any OTHER mentioned agents with their own
+  // lightweight task, so a message mentioning a teammate reaches them
+  // directly instead of only being visible if the addressee relays it.
+  // Excludes conversation.agentId — they're already being tasked with this
+  // exact message below, a second ping would be redundant. Best-effort.
+  new TaskService(db)
+    .dispatchMentions(content, ws.workspaceId, {
+      excludeAgentId: conversation.agentId,
+      sourceLabel: "a message",
+    })
+    .catch(() => {});
+
   let enrichedContent = content;
   let mentionContext: Record<string, unknown> | undefined;
   if (content.includes("@")) {

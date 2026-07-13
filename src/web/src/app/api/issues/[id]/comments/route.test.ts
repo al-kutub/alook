@@ -86,6 +86,9 @@ vi.mock("@/lib/services/task", () => ({
     enqueueTask(...args: any[]) {
       return mockEnqueueTask(...args);
     }
+    dispatchMentions() {
+      return Promise.resolve([]);
+    }
   },
 }));
 

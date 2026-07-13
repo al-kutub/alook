@@ -1,5 +1,5 @@
 import type { Database, ExecutionPolicy, ExecutionState, ExecutionParticipant } from "@alook/shared";
-import { queries, TASK_TYPES, MAX_TASKS_PER_TRACE, BUDGET_PAUSED_REASON_EXCEEDED, isOverBudget } from "@alook/shared";
+import { queries, TASK_TYPES, MAX_TASKS_PER_TRACE, BUDGET_PAUSED_REASON_EXCEEDED, isOverBudget, resolveMentionedAgents } from "@alook/shared";
 import { log } from "@/lib/logger";
 import { broadcastToUser, broadcastToDaemon } from "@/lib/broadcast";
 import { messageToResponse } from "@/lib/api/responses";
@@ -108,6 +108,46 @@ export class TaskService {
     // the HTTP response returns, preventing races with subsequent poll calls.
     await this.pushTaskToDaemon(task, workspaceId).catch(() => {});
     return task;
+  }
+
+  /**
+   * @-mention wake — scans `content` for @AgentName tokens, resolves them
+   * against real agent names in the workspace (case-insensitive exact
+   * match), and dispatches a lightweight MENTION task to each resolved
+   * agent so they wake and look at the source (a comment/message), without
+   * assigning them the underlying work — see mentions.ts's doc comment for
+   * the full rule set this ports from Paperclip. Best-effort per agent: one
+   * mention failing (e.g. that agent is over budget) doesn't block others
+   * or the caller's main request. Returns the agents actually woken.
+   */
+  async dispatchMentions(
+    content: string,
+    workspaceId: string,
+    opts: { excludeAgentId?: string | null; sourceLabel: string }
+  ): Promise<{ id: string; name: string }[]> {
+    const allAgents = await agentQueries.getAllAgentsForWorkspace(this.db, workspaceId);
+    const mentioned = resolveMentionedAgents(content, allAgents, opts.excludeAgentId);
+    if (mentioned.length === 0) return [];
+
+    const woken: { id: string; name: string }[] = [];
+    for (const agentRow of mentioned) {
+      const agent = allAgents.find((a) => a.id === agentRow.id);
+      if (!agent || !agent.runtimeId || !agent.ownerId) continue;
+      try {
+        const conversation = await conversationQueries.getOrCreateAgentConversation(
+          this.db,
+          workspaceId,
+          agent.ownerId,
+          agent.id
+        );
+        const prompt = `You were mentioned in ${opts.sourceLabel}:\n\n"${content.slice(0, 1000)}"\n\nTake a look and respond or act if relevant. You were only mentioned, not assigned — if this needs real follow-up work, create or claim a task for it rather than assuming you're already on it.`;
+        await this.enqueueTask(agent.id, conversation.id, workspaceId, prompt, TASK_TYPES.MENTION);
+        woken.push({ id: agent.id, name: agent.name });
+      } catch (err) {
+        log.warn("dispatchMentions: failed to wake mentioned agent", { agentId: agent.id, workspaceId, err });
+      }
+    }
+    return woken;
   }
 
   async claimTask(agentId: string, workspaceId: string) {

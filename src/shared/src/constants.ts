@@ -51,6 +51,10 @@ export const TASK_TYPES = {
   ISSUE_EVENT: "issue_event",
   KILL_TASK: "kill_task",
   HEARTBEAT: "heartbeat",
+  // @-mention wake — see lib/mentions.ts. A lightweight nudge to a mentioned
+  // agent, distinct from a real task assignment (Paperclip's rule: "don't
+  // use mentions for assignment").
+  MENTION: "mention",
 } as const;
 
 export type TaskType = (typeof TASK_TYPES)[keyof typeof TASK_TYPES];
