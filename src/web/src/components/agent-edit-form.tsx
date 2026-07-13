@@ -13,6 +13,14 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { MarkdownEditor } from "@/components/ui/markdown-editor";
 import { RuntimeSelect } from "@/components/runtime-select";
+import { Switch } from "@/components/ui/switch";
+import {
+  Select,
+  SelectTrigger,
+  SelectValue,
+  SelectContent,
+  SelectItem,
+} from "@/components/ui/select";
 import { useWorkspace } from "@/contexts/workspace-context";
 import { useAgentContext } from "@/contexts/agent-context";
 import { getAgent as getAgentApi, updateAgent as updateAgentApi } from "@/lib/api";
@@ -115,6 +123,75 @@ function RuntimeTab({
   );
 }
 
+const HEARTBEAT_INTERVAL_PRESETS: { value: string; label: string }[] = [
+  { value: "900", label: "15 minutes" },
+  { value: "1800", label: "30 minutes" },
+  { value: "3600", label: "1 hour" },
+  { value: "7200", label: "2 hours" },
+  { value: "14400", label: "4 hours" },
+  { value: "21600", label: "6 hours" },
+  { value: "43200", label: "12 hours" },
+  { value: "86400", label: "24 hours" },
+];
+
+function HeartbeatTab({
+  enabled,
+  intervalSeconds,
+  saving,
+  onEnabledChange,
+  onIntervalChange,
+}: {
+  enabled: boolean;
+  intervalSeconds: number;
+  saving: boolean;
+  onEnabledChange: (v: boolean) => void;
+  onIntervalChange: (v: number) => void;
+}) {
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between rounded-lg border border-border/50 px-4 py-3">
+        <div className="space-y-0.5">
+          <Label className="text-sm">Heartbeat</Label>
+          <p className="text-xs text-muted-foreground">
+            Wake this agent on a schedule to check on outstanding work and keep things moving.
+          </p>
+        </div>
+        <Switch
+          checked={enabled}
+          disabled={saving}
+          onCheckedChange={(v: boolean) => onEnabledChange(v)}
+        />
+      </div>
+
+      <div className="space-y-2">
+        <Label className="text-xs text-muted-foreground">Interval</Label>
+        <Select
+          value={String(intervalSeconds)}
+          onValueChange={(val: string | null) => {
+            if (val) onIntervalChange(Number(val));
+          }}
+          disabled={!enabled || saving}
+          items={HEARTBEAT_INTERVAL_PRESETS}
+        >
+          <SelectTrigger>
+            <SelectValue placeholder="Select interval" />
+          </SelectTrigger>
+          <SelectContent>
+            {HEARTBEAT_INTERVAL_PRESETS.map((p) => (
+              <SelectItem key={p.value} value={p.value}>
+                {p.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <p className="text-xs text-muted-foreground/70">
+          How often the agent checks up on long-running tasks and posts a status update.
+        </p>
+      </div>
+    </div>
+  );
+}
+
 interface AgentEditFormProps {
   agent: Agent;
   runtimes: Runtime[];
@@ -130,7 +207,7 @@ interface AgentEditFormProps {
   saving: boolean;
 }
 
-type TabId = "general" | "instruction" | "runtime" | "email" | "permission";
+type TabId = "general" | "instruction" | "runtime" | "email" | "heartbeat" | "permission";
 
 export function AgentEditForm({
   agent,
@@ -153,6 +230,39 @@ export function AgentEditForm({
     const rc = agent.runtime_config;
     return typeof rc?.model === "string" ? rc.model : "";
   });
+
+  // Heartbeat tab state — auto-saves independently, like visibility
+  const [heartbeatEnabled, setHeartbeatEnabled] = useState(agent.heartbeat_enabled ?? false);
+  const [heartbeatIntervalSeconds, setHeartbeatIntervalSeconds] = useState(
+    agent.heartbeat_interval_seconds ?? 1800
+  );
+  const [heartbeatSaving, setHeartbeatSaving] = useState(false);
+
+  const saveHeartbeat = useCallback(
+    async (next: { enabled?: boolean; intervalSeconds?: number }) => {
+      const enabled = next.enabled ?? heartbeatEnabled;
+      const interval = next.intervalSeconds ?? heartbeatIntervalSeconds;
+      setHeartbeatSaving(true);
+      try {
+        await updateAgentApi(
+          agent.id,
+          { heartbeat_enabled: enabled, heartbeat_interval_seconds: interval },
+          workspaceId
+        );
+        setHeartbeatEnabled(enabled);
+        setHeartbeatIntervalSeconds(interval);
+        patchAgent(agent.id, {
+          heartbeat_enabled: enabled,
+          heartbeat_interval_seconds: interval,
+        });
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : "Failed to update heartbeat");
+      } finally {
+        setHeartbeatSaving(false);
+      }
+    },
+    [agent.id, workspaceId, patchAgent, heartbeatEnabled, heartbeatIntervalSeconds]
+  );
 
   // Instruction tab state — auto-saves independently
   const [instructions, setInstructions] = useState(agent.instructions ?? "");
@@ -272,6 +382,7 @@ export function AgentEditForm({
     { id: "instruction", label: "Instruction" },
     { id: "runtime", label: "Runtime" },
     { id: "email", label: "Email" },
+    { id: "heartbeat", label: "Heartbeat" },
     { id: "permission", label: "Permission" },
   ];
 
@@ -332,6 +443,18 @@ export function AgentEditForm({
               <p className="text-xs text-muted-foreground">
                 Agent-specific instruction. Your global instruction is prepended automatically.
               </p>
+            </div>
+          </div>
+        ) : activeTab === "heartbeat" ? (
+          <div className="flex-1 overflow-y-auto thin-scrollbar px-4 py-6">
+            <div className="mx-auto max-w-md">
+              <HeartbeatTab
+                enabled={heartbeatEnabled}
+                intervalSeconds={heartbeatIntervalSeconds}
+                saving={heartbeatSaving}
+                onEnabledChange={(v) => saveHeartbeat({ enabled: v })}
+                onIntervalChange={(v) => saveHeartbeat({ intervalSeconds: v })}
+              />
             </div>
           </div>
         ) : (
