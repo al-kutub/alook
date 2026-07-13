@@ -223,7 +223,7 @@ function runMigrations() {
 const children = new Map(); // name -> ChildProcess
 let shuttingDown = false;
 
-function spawnService(name, cmd, args, cwd, env) {
+function spawnService(name, cmd, args, cwd, env, opts = {}) {
   log(name, `spawn: ${cmd} ${args.join(" ")}`);
   const child = spawn(cmd, args, {
     cwd,
@@ -235,6 +235,15 @@ function spawnService(name, cmd, args, cwd, env) {
   child.on("exit", (code, signal) => {
     children.delete(name);
     if (shuttingDown) return;
+    // opts.onUnexpectedExit can veto the shutdown (return false) when the
+    // exit isn't actually fatal to the container's real invariant — see the
+    // "daemon" spawn below, whose race against register's own auto-started
+    // daemon (see stopAutoStartedDaemon()'s doc comment) is inherently timing
+    // sensitive and not worth chasing to a perfect win every boot.
+    if (opts.onUnexpectedExit && opts.onUnexpectedExit(code, signal) === false) {
+      log(name, `exited (code=${code} signal=${signal}) but a working replacement is confirmed alive — not restarting container`);
+      return;
+    }
     log(name, `exited unexpectedly (code=${code} signal=${signal}) — shutting down`);
     shutdown(1);
   });
@@ -575,6 +584,24 @@ async function main() {
     ["run", "src/index.ts", "--server", BASE_URL, "daemon", "start", "--foreground"],
     join(REPO_ROOT, "src", "cli"),
     cliEnv,
+    {
+      // stopAutoStartedDaemon() polls/kills register's auto-started daemon
+      // before this spawn, but that's inherently a best-effort race, not a
+      // guarantee — the production build's faster boot has already been
+      // observed to occasionally still lose it ("Another daemon is already
+      // running"). When that happens the container's real invariant (a
+      // working cursor-agent daemon connected to ws-do) is still satisfied
+      // by the OTHER process — same code, same config, same workspace — so
+      // don't tear the whole container down over which process happens to
+      // hold the pidfile lock.
+      onUnexpectedExit: () => {
+        const pidPath = join(CLI_DATA_DIR, "daemon.pid");
+        if (!existsSync(pidPath)) return true;
+        const pid = Number.parseInt(readFileSync(pidPath, "utf-8").trim(), 10);
+        if (Number.isFinite(pid) && isPidAlive(pid)) return false;
+        return true;
+      },
+    },
   );
 
   log("boot", "all services started; container is ready");
