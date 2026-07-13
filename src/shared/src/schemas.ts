@@ -657,6 +657,10 @@ export const CreateMessageRequestSchema = z.object({
   // window where the task could finish before the policy lands — see
   // TaskService.sanitizeExecutionPolicy.
   execution_policy: ExecutionPolicySchema.optional(),
+  // Optional company-goals gate for the task this message creates — see
+  // TaskService.enqueueTask's goal check. Blocked with a clear error if
+  // the goal has no approved strategy yet.
+  goal_id: z.string().min(1).optional(),
 });
 export type CreateMessageRequest = z.infer<typeof CreateMessageRequestSchema>;
 

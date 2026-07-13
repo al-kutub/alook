@@ -69,6 +69,7 @@ export const POST = withAuth(async (req: NextRequest, ctx) => {
   let content: string;
   let messageMetadata: Record<string, unknown> | undefined;
   let executionPolicy: ExecutionPolicy | undefined;
+  let goalId: string | undefined;
   const files: File[] = [];
   const thumbnails = new Map<number, File>();
 
@@ -99,6 +100,7 @@ export const POST = withAuth(async (req: NextRequest, ctx) => {
     content = body.content;
     messageMetadata = body.metadata;
     executionPolicy = body.execution_policy;
+    goalId = body.goal_id;
   }
 
   if (isMultipart && !content) {
@@ -238,6 +240,7 @@ export const POST = withAuth(async (req: NextRequest, ctx) => {
         traceId,
         parentTaskId: null,
         executionPolicy: executionPolicy ?? null,
+        goalId: goalId ?? null,
       },
     );
     queries.message.updateMessageTaskId(db, message.id, task.id).catch(() => {});
