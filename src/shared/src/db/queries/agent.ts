@@ -1,4 +1,4 @@
-import { eq, and, desc, or, exists, inArray } from "drizzle-orm";
+import { eq, and, desc, or, exists, inArray, isNull, sql } from "drizzle-orm";
 import { agent, agentAccess } from "../schema";
 import type { Database } from "../index";
 
@@ -62,6 +62,8 @@ export async function createAgent(
     tools?: unknown;
     triggers?: unknown;
     emailHandle?: string | null;
+    heartbeatEnabled?: boolean;
+    heartbeatIntervalSeconds?: number;
   }
 ) {
   const rows = await db
@@ -81,6 +83,8 @@ export async function createAgent(
       tools: data.tools ?? null,
       triggers: data.triggers ?? null,
       emailHandle: data.emailHandle ?? null,
+      ...(data.heartbeatEnabled !== undefined ? { heartbeatEnabled: data.heartbeatEnabled } : {}),
+      ...(data.heartbeatIntervalSeconds !== undefined ? { heartbeatIntervalSeconds: data.heartbeatIntervalSeconds } : {}),
     })
     .returning();
   return rows[0]!;
@@ -113,6 +117,8 @@ export async function updateAgent(
     runtimeConfig?: unknown;
     visibility?: string;
     avatarUrl?: string | null;
+    heartbeatEnabled?: boolean;
+    heartbeatIntervalSeconds?: number;
   },
   ownerId?: string
 ) {
@@ -124,6 +130,37 @@ export async function updateAgent(
     .where(and(...conditions))
     .returning();
   return rows[0] ?? null;
+}
+
+export async function updateAgentHeartbeatFired(
+  db: Database,
+  id: string,
+  workspaceId: string,
+  firedAt: string
+) {
+  const rows = await db
+    .update(agent)
+    .set({ lastHeartbeatAt: firedAt })
+    .where(and(eq(agent.id, id), eq(agent.workspaceId, workspaceId)))
+    .returning();
+  return rows[0] ?? null;
+}
+
+export async function getAgentsDueForHeartbeat(db: Database, workspaceId: string) {
+  const now = new Date().toISOString();
+  return db
+    .select()
+    .from(agent)
+    .where(
+      and(
+        eq(agent.workspaceId, workspaceId),
+        eq(agent.heartbeatEnabled, true),
+        or(
+          isNull(agent.lastHeartbeatAt),
+          sql`(unixepoch(${now}) - unixepoch(${agent.lastHeartbeatAt})) >= ${agent.heartbeatIntervalSeconds}`
+        )
+      )
+    );
 }
 
 export async function updateAgentStatus(

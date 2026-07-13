@@ -44,6 +44,7 @@ export const TASK_TYPES = {
   CALENDAR_EVENT: "calendar_event",
   ISSUE_EVENT: "issue_event",
   KILL_TASK: "kill_task",
+  HEARTBEAT: "heartbeat",
 } as const;
 
 export type TaskType = (typeof TASK_TYPES)[keyof typeof TASK_TYPES];

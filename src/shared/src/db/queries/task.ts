@@ -695,6 +695,37 @@ export async function failStaleRunningTasks(db: Database, workspaceId: string, s
   return rows;
 }
 
+export async function getOutstandingTasksForHeartbeat(
+  db: Database,
+  agentId: string,
+  workspaceId: string
+) {
+  const rows = await db
+    .select({
+      id: agentTaskQueue.id,
+      prompt: agentTaskQueue.prompt,
+      status: agentTaskQueue.status,
+      startedAt: agentTaskQueue.startedAt,
+      createdAt: agentTaskQueue.createdAt,
+      lastActivityAt: sql<string>`COALESCE(MAX(${taskMessage.createdAt}), ${agentTaskQueue.startedAt}, ${agentTaskQueue.createdAt})`,
+    })
+    .from(agentTaskQueue)
+    .leftJoin(taskMessage, eq(taskMessage.taskId, agentTaskQueue.id))
+    .where(
+      and(
+        eq(agentTaskQueue.agentId, agentId),
+        eq(agentTaskQueue.workspaceId, workspaceId),
+        inArray(agentTaskQueue.status, ["queued", "dispatched", "running"]),
+        ne(agentTaskQueue.type, TASK_TYPES.KILL_TASK),
+        ne(agentTaskQueue.type, TASK_TYPES.HEARTBEAT)
+      )
+    )
+    .groupBy(agentTaskQueue.id)
+    .orderBy(desc(agentTaskQueue.createdAt))
+    .limit(20);
+  return rows;
+}
+
 const DEFAULT_HISTORY_LIMIT = 30;
 
 export async function listTaskHistory(
