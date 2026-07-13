@@ -28,7 +28,7 @@
 // them, and exits non-zero (letting the platform restart the container) if
 // any child dies unexpectedly before a deliberate shutdown was requested.
 
-import { spawn } from "node:child_process";
+import { spawn, execFileSync } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import {
   existsSync,
@@ -531,6 +531,31 @@ async function stopAutoStartedDaemon() {
   rmSync(pidPath, { force: true });
 }
 
+// ---------------------------------------------------------------------------
+// GitHub CLI auth — lets cursor-agent tasks create/push/pull repos on the
+// user's al-kutub org. `gh auth setup-git` wires GH_TOKEN into git's own
+// credential helper so plain `git push https://github.com/...` works from
+// inside a cursor-agent task's shell tool, not just `gh` subcommands
+// directly. Git commit identity has no sane default in a fresh container —
+// commits would fail with "Author identity unknown" without this. Skips
+// silently (not fatal) if GH_TOKEN isn't set — GitHub access is optional,
+// unlike ALOOK_ADMIN_PASSWORD.
+// ---------------------------------------------------------------------------
+function ensureGithubAuth() {
+  if (!process.env.GH_TOKEN) {
+    log("boot", "GH_TOKEN not set — skipping gh/git GitHub auth setup");
+    return;
+  }
+  try {
+    execFileSync("gh", ["auth", "setup-git"], { stdio: "inherit" });
+    execFileSync("git", ["config", "--global", "user.name", process.env.ALOOK_GIT_AUTHOR_NAME || "alook-agent"]);
+    execFileSync("git", ["config", "--global", "user.email", process.env.ALOOK_GIT_AUTHOR_EMAIL || ADMIN_EMAIL]);
+    log("boot", "gh/git GitHub auth configured");
+  } catch (err) {
+    log("boot", `gh auth setup-git failed (non-fatal): ${err.message}`);
+  }
+}
+
 async function main() {
   mkdirSync(DATA_DIR, { recursive: true });
   mkdirSync(WRANGLER_STATE_DIR, { recursive: true });
@@ -541,6 +566,7 @@ async function main() {
   ensureWranglerPersistSymlink(EMAIL_DIR);
   ensureWranglerPersistSymlink(WS_DIR);
 
+  ensureGithubAuth();
   ensureDevVars();
   await runMigrations();
   await buildWebIfNeeded();

@@ -55,6 +55,19 @@ RUN curl https://cursor.com/install -fsS | bash \
  && ln -sf /opt/cursor-agent/cursor-agent /usr/local/bin/cursor-agent \
  && /usr/local/bin/cursor-agent --version
 
+# GitHub CLI — lets cursor-agent tasks create/push/pull repos on the user's
+# al-kutub org (auth via GH_TOKEN env var at deploy time, gh's own preferred
+# var name, checked before GITHUB_TOKEN — never baked in here). Official apt
+# repo per cli.github.com/packages, not a version-pinned binary download,
+# since gh has no simple single-file release layout like bun/cursor-agent.
+RUN curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg -o /usr/share/keyrings/githubcli-archive-keyring.gpg \
+ && chmod go+r /usr/share/keyrings/githubcli-archive-keyring.gpg \
+ && echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" > /etc/apt/sources.list.d/github-cli.list \
+ && apt-get update \
+ && apt-get install -y --no-install-recommends gh \
+ && rm -rf /var/lib/apt/lists/* \
+ && gh --version
+
 WORKDIR /app
 
 # Copy the whole source tree (pnpm needs every workspace package.json
