@@ -175,8 +175,26 @@ describe("TaskService", () => {
         context: undefined,
         traceId: null,
         parentTaskId: null,
+        executionPolicy: null,
       });
       expect(result).toEqual({ id: "t1" });
+    });
+
+    it("sanitizes and persists an execution_policy passed at creation time", async () => {
+      agentQ.getAgent.mockResolvedValue({ id: "a1", runtimeId: "r1" });
+      memberQ.getMemberByUserAndWorkspace.mockResolvedValue({ id: "m1" });
+      taskQ.createTask.mockResolvedValue({ id: "t1" });
+
+      const policy = {
+        mode: "normal" as const,
+        stages: [{ id: "s1", type: "review" as const, participants: [{ type: "user" as const, userId: "u2" }] }],
+      };
+
+      await service.enqueueTask("a1", "c1", "w1", "do stuff", "user_dm_message", { executionPolicy: policy });
+
+      expect(taskQ.createTask).toHaveBeenCalledWith({}, expect.objectContaining({
+        executionPolicy: policy,
+      }));
     });
   });
 

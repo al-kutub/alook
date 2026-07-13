@@ -599,6 +599,11 @@ export type CreateConversationRequest = z.infer<
 export const CreateMessageRequestSchema = z.object({
   content: z.string().min(1, "content is required"),
   metadata: z.record(z.string(), z.unknown()).optional(),
+  // Optional review/approval gate for the task this message creates. Set
+  // atomically at creation (rather than a separate PATCH) so there's no
+  // window where the task could finish before the policy lands — see
+  // TaskService.sanitizeExecutionPolicy.
+  execution_policy: ExecutionPolicySchema.optional(),
 });
 export type CreateMessageRequest = z.infer<typeof CreateMessageRequestSchema>;
 

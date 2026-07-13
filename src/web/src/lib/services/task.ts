@@ -24,7 +24,7 @@ export class TaskService {
     workspaceId: string,
     prompt: string,
     type: string = TASK_TYPES.USER_DM_MESSAGE,
-    opts?: { contextKey?: string | null; context?: Record<string, unknown>; traceId?: string | null; parentTaskId?: string | null },
+    opts?: { contextKey?: string | null; context?: Record<string, unknown>; traceId?: string | null; parentTaskId?: string | null; executionPolicy?: ExecutionPolicy | null },
   ) {
     const agent = await agentQueries.getAgent(this.db, agentId, workspaceId);
     if (!agent) {
@@ -41,6 +41,12 @@ export class TaskService {
       }
     }
 
+    // Set atomically at creation (not a later PATCH) so there's no window
+    // where the task could finish before the policy lands.
+    const executionPolicy = opts?.executionPolicy
+      ? await this.sanitizeExecutionPolicy(opts.executionPolicy, workspaceId, agentId)
+      : null;
+
     const task = await taskQueries.createTask(this.db, {
       agentId,
       runtimeId: agent.runtimeId,
@@ -53,6 +59,7 @@ export class TaskService {
       context: opts?.context,
       traceId: opts?.traceId ?? null,
       parentTaskId: opts?.parentTaskId ?? null,
+      executionPolicy,
     });
     invalidate(cacheKeys.activeTaskCounts(workspaceId)).catch(() => {});
     // Push task to daemon via WS (best-effort). Awaited to ensure task state

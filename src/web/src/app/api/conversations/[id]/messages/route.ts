@@ -1,5 +1,5 @@
 import { NextRequest } from "next/server";
-import { queries, TASK_TYPES, CreateMessageRequestSchema, parsePromptMentions, truncateTitle } from "@alook/shared"
+import { queries, TASK_TYPES, CreateMessageRequestSchema, parsePromptMentions, truncateTitle, type ExecutionPolicy } from "@alook/shared"
 import { getDb } from "@/lib/db"
 import { nanoid } from "nanoid";
 import { withAuth } from "@/lib/middleware/auth";
@@ -68,6 +68,7 @@ export const POST = withAuth(async (req: NextRequest, ctx) => {
 
   let content: string;
   let messageMetadata: Record<string, unknown> | undefined;
+  let executionPolicy: ExecutionPolicy | undefined;
   const files: File[] = [];
   const thumbnails = new Map<number, File>();
 
@@ -97,6 +98,7 @@ export const POST = withAuth(async (req: NextRequest, ctx) => {
     if (valErr) return valErr;
     content = body.content;
     messageMetadata = body.metadata;
+    executionPolicy = body.execution_policy;
   }
 
   if (isMultipart && !content) {
@@ -235,6 +237,7 @@ export const POST = withAuth(async (req: NextRequest, ctx) => {
         context: Object.keys(taskContext).length > 0 ? taskContext : undefined,
         traceId,
         parentTaskId: null,
+        executionPolicy: executionPolicy ?? null,
       },
     );
     queries.message.updateMessageTaskId(db, message.id, task.id).catch(() => {});
