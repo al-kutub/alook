@@ -515,6 +515,31 @@ export const issueComment = sqliteTable(
   ]
 );
 
+// Company wiki — shared, cross-agent knowledge store (postmortems, patterns,
+// gotchas). Distinct from per-agent workspace memory (memory.md/experiences/,
+// see src/daemon/src/drivers/systemPrompt.ts), which no other agent can read.
+// FTS5 search index (company_doc_fts) is created in the migration only —
+// virtual tables aren't modeled in Drizzle, queried via raw sql`` MATCH in
+// queries/company-doc.ts, same as community_message_fts.
+export const companyDoc = sqliteTable(
+  "company_doc",
+  {
+    id: text("id").primaryKey().$defaultFn(() => "cd_" + nanoid()),
+    workspaceId: text("workspace_id")
+      .notNull()
+      .references(() => workspace.id, { onDelete: "cascade" }),
+    title: text("title").notNull(),
+    content: text("content").notNull(),
+    tags: text("tags").notNull().default(""),
+    authorAgentId: text("author_agent_id").notNull(),
+    createdAt: text("created_at").notNull().$defaultFn(() => new Date().toISOString()),
+    updatedAt: text("updated_at").notNull().$defaultFn(() => new Date().toISOString()),
+  },
+  (t) => [
+    index("idx_company_doc_workspace").on(t.workspaceId, t.updatedAt),
+  ]
+);
+
 export const taskMessage = sqliteTable(
   "task_message",
   {

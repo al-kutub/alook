@@ -17,6 +17,7 @@ type MeetingSessionRow = typeof schema.meetingSession.$inferSelect;
 type AgentLinkRow = typeof schema.agentLink.$inferSelect;
 type CalendarEventRow = typeof schema.calendarEvent.$inferSelect;
 type IssueRow = typeof schema.issue.$inferSelect;
+type CompanyDocRow = typeof schema.companyDoc.$inferSelect;
 
 export function userToResponse(u: {
   id: string;
@@ -360,6 +361,19 @@ export function issueToResponse(row: IssueRow) {
     created_at: formatTimestamp(row.createdAt),
     updated_at: formatTimestamp(row.updatedAt),
     completed_at: formatTimestampNullable(row.completedAt),
+  };
+}
+
+export function companyDocToResponse(row: CompanyDocRow) {
+  return {
+    id: row.id,
+    workspace_id: row.workspaceId,
+    title: row.title,
+    content: row.content,
+    tags: row.tags,
+    author_agent_id: row.authorAgentId,
+    created_at: formatTimestamp(row.createdAt),
+    updated_at: formatTimestamp(row.updatedAt),
   };
 }
 

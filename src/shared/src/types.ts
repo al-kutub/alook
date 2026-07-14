@@ -44,6 +44,17 @@ export interface Agent {
   updated_at: string;
 }
 
+export interface CompanyDoc {
+  id: string;
+  workspace_id: string;
+  title: string;
+  content: string;
+  tags: string;
+  author_agent_id: string;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface RuntimeMetadata {
   version?: string;
   cli_version?: string;

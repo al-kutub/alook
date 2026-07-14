@@ -511,6 +511,25 @@ export const UpdateIssueRequestSchema = z
   );
 export type UpdateIssueRequestInput = z.infer<typeof UpdateIssueRequestSchema>;
 
+export const CreateCompanyDocRequestSchema = z.object({
+  title: z.string().min(1, "title is required").max(200),
+  content: z.string().min(1, "content is required").max(50_000),
+  tags: z.string().max(500).optional().default(""),
+});
+export type CreateCompanyDocRequestInput = z.infer<typeof CreateCompanyDocRequestSchema>;
+
+export const UpdateCompanyDocRequestSchema = z
+  .object({
+    title: z.string().min(1).max(200).optional(),
+    content: z.string().min(1).max(50_000).optional(),
+    tags: z.string().max(500).optional(),
+  })
+  .refine(
+    (v) => v.title !== undefined || v.content !== undefined || v.tags !== undefined,
+    { message: "at least one field is required" }
+  );
+export type UpdateCompanyDocRequestInput = z.infer<typeof UpdateCompanyDocRequestSchema>;
+
 export const CreateIssueCommentBodySchema = z.object({
   content: z.string().min(1, "content is required").max(20_000),
 });
