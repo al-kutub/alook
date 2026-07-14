@@ -1,7 +1,8 @@
 import dagre from "@dagrejs/dagre";
 import type { Node, Edge } from "@xyflow/react";
+import type { Agent } from "@alook/shared";
 
-export type LayoutType = "star" | "tree" | "flow";
+export type LayoutType = "star" | "tree" | "flow" | "org";
 
 const NODE_WIDTH = 280;
 const NODE_HEIGHT = 100;
@@ -20,7 +21,50 @@ export function getAutoLayout(
       return getDagreLayout(nodes, edges, "TB");
     case "flow":
       return getDagreLayout(nodes, edges, "LR");
+    case "org":
+      return getOrgChartLayout(nodes);
   }
+}
+
+function getOrgChartLayout(nodes: Node[]): Node[] {
+  // Hierarchy comes from agent.reports_to (structural chain of command),
+  // not from the free-form agent_link edges, so the chart is always
+  // consistent regardless of what links exist on the canvas.
+  const g = new dagre.graphlib.Graph();
+  g.setDefaultEdgeLabel(() => ({}));
+  g.setGraph({
+    rankdir: "TB",
+    nodesep: 60,
+    ranksep: 140,
+    marginx: 40,
+    marginy: 40,
+  });
+
+  for (const node of nodes) {
+    g.setNode(node.id, { width: NODE_WIDTH, height: NODE_HEIGHT });
+  }
+
+  const idsInGraph = new Set(nodes.map((n) => n.id));
+  for (const node of nodes) {
+    const agent = (node.data as { agent?: Agent } | undefined)?.agent;
+    const managerId = agent?.reports_to;
+    if (managerId && idsInGraph.has(managerId)) {
+      g.setEdge(managerId, node.id);
+    }
+  }
+
+  dagre.layout(g);
+
+  return nodes.map((node) => {
+    const pos = g.node(node.id);
+    return {
+      ...node,
+      position: {
+        x: pos.x - NODE_WIDTH / 2,
+        y: pos.y - NODE_HEIGHT / 2,
+      },
+    };
+  });
 }
 
 function getDagreLayout(

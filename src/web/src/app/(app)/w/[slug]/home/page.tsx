@@ -29,6 +29,7 @@ import {
   GitBranch,
   ArrowRight,
   Check,
+  Network,
 } from "lucide-react";
 import type { Agent, AgentLink } from "@alook/shared";
 import { cn } from "@/lib/utils";
@@ -76,7 +77,7 @@ function layoutStorageKey(workspaceId: string) {
 function loadLayoutType(workspaceId: string): LayoutType {
   try {
     const raw = localStorage.getItem(layoutStorageKey(workspaceId));
-    if (raw === "star" || raw === "tree" || raw === "flow") return raw;
+    if (raw === "star" || raw === "tree" || raw === "flow" || raw === "org") return raw;
   } catch {}
   return "tree";
 }
@@ -494,6 +495,7 @@ function AgentCanvas({ onAgentClick }: { onAgentClick?: (agent: Agent) => void }
           </Tooltip>
           <PopoverContent className="w-36 p-1" align="start" side="top" sideOffset={8}>
             {([
+              { type: "org" as const, label: "Org Chart", icon: Network },
               { type: "star" as const, label: "Star", icon: Circle },
               { type: "tree" as const, label: "Tree", icon: GitBranch },
               { type: "flow" as const, label: "Flow", icon: ArrowRight },
