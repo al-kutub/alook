@@ -20,7 +20,7 @@ vi.mock("@/lib/middleware/helpers", () => ({
 vi.mock("@opennextjs/cloudflare", () => ({
   getCloudflareContext: vi.fn(() => ({ env: { DB: {} } })),
 }));
-vi.mock("@/lib/db", () => ({ getDb: vi.fn(() => ({})) }));
+vi.mock("@/lib/db", () => ({ getDb: vi.fn(() => ({})), withD1Retry: vi.fn((fn: any) => fn()) }));
 vi.mock("@/lib/cache", () => ({
   cached: vi.fn((_key: any, _ttl: any, fn: any) => fn()),
   cacheKeys: {

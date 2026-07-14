@@ -487,6 +487,27 @@ function isPidAlive(pid) {
   }
 }
 
+// daemon.pid lives on the persistent /data volume (CLI_DATA_DIR), so it
+// survives a container restart even though PIDs don't — a fresh container
+// gets a fresh PID namespace, so a leftover pidfile from the PREVIOUS
+// container's crash (e.g. after a daemon SIGABRT triggers spawnService's
+// shutdown(1), which restarts the whole container) can point at a PID that
+// means nothing here. pidfile.ts's own acquireDaemonPid() doesn't know
+// about this cross-restart case, so without this check a stale pidfile
+// makes the fresh daemon fail to start with "Another daemon is already
+// running" — observed in production 2026-07-14 (PID 2157, boot right after
+// a SIGABRT-triggered restart). Unlike stopAutoStartedDaemon() below (which
+// only targets register's own auto-started daemon), this runs
+// unconditionally at the top of boot for any leftover pidfile at all.
+function clearStaleDaemonPidfile() {
+  const pidPath = join(CLI_DATA_DIR, "daemon.pid");
+  if (!existsSync(pidPath)) return;
+  const pid = Number.parseInt(readFileSync(pidPath, "utf-8").trim(), 10);
+  if (Number.isFinite(pid) && isPidAlive(pid)) return; // genuinely still running in this container — leave it
+  log("boot", `removing stale daemon.pid (pid ${pid} not alive in this container)`);
+  rmSync(pidPath, { force: true });
+}
+
 async function stopAutoStartedDaemon() {
   const pidPath = join(CLI_DATA_DIR, "daemon.pid");
 
@@ -561,6 +582,8 @@ async function main() {
   mkdirSync(WRANGLER_STATE_DIR, { recursive: true });
   mkdirSync(CLI_DATA_DIR, { recursive: true, mode: 0o700 });
   mkdirSync(WORKSPACES_ROOT, { recursive: true });
+
+  clearStaleDaemonPidfile();
 
   ensureWranglerPersistSymlink(WEB_DIR);
   ensureWranglerPersistSymlink(EMAIL_DIR);

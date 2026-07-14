@@ -1,6 +1,6 @@
 import { NextRequest } from "next/server"
 import { queries } from "@alook/shared"
-import { getDb } from "@/lib/db"
+import { getDb, withD1Retry } from "@/lib/db"
 import { withAuth } from "@/lib/middleware/auth";
 import { withWorkspaceMember, withWorkspaceOwner } from "@/lib/middleware/workspace";
 import { writeJSON, writeError } from "@/lib/middleware/helpers";
@@ -12,7 +12,7 @@ export const GET = withAuth(async (req, ctx) => {
 
   const db = getDb(ctx.env.DB)
 
-  const runtimes = await queries.runtime.listAgentRuntimes(db, ws.workspaceId, ctx.userId);
+  const runtimes = await withD1Retry(() => queries.runtime.listAgentRuntimes(db, ws.workspaceId, ctx.userId));
 
   return writeJSON(runtimes.map(runtimeToResponse));
 });
