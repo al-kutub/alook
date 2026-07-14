@@ -50,6 +50,14 @@ export async function updateDoc(
   return rows[0] ?? null;
 }
 
+export async function deleteDoc(db: Database, id: string, workspaceId: string) {
+  const rows = await db
+    .delete(companyDoc)
+    .where(and(eq(companyDoc.id, id), eq(companyDoc.workspaceId, workspaceId)))
+    .returning();
+  return rows[0] ?? null;
+}
+
 export async function listRecentDocs(db: Database, workspaceId: string, limit = DEFAULT_LIMIT) {
   return db
     .select()

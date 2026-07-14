@@ -43,3 +43,19 @@ export const PATCH = withAuth(async (req: NextRequest, ctx) => {
 
   return writeJSON(companyDocToResponse(updated));
 });
+
+export const DELETE = withAuth(async (req: NextRequest, ctx) => {
+  const ws = await withWorkspaceMember(req, ctx);
+  if (ws instanceof Response) return ws;
+
+  const db = getDb(ctx.env.DB);
+  const id = ctx.params?.id;
+  if (!id) return writeError("doc id is required", 400);
+
+  const existing = await queries.companyDoc.getDoc(db, id, ws.workspaceId);
+  if (!existing) return writeError("doc not found", 404);
+
+  await queries.companyDoc.deleteDoc(db, id, ws.workspaceId);
+
+  return new Response(null, { status: 204 });
+});

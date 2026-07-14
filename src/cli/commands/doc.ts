@@ -106,5 +106,23 @@ export function docCommand(): Command {
       }
     });
 
+  cmd
+    .command("delete")
+    .description("Delete a wiki doc")
+    .argument("<id>", "Doc ID")
+    .option("--agent_id <id>", "Agent ID")
+    .action(async (id, opts, command) => {
+      const agentId = resolveAgentId(opts);
+      const { serverUrl, token, workspaceId } = resolveClientOpts(command, { agentId });
+      const client = new APIClient(serverUrl, token, workspaceId);
+      try {
+        await client.deleteJSON(`/api/wiki/${id}`);
+        console.log(`Deleted ${id}`);
+      } catch (err) {
+        console.error(`Error: ${err instanceof Error ? err.message : err}`);
+        process.exit(1);
+      }
+    });
+
   return cmd;
 }
