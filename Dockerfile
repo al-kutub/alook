@@ -68,6 +68,17 @@ RUN curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg -o 
  && rm -rf /var/lib/apt/lists/* \
  && gh --version
 
+# rtk binary (Rust Token Killer, github.com/rtk-ai/rtk) — installed here,
+# ahead of the app build, but NOT put on PATH yet (see below). The shim that
+# actually shadows git/grep/find is created after the build steps: pnpm
+# install and the OpenNext build below both shell out to git/node tooling
+# internally, and rtk rewrites output for LLM consumption, not guaranteed to
+# be a transparent passthrough for programmatic callers — shadowing git
+# mid-build risked silently breaking the build itself.
+RUN curl -fsSL https://raw.githubusercontent.com/rtk-ai/rtk/refs/heads/master/install.sh | sh \
+ && ln -sf "$HOME/.local/bin/rtk" /usr/local/bin/rtk \
+ && /usr/local/bin/rtk --version
+
 WORKDIR /app
 
 # Copy the whole source tree (pnpm needs every workspace package.json
@@ -89,6 +100,21 @@ RUN pnpm install --frozen-lockfile
 # rebuilds itself if this baked artifact is somehow missing (e.g. iterating
 # without rebuilding the image).
 RUN cd src/web && npx opennextjs-cloudflare build
+
+# Now shadow git/grep/find with rtk for every shell the *runtime* spawns
+# (agent sessions via cursor-agent, and this Dockerfile's own build steps
+# above are already done — they never see this PATH). Agent sessions here
+# are spawned non-interactively, so rtk's shell-rc hook (`rtk init -g`)
+# can't be relied on to fire; PATH-shadowing is the same mechanism already
+# used above for cursor-agent/bun, just scoped to runtime instead of build.
+RUN mkdir -p /opt/rtk-shims \
+ && for cmd in git grep find; do \
+      printf '#!/bin/sh\nexec /usr/local/bin/rtk %s "$@"\n' "$cmd" > "/opt/rtk-shims/$cmd"; \
+      chmod +x "/opt/rtk-shims/$cmd"; \
+    done \
+ && rtk init -g || true
+ENV PATH="/opt/rtk-shims:${PATH}"
+ENV RTK_TELEMETRY_DISABLED=1
 
 # Default port; the entrypoint honors Railway's injected $PORT if set (see
 # scripts/docker-entrypoint.mjs), falling back to this value otherwise.
