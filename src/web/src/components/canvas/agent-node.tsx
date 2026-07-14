@@ -4,6 +4,7 @@ import { memo, useState } from "react";
 import { Handle, Position, type NodeProps } from "@xyflow/react";
 import type { Agent, AgentRuntime } from "@alook/shared";
 import { AgentPreviewCard } from "@/components/agent-preview-card";
+import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 
 export interface AgentNodeData {
@@ -26,37 +27,46 @@ function AgentNodeInner({ data, selected, dragging }: NodeProps) {
   const [isHovered, setIsHovered] = useState(false);
 
   return (
-    <div
-      data-agent-node-id={agent.id}
-      data-agent-working={activeTaskCount > 0 ? "true" : "false"}
-      onMouseEnter={() => setIsHovered(true)}
-      onMouseLeave={() => setIsHovered(false)}
-      className={cn(
-        "bg-background rounded-xl ring-1 ring-foreground/8 shadow-sm transition-[box-shadow,ring-color,opacity,transform] duration-200 py-3 px-4 group",
-        selected && "ring-2 ring-primary/20 shadow-md",
-        !selected && "hover:ring-foreground/15 hover:shadow-md",
-        dragging && "shadow-lg scale-[1.02] cursor-grabbing",
+    <Tooltip>
+      <TooltipTrigger
+        render={
+          <div
+            data-agent-node-id={agent.id}
+            data-agent-working={activeTaskCount > 0 ? "true" : "false"}
+            onMouseEnter={() => setIsHovered(true)}
+            onMouseLeave={() => setIsHovered(false)}
+            className={cn(
+              "bg-background rounded-xl ring-1 ring-foreground/8 shadow-sm transition-[box-shadow,ring-color,opacity,transform] duration-200 py-3 px-4 group",
+              selected && "ring-2 ring-primary/20 shadow-md",
+              !selected && "hover:ring-foreground/15 hover:shadow-md",
+              dragging && "shadow-lg scale-[1.02] cursor-grabbing",
+            )}
+            style={{ animationDelay: `${index * 60}ms` }}
+          />
+        }
+      >
+        <Handle type="source" id="right" position={Position.Right} className={handleClass} />
+        <Handle type="source" id="left" position={Position.Left} className={handleClass} />
+        <Handle type="source" id="top" position={Position.Top} className={handleClass} />
+        <Handle type="source" id="bottom" position={Position.Bottom} className={handleClass} />
+
+        <Handle type="target" id="target-right" position={Position.Right} className={handleClass} />
+        <Handle type="target" id="target-left" position={Position.Left} className={handleClass} />
+        <Handle type="target" id="target-top" position={Position.Top} className={handleClass} />
+        <Handle type="target" id="target-bottom" position={Position.Bottom} className={handleClass} />
+
+        <AgentPreviewCard
+          agent={agent}
+          isOnline={isOnline}
+          activeTaskCount={activeTaskCount}
+          variant="compact"
+          isHovered={isHovered}
+        />
+      </TooltipTrigger>
+      {agent.description && (
+        <TooltipContent side="top">{agent.description}</TooltipContent>
       )}
-      style={{ animationDelay: `${index * 60}ms` }}
-    >
-      <Handle type="source" id="right" position={Position.Right} className={handleClass} />
-      <Handle type="source" id="left" position={Position.Left} className={handleClass} />
-      <Handle type="source" id="top" position={Position.Top} className={handleClass} />
-      <Handle type="source" id="bottom" position={Position.Bottom} className={handleClass} />
-
-      <Handle type="target" id="target-right" position={Position.Right} className={handleClass} />
-      <Handle type="target" id="target-left" position={Position.Left} className={handleClass} />
-      <Handle type="target" id="target-top" position={Position.Top} className={handleClass} />
-      <Handle type="target" id="target-bottom" position={Position.Bottom} className={handleClass} />
-
-      <AgentPreviewCard
-        agent={agent}
-        isOnline={isOnline}
-        activeTaskCount={activeTaskCount}
-        variant="compact"
-        isHovered={isHovered}
-      />
-    </div>
+    </Tooltip>
   );
 }
 
