@@ -540,6 +540,24 @@ export const companyDoc = sqliteTable(
   ]
 );
 
+// Maps a Telegram chat to an alook conversation. See
+// 0065_telegram_link.sql and src/web/src/app/api/webhooks/telegram/route.ts.
+export const telegramLink = sqliteTable(
+  "telegram_link",
+  {
+    chatId: text("chat_id").primaryKey(),
+    workspaceId: text("workspace_id")
+      .notNull()
+      .references(() => workspace.id, { onDelete: "cascade" }),
+    agentId: text("agent_id").notNull(),
+    conversationId: text("conversation_id").notNull(),
+    createdAt: text("created_at").notNull().$defaultFn(() => new Date().toISOString()),
+  },
+  (t) => [
+    index("idx_telegram_link_conversation").on(t.conversationId),
+  ]
+);
+
 export const taskMessage = sqliteTable(
   "task_message",
   {

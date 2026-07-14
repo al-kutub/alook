@@ -1,10 +1,12 @@
 import type { Database, ExecutionPolicy, ExecutionState, ExecutionParticipant } from "@alook/shared";
 import { queries, TASK_TYPES, MAX_TASKS_PER_TRACE, BUDGET_PAUSED_REASON_EXCEEDED, isOverBudget, resolveMentionedAgents } from "@alook/shared";
+import { getCloudflareContext } from "@opennextjs/cloudflare";
 import { log } from "@/lib/logger";
 import { broadcastToUser, broadcastToDaemon } from "@/lib/broadcast";
 import { messageToResponse } from "@/lib/api/responses";
 import { invalidate, cacheKeys } from "@/lib/cache";
 import { TaskPayloadBuilder } from "@/lib/services/task-payload-builder";
+import { sendTelegramMessage } from "@/lib/telegram";
 
 const taskQueries = queries.task;
 const agentQueries = queries.agent;
@@ -359,6 +361,22 @@ export class TaskService {
         }
       } catch {
         // non-critical: don't let broadcast failure block task lifecycle
+      }
+
+      // Forward to Telegram if this conversation is bridged — see
+      // src/web/src/app/api/webhooks/telegram/route.ts. Best-effort, same as
+      // the broadcast above: never let this block the task lifecycle.
+      try {
+        const { env } = await getCloudflareContext({ async: true });
+        const cloudflareEnv = env as Env;
+        if (cloudflareEnv.TELEGRAM_BOT_TOKEN) {
+          const link = await queries.telegramLink.getByConversationId(this.db, task.conversationId);
+          if (link) {
+            sendTelegramMessage(cloudflareEnv.TELEGRAM_BOT_TOKEN, link.chatId, error).catch(() => {});
+          }
+        }
+      } catch {
+        // non-critical: don't let Telegram lookup/forward failure block task lifecycle
       }
     }
 

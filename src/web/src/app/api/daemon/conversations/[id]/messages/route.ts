@@ -5,6 +5,7 @@ import { withAuth } from "@/lib/middleware/auth";
 import { writeJSON, writeError, parseBody } from "@/lib/middleware/helpers";
 import { messageToResponse } from "@/lib/api/responses";
 import { broadcastToUser } from "@/lib/broadcast";
+import { sendTelegramMessage } from "@/lib/telegram";
 
 // Agent-authored DM endpoint (`alook sync send-dm`). The agent calls this to
 // push exactly what the user should see — a `role:"assistant"` chat bubble that
@@ -52,6 +53,15 @@ export const POST = withAuth(async (req: NextRequest, ctx) => {
   }).catch(() => {});
 
   queries.inbox.updateUnreadLatestMessage(db, id, conversation.userId, message.id).catch(() => {});
+
+  // Forward to Telegram if this conversation is bridged — see
+  // src/web/src/app/api/webhooks/telegram/route.ts. Best-effort: a delivery
+  // failure here must never affect the underlying message/task flow.
+  if (ctx.env.TELEGRAM_BOT_TOKEN) {
+    queries.telegramLink.getByConversationId(db, id).then((link) => {
+      if (link) return sendTelegramMessage(ctx.env.TELEGRAM_BOT_TOKEN!, link.chatId, body.content);
+    }).catch(() => {});
+  }
 
   return writeJSON({ message: messageToResponse(message) }, 201);
 });

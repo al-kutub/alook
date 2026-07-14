@@ -28,6 +28,11 @@ declare namespace Cloudflare {
     NODE_ENV?: string
     DEV_WS_DO_URL?: string
     DEV_WAKE_WORKER_URL?: string
+    TELEGRAM_BOT_TOKEN?: string
+    TELEGRAM_WEBHOOK_SECRET?: string
+    TELEGRAM_ALLOWED_USER_ID?: string
+    TELEGRAM_TARGET_WORKSPACE_ID?: string
+    TELEGRAM_TARGET_AGENT_ID?: string
   }
 }
 
