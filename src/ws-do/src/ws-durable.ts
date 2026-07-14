@@ -30,6 +30,41 @@ function canonicalRuntimes(list: CommunityMachineRuntime[]): string {
 
 const log = createLogger({ service: "ws-do" })
 
+/**
+ * All D1 writes for `communityMachine` go through `web`'s API instead of a
+ * direct `createDb(this.env.DB)` connection here — SQLite's write lock is
+ * database-wide, and this app had four separate Workers (web, ws-do,
+ * email-worker, wake-worker) each opening their own connection to the same
+ * physical D1 file, causing SQLITE_BUSY contention. Routing writes through
+ * one process (web) eliminates the multi-writer contention at the source.
+ * Same service-binding + dev-fallback pattern as email-worker's
+ * imap-poller-do.ts callWebService (WEB_SERVICE binding, falls back to a
+ * plain fetch against DEV_WEB_URL since this self-hosted deployment runs
+ * every Worker as a separate `wrangler dev` process where service bindings
+ * between them aren't always reachable).
+ */
+async function callWebService<T>(env: Env, path: string, body: unknown): Promise<T> {
+  const init: RequestInit = {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  }
+  try {
+    const res = await env.WEB_SERVICE.fetch(`http://internal${path}`, init)
+    if (!res.ok) throw new Error(`WEB_SERVICE responded ${res.status}`)
+    return (await res.json()) as T
+  } catch (serviceErr) {
+    try {
+      const { DEV_WEB_URL } = await import("@alook/shared")
+      const fallback = await fetch(`${DEV_WEB_URL}${path}`, init)
+      if (!fallback.ok) throw new Error(`fallback responded ${fallback.status}`)
+      return (await fallback.json()) as T
+    } catch {
+      throw serviceErr instanceof Error ? serviceErr : new Error(String(serviceErr))
+    }
+  }
+}
+
 type ConnectionState =
   | { type: "user"; userId: string; authenticated: boolean }
   | { type: "daemon"; daemonId: string; userId: string; authenticated: boolean }
@@ -446,12 +481,11 @@ export class WebSocketDurableObject extends DurableObject<Env> {
         return
       }
       try {
-        const db = createDb(this.env.DB)
-        const flipped = await queries.communityMachine.markMachineOffline(db, {
-          userId: identity.userId,
-          machineId: identity.machineId,
-          credentialHash: identity.credentialHash,
-        })
+        const { machine: flipped } = await callWebService<{ machine: Awaited<ReturnType<typeof queries.communityMachine.markMachineOffline>> }>(
+          this.env,
+          "/api/community/machines/offline",
+          { userId: identity.userId, machineId: identity.machineId, credentialHash: identity.credentialHash }
+        )
         if (flipped) {
           // Real transition — broadcast + clean up storage. Alarm no longer needed.
           await this.notifyUserDO(identity.userId, {
@@ -492,19 +526,18 @@ export class WebSocketDurableObject extends DurableObject<Env> {
       // opportunistically flip status='offline' → 'online' if the row is
       // stale-offline (e.g. hibernated across a deploy). Broadcast only on a
       // real transition; the steady state (status already online) is a no-op.
-      const db = createDb(this.env.DB)
       const identity = await this.ctx.storage.get<CommunityMachineIdentity>(IDENTITY_KEY)
       for (const m of liveMachines) {
         try {
-          await queries.communityMachine.touchMachineHeartbeat(db, m.userId, m.machineId)
+          await callWebService(this.env, "/api/community/machines/heartbeat", { userId: m.userId, machineId: m.machineId })
         } catch { /* ok */ }
         if (identity && identity.userId === m.userId && identity.machineId === m.machineId) {
           try {
-            const backfilled = await queries.communityMachine.markMachineOnlineIfOffline(db, {
-              userId: identity.userId,
-              machineId: identity.machineId,
-              credentialHash: identity.credentialHash,
-            })
+            const { machine: backfilled } = await callWebService<{ machine: Awaited<ReturnType<typeof queries.communityMachine.markMachineOnlineIfOffline>> }>(
+              this.env,
+              "/api/community/machines/online",
+              { userId: identity.userId, machineId: identity.machineId, credentialHash: identity.credentialHash }
+            )
             if (backfilled) {
               await this.notifyUserDO(identity.userId, {
                 type: "community:machine.status",
@@ -548,11 +581,11 @@ export class WebSocketDurableObject extends DurableObject<Env> {
       // UI still surfaces the transition even if the DB write skipped.
       if (identity) {
         try {
-          const flipped = await queries.communityMachine.markMachineOffline(db, {
-            userId: identity.userId,
-            machineId: identity.machineId,
-            credentialHash: identity.credentialHash,
-          })
+          const { machine: flipped } = await callWebService<{ machine: Awaited<ReturnType<typeof queries.communityMachine.markMachineOffline>> }>(
+            this.env,
+            "/api/community/machines/offline",
+            { userId: identity.userId, machineId: identity.machineId, credentialHash: identity.credentialHash }
+          )
           if (flipped) {
             await this.notifyUserDO(stored.userId, {
               type: "community:machine.status",
@@ -668,12 +701,10 @@ export class WebSocketDurableObject extends DurableObject<Env> {
     const osRelease = ready.osRelease ?? ""
     const availableRuntimes: CommunityMachineRuntime[] = ready.runtimeReport
 
-    const db = createDb(this.env.DB)
-    const result = await queries.communityMachine.upsertMachineByMachineId(
-      db,
-      identity.userId,
-      identity.machineId,
-      { hostname, platform, arch, daemonVersion, osRelease, availableRuntimes }
+    const { result } = await callWebService<{ result: Awaited<ReturnType<typeof queries.communityMachine.upsertMachineByMachineId>> }>(
+      this.env,
+      "/api/community/machines/sync",
+      { userId: identity.userId, machineId: identity.machineId, meta: { hostname, platform, arch, daemonVersion, osRelease, availableRuntimes } }
     )
     if (!result) {
       // The machine row was deleted (or race) between credential validation

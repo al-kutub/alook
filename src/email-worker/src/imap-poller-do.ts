@@ -149,7 +149,7 @@ export class ImapPollerDO extends DurableObject<EmailEnv> {
       pollLog.info("uid search complete", { found: uids.length, lastUid })
 
       if (uids.length === 0) {
-        await queries.emailAccount.updateEmailAccount(db, accountId, account.workspaceId, {
+        await this.syncEmailAccountStatus(accountId, account.workspaceId, {
           lastSyncedAt: new Date().toISOString(),
           status: "active",
           errorMessage: "",
@@ -225,7 +225,7 @@ export class ImapPollerDO extends DurableObject<EmailEnv> {
         maxUid = Math.max(maxUid, uid)
       }
 
-      await queries.emailAccount.updateEmailAccount(db, accountId, account.workspaceId, {
+      await this.syncEmailAccountStatus(accountId, account.workspaceId, {
         lastSyncedAt: new Date().toISOString(),
         lastSyncedUid: String(maxUid),
         status: "active",
@@ -241,7 +241,7 @@ export class ImapPollerDO extends DurableObject<EmailEnv> {
       const msg = err instanceof Error ? err.message : String(err)
       pollLog.error("poll failed", { error: msg })
 
-      await queries.emailAccount.updateEmailAccount(db, accountId, account.workspaceId, {
+      await this.syncEmailAccountStatus(accountId, account.workspaceId, {
         status: "error",
         errorMessage: msg.slice(0, 500),
       })
@@ -279,6 +279,27 @@ export class ImapPollerDO extends DurableObject<EmailEnv> {
   }
 
   private async notifyWeb(payload: Record<string, unknown>): Promise<void> {
+    await this.callWeb("/api/email/notify", payload)
+  }
+
+  /**
+   * updateEmailAccount writes go through this instead of a direct
+   * `this.db` UPDATE — SQLite's write lock is database-wide, and this app
+   * had four separate Workers (web, ws-do, email-worker, wake-worker) each
+   * opening their own connection to the same physical D1 file, causing
+   * SQLITE_BUSY contention. Routing writes through one process (web)
+   * eliminates the multi-writer contention at the source. See ws-do's
+   * ws-durable.ts callWebService for the same pattern there.
+   */
+  private async syncEmailAccountStatus(
+    accountId: string,
+    workspaceId: string,
+    data: { status?: string; errorMessage?: string; lastSyncedAt?: string | null; lastSyncedUid?: string }
+  ): Promise<void> {
+    await this.callWeb("/api/email/sync-status", { accountId, workspaceId, ...data })
+  }
+
+  private async callWeb(path: string, payload: Record<string, unknown>): Promise<void> {
     const traceId = nanoid(12)
     const body = JSON.stringify(payload)
     const headers: Record<string, string> = {
@@ -289,12 +310,12 @@ export class ImapPollerDO extends DurableObject<EmailEnv> {
     const init: RequestInit = { method: "POST", headers, body }
 
     try {
-      const res = await this.env.WEB_SERVICE.fetch("http://internal/api/email/notify", init)
+      const res = await this.env.WEB_SERVICE.fetch(`http://internal${path}`, init)
       if (!res.ok) throw new Error(`WEB_SERVICE responded ${res.status}`)
     } catch (serviceErr) {
       try {
         const { DEV_WEB_URL } = await import("@alook/shared")
-        const fallback = await fetch(`${DEV_WEB_URL}/api/email/notify`, init)
+        const fallback = await fetch(`${DEV_WEB_URL}${path}`, init)
         if (!fallback.ok) throw new Error(`fallback responded ${fallback.status}`)
       } catch {
         throw serviceErr instanceof Error ? serviceErr : new Error(String(serviceErr))

@@ -28,6 +28,7 @@ class CFResponse {
   }
 
   get headers() { return this._headers }
+  get ok() { return this.status >= 200 && this.status < 300 }
 }
 
 globalThis.Response = CFResponse as unknown as typeof Response
@@ -208,6 +209,35 @@ import { WebSocketDurableObject } from "./ws-durable"
 const mockStubFetch = vi.fn().mockResolvedValue(new (globalThis.Response as any)(JSON.stringify({ sent: 1 })))
 const mockCheckAliveFetch = vi.fn().mockResolvedValue(new (globalThis.Response as any)(JSON.stringify({ alive: true })))
 
+// WEB_SERVICE.fetch stands in for the web app's HTTP API (see
+// callWebService in ws-durable.ts) — routes each of the 4
+// community-machine write endpoints to the same per-function mocks the
+// tests already set up (mockMarkMachineOffline etc.), preserving the
+// existing .mockResolvedValueOnce()/.mock.calls[] assertions below. Calls
+// the mocks with an `undefined` first arg to match the original
+// `(db, ...args)` positional shape the tests destructure against.
+const mockWebServiceFetch = vi.fn(async (url: string, init?: RequestInit) => {
+  const body = JSON.parse((init?.body as string) ?? "{}")
+  const path = new URL(url).pathname
+  if (path === "/api/community/machines/offline") {
+    const machine = await mockMarkMachineOffline(undefined, body)
+    return new (globalThis.Response as any)(JSON.stringify({ machine }))
+  }
+  if (path === "/api/community/machines/online") {
+    const machine = await mockMarkMachineOnlineIfOffline(undefined, body)
+    return new (globalThis.Response as any)(JSON.stringify({ machine }))
+  }
+  if (path === "/api/community/machines/heartbeat") {
+    const result = await mockTouchMachineHeartbeat(undefined, body.userId, body.machineId)
+    return new (globalThis.Response as any)(JSON.stringify({ result }))
+  }
+  if (path === "/api/community/machines/sync") {
+    const result = await mockUpsertMachineByMachineId(undefined, body.userId, body.machineId, body.meta)
+    return new (globalThis.Response as any)(JSON.stringify({ result }))
+  }
+  return new (globalThis.Response as any)(JSON.stringify({ error: "unknown path" }), { status: 404 })
+})
+
 function createDO() {
   const { ctx, getWebSockets, storage, store } = createMockCtx()
   const stubGet = vi.fn().mockReturnValue({ fetch: mockStubFetch })
@@ -218,6 +248,7 @@ function createDO() {
       get: stubGet,
     } as unknown as DurableObjectNamespace,
     RATE_LIMIT_DO: {} as DurableObjectNamespace,
+    WEB_SERVICE: { fetch: mockWebServiceFetch } as unknown as Fetcher,
   }
   const durable = new WebSocketDurableObject(ctx, env)
   return { durable, ctx, getWebSockets, env, stubGet, storage, store }

@@ -28,6 +28,10 @@ binding = "DB"
 database_id = "1593b87c-d8a8-4cdf-b6c0-c80d94442654"
 database_name = "alook-app"
 
+[[services]]
+binding = "WEB_SERVICE"
+service = "alook-web"
+
 [[durable_objects.bindings]]
 name = "WS_DO"
 class_name = "WebSocketDurableObject"

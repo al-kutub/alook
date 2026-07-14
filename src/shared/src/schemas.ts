@@ -994,6 +994,59 @@ export const CommunityMachineRuntimeListSchema = z
     return out;
   });
 
+// ── Internal service-to-service request bodies ──────────────────────────
+// Used by /api/community/machines/{offline,online,heartbeat,sync} and
+// /api/email/sync-status — ws-do and email-worker call these instead of
+// writing to D1 directly, so all D1 writes funnel through the one `web`
+// process (see docs/plans single-writer refactor). Defined here (not
+// inline in the route files) because zod schemas built in src/web with a
+// separately-resolved `zod` package hit a duplicate-module type-identity
+// error when composed with schemas from this package (e.g.
+// CommunityMachineRuntimeSchema) — defining them in the same package/zod
+// instance avoids that entirely.
+
+export const MachineOfflineRequestSchema = z.object({
+  userId: z.string().min(1),
+  machineId: z.string().min(1),
+  credentialHash: z.string().min(1),
+});
+export type MachineOfflineRequestInput = z.infer<typeof MachineOfflineRequestSchema>;
+
+export const MachineOnlineRequestSchema = MachineOfflineRequestSchema;
+export type MachineOnlineRequestInput = z.infer<typeof MachineOnlineRequestSchema>;
+
+export const MachineHeartbeatRequestSchema = z.object({
+  userId: z.string().min(1),
+  machineId: z.string().min(1),
+});
+export type MachineHeartbeatRequestInput = z.infer<typeof MachineHeartbeatRequestSchema>;
+
+export const MachineSyncRequestSchema = z.object({
+  userId: z.string().min(1),
+  machineId: z.string().min(1),
+  meta: z.object({
+    hostname: z.string().optional(),
+    platform: z.string().optional(),
+    arch: z.string().optional(),
+    osRelease: z.string().optional(),
+    daemonVersion: z.string().optional(),
+    metadata: z.string().nullable().optional(),
+    availableRuntimes: CommunityMachineRuntimeListSchema.optional(),
+  }),
+  markOnline: z.boolean().optional(),
+});
+export type MachineSyncRequestInput = z.infer<typeof MachineSyncRequestSchema>;
+
+export const EmailSyncStatusRequestSchema = z.object({
+  accountId: z.string().min(1),
+  workspaceId: z.string().min(1),
+  status: z.string().optional(),
+  errorMessage: z.string().optional(),
+  lastSyncedAt: z.string().nullable().optional(),
+  lastSyncedUid: z.string().optional(),
+});
+export type EmailSyncStatusRequestInput = z.infer<typeof EmailSyncStatusRequestSchema>;
+
 export const CommunityMachineSummarySchema = z.object({
   id: z.string(),
   hostname: z.string(),

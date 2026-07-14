@@ -162,6 +162,13 @@ function buildFetchResponse(uid: number, rawEmail: string): string {
 const RAW_EMAIL_1 = "From: alice@example.com\r\nSubject: Hi\r\nMessage-ID: <msg1>\r\n\r\nHello"
 const RAW_EMAIL_2 = "From: bob@example.com\r\nSubject: Hey\r\nMessage-ID: <msg2>\r\n\r\nWorld"
 
+// updateEmailAccount writes now go through WEB_SERVICE.fetch(/api/email/sync-status)
+// instead of a direct DB call — see syncEmailAccountStatus in imap-poller-do.ts.
+function syncStatusBody(webFetch: ReturnType<typeof vi.fn>): any {
+  const call = webFetch.mock.calls.find((c: any[]) => c[0].includes("/api/email/sync-status"))
+  return call ? JSON.parse(call[1].body) : undefined
+}
+
 beforeEach(() => {
   nanoidCounter = 0
   vi.clearAllMocks()
@@ -198,7 +205,8 @@ describe("alarm — normal UID-based flow", () => {
     await durable.alarm()
 
     expect(putR2).toHaveBeenCalledTimes(2)
-    expect(webFetch).toHaveBeenCalledTimes(2)
+    // 2 email-notify calls + 1 sync-status call for the final lastSyncedUid update.
+    expect(webFetch).toHaveBeenCalledTimes(3)
 
     const notify1 = JSON.parse(webFetch.mock.calls[0][1].body)
     expect(notify1.agentId).toBe("ag_test1")
@@ -211,10 +219,10 @@ describe("alarm — normal UID-based flow", () => {
     expect(notify2.from).toBe("bob@example.com")
     expect(notify2.subject).toBe("Hey")
 
-    expect(mockUpdateEmailAccount).toHaveBeenCalledWith(
-      expect.anything(), "aea_test1", "ws_test1",
-      expect.objectContaining({ status: "active", lastSyncedUid: "102" })
-    )
+    expect(syncStatusBody(webFetch)).toMatchObject({
+      accountId: "aea_test1", workspaceId: "ws_test1",
+      status: "active", lastSyncedUid: "102",
+    })
     expect(ctx.storage.setAlarm).toHaveBeenCalled()
     expect(mockLogout).toHaveBeenCalled()
   })
@@ -288,16 +296,16 @@ describe("alarm — whitelist filtering", () => {
 
 describe("alarm — connection failure & backoff", () => {
   it("sets error status and schedules with backoff on connection failure", async () => {
-    const { durable, ctx } = createDO()
+    const { durable, ctx, webFetch } = createDO()
     mockConnect.mockRejectedValueOnce(new Error("Connection timeout"))
 
     await ctx.storage.put("accountId", "aea_test1")
     await durable.alarm()
 
-    expect(mockUpdateEmailAccount).toHaveBeenCalledWith(
-      expect.anything(), "aea_test1", "ws_test1",
-      expect.objectContaining({ status: "error", errorMessage: expect.stringContaining("Connection timeout") })
-    )
+    expect(syncStatusBody(webFetch)).toMatchObject({
+      accountId: "aea_test1", workspaceId: "ws_test1",
+      status: "error", errorMessage: expect.stringContaining("Connection timeout"),
+    })
     expect(ctx.storage.setAlarm).toHaveBeenCalled()
   })
 })
@@ -306,16 +314,16 @@ describe("alarm — connection failure & backoff", () => {
 
 describe("alarm — auth failure", () => {
   it("retries with backoff on authentication error instead of stopping", async () => {
-    const { durable, ctx } = createDO()
+    const { durable, ctx, webFetch } = createDO()
     mockConnect.mockRejectedValueOnce(new MockImapAuthError("IMAP A1 failed: A1 NO [AUTHENTICATIONFAILED]"))
 
     await ctx.storage.put("accountId", "aea_test1")
     await durable.alarm()
 
-    expect(mockUpdateEmailAccount).toHaveBeenCalledWith(
-      expect.anything(), "aea_test1", "ws_test1",
-      expect.objectContaining({ status: "error", errorMessage: expect.stringContaining("AUTHENTICATIONFAILED") })
-    )
+    expect(syncStatusBody(webFetch)).toMatchObject({
+      accountId: "aea_test1", workspaceId: "ws_test1",
+      status: "error", errorMessage: expect.stringContaining("AUTHENTICATIONFAILED"),
+    })
     expect(ctx.storage.setAlarm).toHaveBeenCalled()
     expect(ctx.storage.deleteAlarm).not.toHaveBeenCalled()
   })
@@ -333,12 +341,12 @@ describe("alarm — no new emails", () => {
     await durable.alarm()
 
     expect(putR2).not.toHaveBeenCalled()
-    expect(webFetch).not.toHaveBeenCalled()
+    // No emails to notify about, but the sync-status call still fires (lastSyncedAt refresh).
+    expect(webFetch).toHaveBeenCalledTimes(1)
     expect(ctx.storage.setAlarm).toHaveBeenCalled()
-    expect(mockUpdateEmailAccount).toHaveBeenCalledWith(
-      expect.anything(), "aea_test1", "ws_test1",
-      expect.objectContaining({ status: "active" })
-    )
+    expect(syncStatusBody(webFetch)).toMatchObject({
+      accountId: "aea_test1", workspaceId: "ws_test1", status: "active",
+    })
   })
 })
 
@@ -346,32 +354,32 @@ describe("alarm — no new emails", () => {
 
 describe("alarm — IMAP command error responses", () => {
   it("throws and triggers backoff when IMAP SEARCH returns NO", async () => {
-    const { durable, ctx } = createDO()
+    const { durable, ctx, webFetch } = createDO()
     mockCommand.mockRejectedValueOnce(new Error("IMAP S1 failed: S1 NO [NONEXISTENT] Mailbox not found"))
     mockGetEmailAccount.mockResolvedValue({ ...ACCOUNT, lastSyncedUid: "50" })
 
     await ctx.storage.put("accountId", "aea_test1")
     await durable.alarm()
 
-    expect(mockUpdateEmailAccount).toHaveBeenCalledWith(
-      expect.anything(), "aea_test1", "ws_test1",
-      expect.objectContaining({ status: "error", errorMessage: expect.stringContaining("S1") })
-    )
+    expect(syncStatusBody(webFetch)).toMatchObject({
+      accountId: "aea_test1", workspaceId: "ws_test1",
+      status: "error", errorMessage: expect.stringContaining("S1"),
+    })
     expect(ctx.storage.setAlarm).toHaveBeenCalled()
   })
 
   it("throws and triggers backoff when IMAP stream ends prematurely", async () => {
-    const { durable, ctx } = createDO()
+    const { durable, ctx, webFetch } = createDO()
     mockCommand.mockRejectedValueOnce(new Error("IMAP stream ended without tagged response for S1"))
     mockGetEmailAccount.mockResolvedValue({ ...ACCOUNT, lastSyncedUid: "100" })
 
     await ctx.storage.put("accountId", "aea_test1")
     await durable.alarm()
 
-    expect(mockUpdateEmailAccount).toHaveBeenCalledWith(
-      expect.anything(), "aea_test1", "ws_test1",
-      expect.objectContaining({ status: "error", errorMessage: expect.stringContaining("stream ended") })
-    )
+    expect(syncStatusBody(webFetch)).toMatchObject({
+      accountId: "aea_test1", workspaceId: "ws_test1",
+      status: "error", errorMessage: expect.stringContaining("stream ended"),
+    })
   })
 })
 
