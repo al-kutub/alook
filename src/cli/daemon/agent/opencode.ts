@@ -125,7 +125,7 @@ export class OpenCodeBackend implements AgentBackend {
   }
 
   execute(prompt: string, options: ExecOptions): AgentSession {
-    const args = ["run", "--format", "json", "--dir", options.cwd];
+    const args = ["run", "--format", "json", "--print-logs", "--dir", options.cwd];
 
     if (options.model) {
       args.push("--model", options.model);
