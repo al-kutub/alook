@@ -41,6 +41,7 @@ import {
   type AgentAccessEntry,
   type MemberEntry,
 } from "@/lib/api";
+import { fetchProviderModels } from "@/lib/api/config";
 import { ApiError } from "@/lib/errors";
 import { toast } from "sonner";
 import { Switch } from "@/components/ui/switch";
@@ -100,6 +101,39 @@ export function runtimeConfigProviderForSave(kind: ProviderKind): Record<string,
   return kind === "openrouter" || kind === "cloudflare-workers-ai"
     ? { kind: "pi-builtin", providerId: kind }
     : { kind: "default" };
+}
+
+/**
+ * Real, currently-usable model ids for the Model field's suggestions,
+ * reacting to the selected Provider (not the assigned runtime — a
+ * pi-builtin provider config reroutes dispatch through opencode regardless
+ * of which runtime the agent is assigned to, see resolvePiBuiltinRouting in
+ * src/cli/daemon/daemon.ts). Falls back to `[]` for "default" on a
+ * non-cursor runtime, since only cursor-agent enforces a fixed whitelist —
+ * opencode's own default catalog isn't a closed list this app can offer.
+ */
+export function useProviderModels(provider: ProviderKind, runtimeProvider: string | undefined): string[] {
+  const [models, setModels] = useState<string[]>([]);
+
+  useEffect(() => {
+    if (provider === "default" && runtimeProvider !== "cursor") {
+      setModels([]);
+      return;
+    }
+    let cancelled = false;
+    fetchProviderModels(provider)
+      .then((list) => {
+        if (!cancelled) setModels(list);
+      })
+      .catch(() => {
+        if (!cancelled) setModels([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [provider, runtimeProvider]);
+
+  return models;
 }
 
 export function nameToHandle(name: string): string {

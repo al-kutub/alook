@@ -1,6 +1,6 @@
 export { apiFetch, wsQuery } from "./client";
 export { getMe } from "./me";
-export { fetchModelOptions, getMinCliVersion, fetchLatestCliVersion } from "./config";
+export { fetchModelOptions, fetchProviderModels, getMinCliVersion, fetchLatestCliVersion } from "./config";
 export {
   listAgents,
   createAgent,

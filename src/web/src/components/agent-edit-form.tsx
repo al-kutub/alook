@@ -33,6 +33,7 @@ import {
   type ProviderKind,
   providerKindFromRuntimeConfig,
   runtimeConfigProviderForSave,
+  useProviderModels,
 } from "@/components/agent-form-fields";
 import {
   type AvatarConfig,
@@ -115,7 +116,13 @@ function RuntimeTab({
         <Input
           value={model}
           onChange={(e) => setModel(e.target.value)}
-          placeholder={runtimeProvider === "openrouter" ? "e.g. google/gemma-4-31b-it:free" : "Default (runtime model)"}
+          placeholder={
+            runtimeProvider === "openrouter"
+              ? "e.g. openrouter/google/gemma-4-31b-it:free"
+              : runtimeProvider === "cloudflare-workers-ai"
+                ? "e.g. @cf/zai-org/glm-5.2"
+                : "Default (runtime model)"
+          }
           list="agent-model-options-edit"
         />
         {providerModels.length > 0 && (
@@ -374,10 +381,15 @@ export function AgentEditForm({
   }, [agent.id, workspaceId]);
 
   const selectedRuntime = runtimes.find((r) => r.id === runtimeId);
+  const fetchedProviderModels = useProviderModels(runtimeProvider, selectedRuntime?.provider);
   const providerModels =
-    selectedRuntime && modelOptions
-      ? (modelOptions[selectedRuntime.provider] ?? [])
-      : [];
+    runtimeProvider !== "default"
+      ? fetchedProviderModels
+      : fetchedProviderModels.length > 0
+        ? fetchedProviderModels
+        : selectedRuntime && modelOptions
+          ? (modelOptions[selectedRuntime.provider] ?? [])
+          : [];
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();

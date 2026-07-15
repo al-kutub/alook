@@ -10,6 +10,7 @@ import {
   getHandleError,
   type ProviderKind,
   runtimeConfigProviderForSave,
+  useProviderModels,
 } from "@/components/agent-form-fields";
 import {
   CustomEmailForm,
@@ -154,10 +155,15 @@ export function AgentCreateForm({
   }, []);
 
   const selectedRuntime = runtimes.find((r) => r.id === runtimeId);
+  const fetchedProviderModels = useProviderModels(provider, selectedRuntime?.provider);
   const providerModels =
-    selectedRuntime && modelOptions
-      ? (modelOptions[selectedRuntime.provider] ?? [])
-      : [];
+    provider !== "default"
+      ? fetchedProviderModels
+      : fetchedProviderModels.length > 0
+        ? fetchedProviderModels
+        : selectedRuntime && modelOptions
+          ? (modelOptions[selectedRuntime.provider] ?? [])
+          : [];
 
   const derivedHandle = nameToHandle(name);
   const effectiveHandle = emailHandle || derivedHandle;
@@ -210,7 +216,7 @@ export function AgentCreateForm({
       email_handle: emailHandle || derivedHandle || undefined,
       runtime_config: {
         ...(model ? { model } : {}),
-        ...(provider === "openrouter" ? { provider: runtimeConfigProviderForSave(provider) } : {}),
+        ...(provider !== "default" ? { provider: runtimeConfigProviderForSave(provider) } : {}),
       },
       custom_email:
         customEmailGetDataRef.current?.() ?? customEmailData ?? undefined,

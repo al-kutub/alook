@@ -238,4 +238,5 @@ export const cacheKeys = {
     `inbox:${userId}:${workspaceId}:${types ? [...types].sort().join(",") : "*"}`,
   hasPendingFileRequest: (workspaceId: string) => `fr_p:${workspaceId}`,
   pins: (workspaceId: string, userId: string) => `pins:${workspaceId}:${userId}`,
+  providerModels: (provider: string) => `pm:${provider}`,
 };
