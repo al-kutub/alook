@@ -482,10 +482,15 @@ export const issue = sqliteTable(
     createdAt: text("created_at").notNull().$defaultFn(() => new Date().toISOString()),
     updatedAt: text("updated_at").notNull().$defaultFn(() => new Date().toISOString()),
     completedAt: text("completed_at"),
+    // Product tagging — see queries/product.ts. No hard FK constraint (same
+    // pattern as agentTaskQueue.goalId): resolved/checked at the query-
+    // function/route layer, not enforced by SQLite.
+    productId: text("product_id"),
   },
   (t) => [
     index("idx_issue_workspace_status_agent").on(t.workspaceId, t.status, t.agentId),
     index("idx_issue_workspace_updated").on(t.workspaceId, t.updatedAt),
+    index("idx_issue_product").on(t.productId),
     unique("issue_conversation_unique").on(t.conversationId),
     foreignKey({
       columns: [t.agentId, t.workspaceId],
@@ -537,6 +542,28 @@ export const companyDoc = sqliteTable(
   },
   (t) => [
     index("idx_company_doc_workspace").on(t.workspaceId, t.updatedAt),
+  ]
+);
+
+// Products — the entity work (issues) gets tagged to so a company dashboard
+// can show stats per product. See queries/product.ts and issue.productId.
+export const product = sqliteTable(
+  "product",
+  {
+    id: text("id").primaryKey().$defaultFn(() => "prod_" + nanoid()),
+    workspaceId: text("workspace_id")
+      .notNull()
+      .references(() => workspace.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    description: text("description").notNull().default(""),
+    status: text("status").notNull().default("active"),
+    createdByUserId: text("created_by_user_id"),
+    createdByAgentId: text("created_by_agent_id"),
+    createdAt: text("created_at").notNull().$defaultFn(() => new Date().toISOString()),
+    updatedAt: text("updated_at").notNull().$defaultFn(() => new Date().toISOString()),
+  },
+  (t) => [
+    index("idx_product_workspace").on(t.workspaceId, t.status),
   ]
 );
 

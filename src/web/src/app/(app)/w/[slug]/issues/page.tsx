@@ -1,12 +1,13 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useRouter, usePathname, useSearchParams } from "next/navigation";
 import { useLocalStorage } from "@/hooks/use-local-storage";
-import { CircleDot, Eye, EyeOff, Loader2, Plus, Trash2 } from "lucide-react";
+import { CircleDot, Eye, EyeOff, Loader2, Plus, Trash2, X } from "lucide-react";
 import type { Agent, Artifact, Issue, IssueComment, Message, WsMessage } from "@alook/shared";
 import { useWorkspace } from "@/contexts/workspace-context";
 import { useAgentContext } from "@/contexts/agent-context";
-import { createIssue, deleteIssue, getIssue, getTask, getTrace, listIssues, updateIssue } from "@/lib/api";
+import { createIssue, deleteIssue, getIssue, getProduct, getTask, getTrace, listIssues, updateIssue } from "@/lib/api";
 import type { IssueListItem, TraceTask } from "@/lib/api";
 import type { TaskApi } from "@alook/shared";
 import { Button } from "@/components/ui/button";
@@ -236,6 +237,11 @@ function DraggableIssueCard({
 export default function IssuesPage() {
   const { workspaceId, slug } = useWorkspace();
   const { agents, loading: agentsLoading, subscribeWs } = useAgentContext();
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const productFilterId = searchParams.get("product");
+  const [productFilterName, setProductFilterName] = useState<string | null>(null);
   const [recentAgentId, setRecentAgentId] = useLocalStorage<string>(`issue-recent-agent-id-${workspaceId}`, "");
   const [draft, setDraft] = useLocalStorage<{ title: string; description: string; agentId: string }>(`issue-draft-${workspaceId}`, { title: "", description: "", agentId: "" });
   const [showCompleted, setShowCompleted] = useLocalStorage<boolean>("issues-show-completed", true);
@@ -279,8 +285,8 @@ export default function IssuesPage() {
     setLoading(true);
     try {
       const [active, completed] = await Promise.all([
-        listIssues(workspaceId, { terminal: false }),
-        listIssues(workspaceId, { terminal: true }),
+        listIssues(workspaceId, { terminal: false, productId: productFilterId ?? undefined }),
+        listIssues(workspaceId, { terminal: true, productId: productFilterId ?? undefined }),
       ]);
       setIssues([...active, ...completed]);
     } catch (err) {
@@ -293,8 +299,8 @@ export default function IssuesPage() {
   async function silentReload() {
     try {
       const [active, completed] = await Promise.all([
-        listIssues(workspaceId, { terminal: false }),
-        listIssues(workspaceId, { terminal: true }),
+        listIssues(workspaceId, { terminal: false, productId: productFilterId ?? undefined }),
+        listIssues(workspaceId, { terminal: true, productId: productFilterId ?? undefined }),
       ]);
       setIssues([...active, ...completed]);
     } catch {
@@ -322,7 +328,26 @@ export default function IssuesPage() {
   useEffect(() => {
     reload();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [workspaceId]);
+  }, [workspaceId, productFilterId]);
+
+  useEffect(() => {
+    if (!productFilterId) {
+      setProductFilterName(null);
+      return;
+    }
+    let cancelled = false;
+    getProduct(workspaceId, productFilterId)
+      .then((p) => { if (!cancelled) setProductFilterName(p.name); })
+      .catch(() => { if (!cancelled) setProductFilterName(null); });
+    return () => { cancelled = true; };
+  }, [workspaceId, productFilterId]);
+
+  const clearProductFilter = useCallback(() => {
+    const params = new URLSearchParams(searchParams.toString());
+    params.delete("product");
+    const qs = params.toString();
+    router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
+  }, [pathname, router, searchParams]);
 
   async function openIssue(issueId: string) {
     setSelectedId(issueId);
@@ -617,6 +642,19 @@ export default function IssuesPage() {
           </Button>
         </div>
       </div>
+
+      {productFilterId && (
+        <div className="flex shrink-0 items-center gap-2 border-b border-border/60 px-4 py-2">
+          <button
+            type="button"
+            onClick={clearProductFilter}
+            className="inline-flex items-center gap-1.5 rounded-full border border-border/60 bg-muted/40 px-2.5 py-1 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+          >
+            <span>filtered by: {productFilterName ?? "…"}</span>
+            <X className="size-3" />
+          </button>
+        </div>
+      )}
 
       <div className="hidden min-h-0 flex-1 lg:block overflow-y-auto thin-scrollbar p-4">
         {boardLoading ? (

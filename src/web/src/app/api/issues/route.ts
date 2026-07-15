@@ -32,6 +32,7 @@ export const GET = withAuth(async (req: NextRequest, ctx) => {
   const agentId = req.nextUrl.searchParams.get("agentId") ?? undefined;
   const status = req.nextUrl.searchParams.get("status") ?? undefined;
   const terminalParam = req.nextUrl.searchParams.get("terminal");
+  const productId = req.nextUrl.searchParams.get("product_id") ?? undefined;
 
   let parsedStatus: IssueStatusType | undefined;
   if (status) {
@@ -45,6 +46,7 @@ export const GET = withAuth(async (req: NextRequest, ctx) => {
     agentId,
     status: parsedStatus,
     terminal: terminalParam === null ? undefined : terminalParam === "true",
+    productId,
   });
 
   const taskIds = rows.map(r => r.latestTaskId).filter((id): id is string => !!id);
@@ -68,7 +70,7 @@ export const POST = withAuth(async (req: NextRequest, ctx) => {
   const contentType = req.headers.get("content-type") ?? "";
   const isMultipart = contentType.includes("multipart/form-data");
 
-  let body: { agent_id?: string; title: string; description: string };
+  let body: { agent_id?: string; title: string; description: string; product_id?: string };
   const files: File[] = [];
 
   if (isMultipart) {
@@ -82,6 +84,7 @@ export const POST = withAuth(async (req: NextRequest, ctx) => {
       agent_id: formData.get("agent_id") || undefined,
       title: formData.get("title"),
       description: formData.get("description") ?? "",
+      product_id: formData.get("product_id") || undefined,
     });
     if (!parsed.success) {
       return writeError("validation error", 400);
@@ -107,6 +110,9 @@ export const POST = withAuth(async (req: NextRequest, ctx) => {
     }
   }
 
+  const productId = body.product_id
+    ?? (await queries.product.getOrCreateUnsortedProduct(db, ws.workspaceId)).id;
+
   // Unassigned issue flow: no agent, no conversation, no task dispatch
   if (!body.agent_id) {
     const created = await queries.issue.createIssue(db, {
@@ -117,6 +123,7 @@ export const POST = withAuth(async (req: NextRequest, ctx) => {
       title: body.title,
       description: body.description,
       status: "todo",
+      productId,
     });
     return writeJSON({ issue: issueToResponse(created) }, 201);
   }
@@ -142,6 +149,7 @@ export const POST = withAuth(async (req: NextRequest, ctx) => {
     title: body.title,
     description: body.description,
     status: "in_progress",
+    productId,
   });
 
   const artifactIds: string[] = [];

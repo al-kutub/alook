@@ -163,3 +163,11 @@ export type { InboxItem, FlaggedItem } from "./inbox";
 export { listTraces, getTrace } from "./traces";
 export type { TraceListItem, TraceTask } from "./traces";
 export { listArtifacts, getArtifactContent } from "./artifacts";
+export {
+  listProducts,
+  getProductDashboard,
+  createProduct,
+  getProduct,
+  updateProduct,
+} from "./products";
+export type { ProductDashboardItem } from "./products";

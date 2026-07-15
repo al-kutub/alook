@@ -491,6 +491,7 @@ export const CreateIssueRequestSchema = z.object({
   agent_id: z.string().min(1).optional(),
   title: z.string().min(1, "title is required").max(200),
   description: z.string().max(20_000).optional().default(""),
+  product_id: z.string().min(1).optional(),
 });
 export type CreateIssueRequestInput = z.infer<typeof CreateIssueRequestSchema>;
 
@@ -529,6 +530,24 @@ export const UpdateCompanyDocRequestSchema = z
     { message: "at least one field is required" }
   );
 export type UpdateCompanyDocRequestInput = z.infer<typeof UpdateCompanyDocRequestSchema>;
+
+export const CreateProductRequestSchema = z.object({
+  name: z.string().min(1, "name is required").max(200),
+  description: z.string().max(2000).optional().default(""),
+});
+export type CreateProductRequestInput = z.infer<typeof CreateProductRequestSchema>;
+
+export const UpdateProductRequestSchema = z
+  .object({
+    name: z.string().min(1).max(200).optional(),
+    description: z.string().max(2000).optional(),
+    status: z.string().min(1).max(50).optional(),
+  })
+  .refine(
+    (v) => v.name !== undefined || v.description !== undefined || v.status !== undefined,
+    { message: "at least one field is required" }
+  );
+export type UpdateProductRequestInput = z.infer<typeof UpdateProductRequestSchema>;
 
 export const CreateIssueCommentBodySchema = z.object({
   content: z.string().min(1, "content is required").max(20_000),

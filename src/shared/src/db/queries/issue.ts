@@ -15,6 +15,7 @@ export async function createIssue(
     title: string;
     description: string;
     status?: IssueStatusType;
+    productId?: string | null;
   }
 ) {
   const now = new Date().toISOString();
@@ -28,6 +29,7 @@ export async function createIssue(
       title: data.title,
       description: data.description,
       status: data.status ?? "todo",
+      productId: data.productId ?? null,
       createdAt: now,
       updatedAt: now,
     })
@@ -56,11 +58,12 @@ export async function getIssueByConversation(db: Database, conversationId: strin
 export async function listIssues(
   db: Database,
   workspaceId: string,
-  opts: { userId: string; agentId?: string; status?: IssueStatusType; terminal?: boolean }
+  opts: { userId: string; agentId?: string; status?: IssueStatusType; terminal?: boolean; productId?: string }
 ) {
   const conditions = [eq(issue.workspaceId, workspaceId), eq(issue.creatorUserId, opts.userId)];
   if (opts.agentId) conditions.push(eq(issue.agentId, opts.agentId));
   if (opts.status) conditions.push(eq(issue.status, opts.status));
+  if (opts.productId) conditions.push(eq(issue.productId, opts.productId));
   if (opts.terminal !== undefined) {
     const terminal = [...TERMINAL_ISSUE_STATUSES];
     conditions.push(

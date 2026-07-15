@@ -21,12 +21,13 @@ export interface IssueDetailResponse {
 
 export const listIssues = (
   workspaceId: string,
-  opts?: { agentId?: string; status?: string; terminal?: boolean }
+  opts?: { agentId?: string; status?: string; terminal?: boolean; productId?: string }
 ) => {
   const extra: Record<string, string> = {};
   if (opts?.agentId) extra.agentId = opts.agentId;
   if (opts?.status) extra.status = opts.status;
   if (opts?.terminal !== undefined) extra.terminal = String(opts.terminal);
+  if (opts?.productId) extra.product_id = opts.productId;
   return apiFetch<IssueListItem[]>(`/api/issues${wsQuery(workspaceId, extra)}`);
 };
 

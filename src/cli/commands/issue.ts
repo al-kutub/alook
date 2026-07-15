@@ -75,6 +75,7 @@ export function issueCommand(): Command {
     .requiredOption("--title <title>", "Issue title")
     .option("--description <text>", "Issue description")
     .option("--body-file <path>", "Read issue description from a file")
+    .option("--product <id>", "Product ID to tag this issue to")
     .option("--json", "Output as JSON")
     .action(async (opts, command) => {
       const agentId = resolveAgentId(opts);
@@ -86,6 +87,7 @@ export function issueCommand(): Command {
           agent_id: agentId,
           title: opts.title,
           description,
+          ...(opts.product ? { product_id: opts.product } : {}),
         });
         if (opts.json) return printJSON(res);
         console.log(`Created ${res.issue.id} — ${res.issue.title}`);

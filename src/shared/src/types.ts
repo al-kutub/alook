@@ -55,6 +55,18 @@ export interface CompanyDoc {
   updated_at: string;
 }
 
+export interface Product {
+  id: string;
+  workspace_id: string;
+  name: string;
+  description: string;
+  status: string;
+  created_by_user_id: string | null;
+  created_by_agent_id: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface RuntimeMetadata {
   version?: string;
   cli_version?: string;

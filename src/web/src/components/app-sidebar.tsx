@@ -9,7 +9,7 @@ import { InboxPopover } from "@/components/inbox-popover";
 import { FlagPopover } from "@/components/flag-popover";
 import { Logo } from "@/components/logo";
 import { cn } from "@/lib/utils";
-import { Monitor, SunMoon, Plus, CalendarDays, Settings, ArrowLeftRight, Home, CircleDot, Folder, Ungroup, ArrowRightToLine } from "lucide-react";
+import { Monitor, SunMoon, Plus, CalendarDays, Settings, ArrowLeftRight, Home, CircleDot, Package, Folder, Ungroup, ArrowRightToLine } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
 import { useTheme } from "next-themes";
@@ -251,6 +251,7 @@ export function AppSidebar({ onNavigate }: { onNavigate?: () => void } = {}) {
   const isInbox = pathname.startsWith(`${prefix}/unread`);
   const isFlags = pathname.startsWith(`${prefix}/flags`);
   const isIssues = pathname.startsWith(`${prefix}/issues`);
+  const isProducts = pathname.startsWith(`${prefix}/products`);
   const isSettings = pathname === `${prefix}/settings`;
   const isCreateAgent = pathname === `${prefix}/agents/new`;
 
@@ -431,6 +432,23 @@ export function AppSidebar({ onNavigate }: { onNavigate?: () => void } = {}) {
             <CircleDot className="size-4" />
           </TooltipTrigger>
           <TooltipContent side="right">Issues</TooltipContent>
+        </Tooltip>
+
+        <Tooltip>
+          <TooltipTrigger render={
+            <button
+              type="button"
+              onClick={() => { router.push(`${prefix}/products`); onNavigate?.(); }}
+              className={cn(
+                "flex items-center justify-center size-10 rounded-xl transition-colors duration-200 cursor-pointer",
+                "text-muted-foreground hover:text-foreground hover:bg-accent",
+                isProducts && "bg-accent text-foreground"
+              )}
+            />
+          }>
+            <Package className="size-4" />
+          </TooltipTrigger>
+          <TooltipContent side="right">Products</TooltipContent>
         </Tooltip>
 
         <Tooltip>

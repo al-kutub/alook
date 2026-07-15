@@ -18,6 +18,7 @@ type AgentLinkRow = typeof schema.agentLink.$inferSelect;
 type CalendarEventRow = typeof schema.calendarEvent.$inferSelect;
 type IssueRow = typeof schema.issue.$inferSelect;
 type CompanyDocRow = typeof schema.companyDoc.$inferSelect;
+type ProductRow = typeof schema.product.$inferSelect;
 
 export function userToResponse(u: {
   id: string;
@@ -372,6 +373,20 @@ export function companyDocToResponse(row: CompanyDocRow) {
     content: row.content,
     tags: row.tags,
     author_agent_id: row.authorAgentId,
+    created_at: formatTimestamp(row.createdAt),
+    updated_at: formatTimestamp(row.updatedAt),
+  };
+}
+
+export function productToResponse(row: ProductRow) {
+  return {
+    id: row.id,
+    workspace_id: row.workspaceId,
+    name: row.name,
+    description: row.description,
+    status: row.status,
+    created_by_user_id: row.createdByUserId ?? null,
+    created_by_agent_id: row.createdByAgentId ?? null,
     created_at: formatTimestamp(row.createdAt),
     updated_at: formatTimestamp(row.updatedAt),
   };

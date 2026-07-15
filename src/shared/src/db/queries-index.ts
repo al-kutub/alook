@@ -33,6 +33,7 @@ export * as costEvent from "./queries/cost-event";
 export * as goal from "./queries/goal";
 export * as issueComment from "./queries/issue-comment";
 export * as companyDoc from "./queries/company-doc";
+export * as product from "./queries/product";
 export * as telegramLink from "./queries/telegram-link";
 export * as messageFlag from "./queries/message-flag";
 export * as communityServer from "./queries/community/server";

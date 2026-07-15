@@ -11,6 +11,7 @@ const mockEnqueueTask = vi.fn();
 const mockCreateArtifact = vi.fn();
 const mockR2Put = vi.fn();
 const mockGetTraceAgentsByTaskIds = vi.fn();
+const mockGetOrCreateUnsortedProduct = vi.fn();
 
 vi.mock("@opennextjs/cloudflare", () => ({
   getCloudflareContext: vi.fn(() => ({
@@ -38,6 +39,7 @@ vi.mock("@alook/shared", async () => {
       conversation: { createConversation: (...a: unknown[]) => mockCreateConversation(...a) },
       message: { createMessage: (...a: unknown[]) => mockCreateMessage(...a), updateMessageTaskId: vi.fn().mockResolvedValue(undefined) },
       artifact: { createArtifact: (...a: unknown[]) => mockCreateArtifact(...a) },
+      product: { getOrCreateUnsortedProduct: (...a: unknown[]) => mockGetOrCreateUnsortedProduct(...a) },
     },
   };
 });
@@ -69,7 +71,10 @@ vi.mock("@/lib/api/responses", () => ({
 
 import { GET, POST } from "./route";
 
-beforeEach(() => vi.clearAllMocks());
+beforeEach(() => {
+  vi.clearAllMocks();
+  mockGetOrCreateUnsortedProduct.mockResolvedValue({ id: "prod_unsorted" });
+});
 
 describe("GET /api/issues", () => {
   it("lists workspace issues with filters", async () => {
