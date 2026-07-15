@@ -135,10 +135,18 @@ export const PATCH = withAuth(async (req: NextRequest, ctx) => {
     }
   }
 
+  let productId: string | undefined;
+  if (body.product_id !== undefined) {
+    productId = body.product_id === null
+      ? (await queries.product.getOrCreateUnsortedProduct(db, ws.workspaceId)).id
+      : body.product_id;
+  }
+
   const updated = await queries.issue.updateIssue(db, id, ws.workspaceId, {
     title: body.title,
     description: body.description,
     status: body.status,
+    productId,
   });
   if (!updated) return writeError("issue not found", 404);
 

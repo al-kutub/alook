@@ -102,6 +102,7 @@ export function issueCommand(): Command {
     .description("List issues for an agent")
     .option("--agent_id <id>", "Agent ID")
     .option("--status <status>", `Filter by status (${VALID_STATUSES.join(", ")})`)
+    .option("--product <id>", "Filter by product ID")
     .option("--completed", "Show completed/closed/canceled/failed issues")
     .option("--all", "Show all issues")
     .option("--json", "Output as JSON")
@@ -115,6 +116,7 @@ export function issueCommand(): Command {
       const client = new APIClient(serverUrl, token, workspaceId);
       const params = new URLSearchParams({ agentId });
       if (opts.status) params.set("status", opts.status);
+      if (opts.product) params.set("product_id", opts.product);
       if (!opts.all && !opts.status) params.set("terminal", opts.completed ? "true" : "false");
       try {
         const issues = await client.getJSON<IssueResponse[]>(`/api/issues?${params}`);
@@ -163,6 +165,7 @@ export function issueCommand(): Command {
     .option("--title <title>", "New title")
     .option("--description <text>", "New description")
     .option("--body-file <path>", "Read description from a file")
+    .option("--product <id>", "Retag this issue to a different product ID")
     .option("--json", "Output as JSON")
     .action(async (opts, command) => {
       if (opts.status && !VALID_STATUSES.includes(opts.status)) {
@@ -174,8 +177,9 @@ export function issueCommand(): Command {
       if (opts.status) body.status = opts.status;
       if (opts.title) body.title = opts.title;
       if (description) body.description = description;
+      if (opts.product) body.product_id = opts.product;
       if (Object.keys(body).length === 0) {
-        console.error("Error: pass at least one of --status, --title, --description, --body-file");
+        console.error("Error: pass at least one of --status, --title, --description, --body-file, --product");
         process.exit(1);
       }
       const agentId = resolveAgentId(opts);

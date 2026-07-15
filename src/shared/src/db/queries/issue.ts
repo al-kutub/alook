@@ -91,6 +91,7 @@ export async function updateIssue(
     latestTaskId?: string | null;
     agentId?: string;
     conversationId?: string;
+    productId?: string;
   }
 ) {
   const now = new Date().toISOString();
@@ -104,6 +105,7 @@ export async function updateIssue(
     latestTaskId?: string | null;
     agentId?: string;
     conversationId?: string;
+    productId?: string;
     updatedAt: string;
     completedAt?: string | null;
   } = { updatedAt: now };
@@ -113,6 +115,7 @@ export async function updateIssue(
   if (patch.latestTaskId !== undefined) values.latestTaskId = patch.latestTaskId;
   if (patch.agentId !== undefined) values.agentId = patch.agentId;
   if (patch.conversationId !== undefined) values.conversationId = patch.conversationId;
+  if (patch.productId !== undefined) values.productId = patch.productId;
   if (terminal !== undefined) values.completedAt = terminal ? now : null;
   const rows = await db
     .update(issue)

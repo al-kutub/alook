@@ -7,12 +7,13 @@ import { CircleDot, Eye, EyeOff, Loader2, Plus, Trash2, X } from "lucide-react";
 import type { Agent, Artifact, Issue, IssueComment, Message, WsMessage } from "@alook/shared";
 import { useWorkspace } from "@/contexts/workspace-context";
 import { useAgentContext } from "@/contexts/agent-context";
-import { createIssue, deleteIssue, getIssue, getProduct, getTask, getTrace, listIssues, updateIssue } from "@/lib/api";
+import { createIssue, deleteIssue, getIssue, getProduct, getTask, getTrace, listIssues, listProducts, updateIssue } from "@/lib/api";
 import type { IssueListItem, TraceTask } from "@/lib/api";
-import type { TaskApi } from "@alook/shared";
+import type { Product, TaskApi } from "@alook/shared";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { AvatarRenderer, parseAvatarUrl } from "@/components/avatar";
 import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuTrigger } from "@/components/ui/context-menu";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -242,6 +243,7 @@ export default function IssuesPage() {
   const searchParams = useSearchParams();
   const productFilterId = searchParams.get("product");
   const [productFilterName, setProductFilterName] = useState<string | null>(null);
+  const [products, setProducts] = useState<Product[]>([]);
   const [recentAgentId, setRecentAgentId] = useLocalStorage<string>(`issue-recent-agent-id-${workspaceId}`, "");
   const [draft, setDraft] = useLocalStorage<{ title: string; description: string; agentId: string }>(`issue-draft-${workspaceId}`, { title: "", description: "", agentId: "" });
   const [showCompleted, setShowCompleted] = useLocalStorage<boolean>("issues-show-completed", true);
@@ -348,6 +350,25 @@ export default function IssuesPage() {
     const qs = params.toString();
     router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
   }, [pathname, router, searchParams]);
+
+  const setProductFilter = useCallback((productId: string | null) => {
+    const params = new URLSearchParams(searchParams.toString());
+    if (productId) {
+      params.set("product", productId);
+    } else {
+      params.delete("product");
+    }
+    const qs = params.toString();
+    router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
+  }, [pathname, router, searchParams]);
+
+  useEffect(() => {
+    let cancelled = false;
+    listProducts(workspaceId, "active")
+      .then((p) => { if (!cancelled) setProducts(p); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [workspaceId]);
 
   async function openIssue(issueId: string) {
     setSelectedId(issueId);
@@ -636,6 +657,20 @@ export default function IssuesPage() {
           <h1 className="text-base font-semibold tracking-normal">Issues</h1>
         </div>
         <div className="flex items-center gap-2">
+          <Select
+            value={productFilterId ?? "__all__"}
+            onValueChange={(val: string | null) => setProductFilter(val && val !== "__all__" ? val : null)}
+          >
+            <SelectTrigger size="sm" className="w-full sm:w-auto">
+              <SelectValue placeholder="All products" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="__all__">All products</SelectItem>
+              {products.map((p) => (
+                <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
           <Button size="sm" className="w-full sm:w-auto" onClick={() => { setSelectedId(null); selectedIdRef.current = null; setSheetOpen(true); }}>
             <Plus className="size-4" />
             New issue

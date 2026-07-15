@@ -501,13 +501,17 @@ export const UpdateIssueRequestSchema = z
     description: z.string().max(20_000).optional(),
     status: IssueStatusSchema.optional(),
     agent_id: z.string().min(1).optional(),
+    // null means "send back to Unsorted" — resolved server-side via
+    // getOrCreateUnsortedProduct so an issue is never left product-less.
+    product_id: z.string().min(1).nullable().optional(),
   })
   .refine(
     (v) =>
       v.title !== undefined ||
       v.description !== undefined ||
       v.status !== undefined ||
-      v.agent_id !== undefined,
+      v.agent_id !== undefined ||
+      v.product_id !== undefined,
     { message: "at least one field is required" }
   );
 export type UpdateIssueRequestInput = z.infer<typeof UpdateIssueRequestSchema>;
