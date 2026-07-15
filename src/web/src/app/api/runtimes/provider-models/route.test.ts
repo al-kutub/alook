@@ -55,7 +55,7 @@ describe("GET /api/runtimes/provider-models", () => {
     expect(res.status).toBe(200);
     expect(body.provider).toBe("cloudflare-workers-ai");
     expect(body.models.length).toBeGreaterThan(0);
-    expect(body.models.every((m: string) => m.startsWith("@cf/"))).toBe(true);
+    expect(body.models.every((m: string) => m.startsWith("cloudflare-workers-ai/@cf/"))).toBe(true);
   });
 
   it("fetches OpenRouter's public catalog, prefixes ids, and sorts free models first", async () => {

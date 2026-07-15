@@ -348,7 +348,7 @@ export function GeneralFields({
                 provider === "openrouter"
                   ? "e.g. openrouter/google/gemma-4-31b-it:free"
                   : provider === "cloudflare-workers-ai"
-                    ? "e.g. @cf/zai-org/glm-5.2"
+                    ? "e.g. cloudflare-workers-ai/@cf/zai-org/glm-5.2"
                     : "Default (runtime model)"
               }
               list="agent-model-options"

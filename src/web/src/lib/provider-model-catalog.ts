@@ -278,8 +278,14 @@ export async function getOpenRouterModels(): Promise<string[]> {
   });
 }
 
+/**
+ * Returns ids pre-prefixed with `cloudflare-workers-ai/` — same reason as
+ * `openrouter/` above: a bare `@cf/...` id is resolved by opencode against
+ * its default provider search instead of the specific Cloudflare provider,
+ * and gets rejected with "Model not found" (confirmed live).
+ */
 export function getCloudflareWorkersAiModels(): string[] {
-  return CLOUDFLARE_WORKERS_AI_MODELS;
+  return CLOUDFLARE_WORKERS_AI_MODELS.map((id) => `cloudflare-workers-ai/${id}`);
 }
 
 export function getCursorModels(): string[] {
