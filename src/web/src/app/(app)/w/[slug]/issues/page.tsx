@@ -660,6 +660,13 @@ export default function IssuesPage() {
           <Select
             value={productFilterId ?? "__all__"}
             onValueChange={(val: string | null) => setProductFilter(val && val !== "__all__" ? val : null)}
+            items={[
+              { value: "__all__", label: "All products" },
+              ...products.map((p) => ({ value: p.id, label: p.name })),
+              ...(productFilterId && productFilterName && !products.some((p) => p.id === productFilterId)
+                ? [{ value: productFilterId, label: productFilterName }]
+                : []),
+            ]}
           >
             <SelectTrigger size="sm" className="w-full sm:w-auto">
               <SelectValue placeholder="All products" />
