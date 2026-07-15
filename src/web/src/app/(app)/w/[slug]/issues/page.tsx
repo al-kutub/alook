@@ -13,7 +13,7 @@ import type { Product, TaskApi } from "@alook/shared";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Select, SelectContent, SelectItem, SelectTrigger } from "@/components/ui/select";
 import { AvatarRenderer, parseAvatarUrl } from "@/components/avatar";
 import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuTrigger } from "@/components/ui/context-menu";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -649,6 +649,9 @@ export default function IssuesPage() {
 
   const boardLoading = loading || agentsLoading;
   const selectedIssue = selectedId ? issues.find((i) => i.id === selectedId) ?? null : null;
+  const currentProductLabel = productFilterId
+    ? products.find((p) => p.id === productFilterId)?.name ?? productFilterName ?? productFilterId
+    : "All products";
 
   return (
     <div className="relative flex h-full min-h-0 flex-col bg-background/30">
@@ -669,7 +672,7 @@ export default function IssuesPage() {
             ]}
           >
             <SelectTrigger size="sm" className="w-full sm:w-auto">
-              <SelectValue placeholder="All products" />
+              {currentProductLabel}
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="__all__">All products</SelectItem>
@@ -692,7 +695,7 @@ export default function IssuesPage() {
             onClick={clearProductFilter}
             className="inline-flex items-center gap-1.5 rounded-full border border-border/60 bg-muted/40 px-2.5 py-1 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
           >
-            <span>filtered by: {productFilterName ?? "…"}</span>
+            <span>filtered by: {products.find((p) => p.id === productFilterId)?.name ?? productFilterName ?? "…"}</span>
             <X className="size-3" />
           </button>
         </div>
