@@ -67,16 +67,22 @@ interface PendingEntry {
   wake: () => void;
 }
 
-// Env key per Pi built-in provider id — mirrors PI_BUILTIN_PROVIDER_ENV_KEYS
-// in src/daemon/src/runtimeConfig.ts (the @alook/daemon package's own
-// resolver). That package isn't what actually runs in this deployment (see
-// docker-entrypoint.mjs, which spawns THIS daemon.ts via `alook daemon
-// start`), so this file needs its own copy rather than importing across
-// packages for one small map.
-const PI_BUILTIN_PROVIDER_ENV_KEYS: Record<string, string> = {
-  google: "GEMINI_API_KEY",
-  openai: "OPENAI_API_KEY",
-  openrouter: "OPENROUTER_API_KEY",
+// Env key(s) per Pi built-in provider id — mirrors
+// SERVER_INJECTABLE_PI_BUILTIN_ENV_KEYS in
+// src/web/src/lib/api/provider-keys.ts (the server-side counterpart that
+// fills `apiKey`/`accountId` in from the SAME env var names before
+// persisting). Kept as a separate small map here rather than shared, since
+// this one covers every pi-builtin provider a client could name, while the
+// server's only needs to cover providers it has its own env secret for.
+//
+// `accountIdEnvKey` is only set for providers keyed by both an account id
+// and a secret (e.g. Cloudflare Workers AI's CLOUDFLARE_ACCOUNT_ID +
+// CLOUDFLARE_API_KEY) — single-key providers like OpenRouter omit it.
+const PI_BUILTIN_PROVIDER_ENV_KEYS: Record<string, { apiKeyEnvKey: string; accountIdEnvKey?: string }> = {
+  google: { apiKeyEnvKey: "GEMINI_API_KEY" },
+  openai: { apiKeyEnvKey: "OPENAI_API_KEY" },
+  openrouter: { apiKeyEnvKey: "OPENROUTER_API_KEY" },
+  "cloudflare-workers-ai": { apiKeyEnvKey: "CLOUDFLARE_API_KEY", accountIdEnvKey: "CLOUDFLARE_ACCOUNT_ID" },
 };
 
 /**
@@ -105,7 +111,7 @@ function resolvePiBuiltinRouting(
   workspaceId: string,
 ): { provider?: string; providerEnv?: Record<string, string>; error?: string } {
   const providerConfig = task.agent?.runtimeConfig?.provider as
-    | { kind?: string; providerId?: string; apiKey?: string }
+    | { kind?: string; providerId?: string; apiKey?: string; accountId?: string }
     | undefined;
   if (!providerConfig || providerConfig.kind !== "pi-builtin") return {};
 
@@ -117,9 +123,12 @@ function resolvePiBuiltinRouting(
   }
 
   const providerEnv: Record<string, string> = {};
-  if (providerConfig.providerId && providerConfig.apiKey) {
-    const envKey = PI_BUILTIN_PROVIDER_ENV_KEYS[providerConfig.providerId];
-    if (envKey) providerEnv[envKey] = providerConfig.apiKey;
+  if (providerConfig.providerId) {
+    const envKeys = PI_BUILTIN_PROVIDER_ENV_KEYS[providerConfig.providerId];
+    if (envKeys) {
+      if (providerConfig.apiKey) providerEnv[envKeys.apiKeyEnvKey] = providerConfig.apiKey;
+      if (envKeys.accountIdEnvKey && providerConfig.accountId) providerEnv[envKeys.accountIdEnvKey] = providerConfig.accountId;
+    }
   }
 
   return { provider: "opencode", providerEnv };

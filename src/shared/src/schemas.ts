@@ -625,7 +625,8 @@ export type AddWhitelistRequest = z.infer<typeof AddWhitelistRequestSchema>;
 // ---------------------------------------------------------------------------
 
 // Mirrors `ProviderConfig` in `@alook/shared/runtime-config` — the shape
-// `resolveLaunchFields`'s `pi-builtin` case consumes at spawn time (e.g.
+// `resolvePiBuiltinRouting` in src/cli/daemon/daemon.ts (the LIVE daemon —
+// see its own doc comment) consumes at spawn time (e.g.
 // `{ kind: "pi-builtin", providerId: "openrouter", apiKey }` sets
 // `OPENROUTER_API_KEY` in the launched process's env). Validated here so the
 // API can safely persist a caller-supplied `provider` instead of dropping it.
@@ -636,8 +637,15 @@ export const RuntimeProviderConfigSchema = z.discriminatedUnion("kind", [
   // real provider secret (e.g. OPENROUTER_API_KEY) — the create/update API
   // routes fill it in server-side from env when omitted. See
   // agentToResponse() in src/web/src/lib/api/responses.ts for the
-  // corresponding read-side redaction.
-  z.object({ kind: z.literal("pi-builtin"), providerId: z.string().min(1), apiKey: z.string().min(1).optional() }),
+  // corresponding read-side redaction. accountId is optional and only used
+  // by providers keyed by both an account id and a secret (e.g. Cloudflare
+  // Workers AI) — single-key providers like OpenRouter leave it unset.
+  z.object({
+    kind: z.literal("pi-builtin"),
+    providerId: z.string().min(1),
+    apiKey: z.string().min(1).optional(),
+    accountId: z.string().min(1).optional(),
+  }),
 ]);
 export type RuntimeProviderConfigInput = z.infer<typeof RuntimeProviderConfigSchema>;
 

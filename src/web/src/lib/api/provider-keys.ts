@@ -1,32 +1,40 @@
-// Server-side resolution of `runtime_config.provider.apiKey` for pi-builtin
-// providers. The client NEVER supplies or receives the real secret — see
-// RuntimeProviderConfigSchema in @alook/shared (apiKey optional on
-// pi-builtin) and agentToResponse() in src/web/src/lib/api/responses.ts
-// (redacts apiKey on every read). This module is the write-side
-// counterpart: it fills the real key in from env right before persisting.
+// Server-side resolution of `runtime_config.provider.apiKey`/`accountId` for
+// pi-builtin providers. The client NEVER supplies or receives the real
+// secret — see RuntimeProviderConfigSchema in @alook/shared (apiKey/accountId
+// optional on pi-builtin) and agentToResponse() in
+// src/web/src/lib/api/responses.ts (redacts apiKey on every read). This
+// module is the write-side counterpart: it fills the real values in from env
+// right before persisting.
 //
-// Mirrors PI_BUILTIN_PROVIDER_ENV_KEYS in src/daemon/src/runtimeConfig.ts
+// Mirrors resolvePiBuiltinRouting's env-key map in src/cli/daemon/daemon.ts
 // (the daemon-side consumer of the same providerId -> env var mapping at
-// spawn time) — kept as a separate small map here rather than shared,
-// since this one only needs to cover providers the SERVER can inject a key
-// for (i.e. has its own env secret configured), while the daemon's map
-// covers every pi-builtin provider a client could name.
-const SERVER_INJECTABLE_PI_BUILTIN_ENV_KEYS: Record<string, string> = {
-  openrouter: "OPENROUTER_API_KEY",
+// spawn time — that file is the LIVE daemon, see its own doc comment) — kept
+// as a separate small map here rather than shared, since this one only needs
+// to cover providers the SERVER can inject credentials for (i.e. has its own
+// env secret configured), while the daemon's map covers every pi-builtin
+// provider a client could name.
+//
+// `accountIdEnvKey` is only set for providers keyed by both an account id
+// and a secret (e.g. Cloudflare Workers AI) — single-key providers like
+// OpenRouter omit it.
+const SERVER_INJECTABLE_PI_BUILTIN_ENV_KEYS: Record<string, { apiKeyEnvKey: string; accountIdEnvKey?: string }> = {
+  openrouter: { apiKeyEnvKey: "OPENROUTER_API_KEY" },
+  "cloudflare-workers-ai": { apiKeyEnvKey: "CLOUDFLARE_API_KEY", accountIdEnvKey: "CLOUDFLARE_ACCOUNT_ID" },
 };
 
 /**
- * Fill in `runtime_config.provider.apiKey` from server env when a client
- * omitted it on a pi-builtin provider. Always overwrites (not just
- * fill-when-absent) so a client that echoes back the redacted "***"
- * placeholder from a GET response never persists it as the real key.
+ * Fill in `runtime_config.provider.apiKey` (and `accountId`, for providers
+ * that need one) from server env when a client omitted them on a pi-builtin
+ * provider. Always overwrites (not just fill-when-absent) so a client that
+ * echoes back the redacted "***" placeholder from a GET response never
+ * persists it as the real key.
  *
  * `custom` provider configs are left untouched — a fully custom endpoint
  * has no server-known secret to fall back to, so the caller-supplied
  * apiKey (required by the schema) is used as-is.
  *
- * Returns `error` when the provider requires a key the environment doesn't
- * have configured, so callers can fail the request loudly instead of
+ * Returns `error` when the provider requires credentials the environment
+ * doesn't have configured, so callers can fail the request loudly instead of
  * persisting an empty/broken key.
  */
 export function fillRuntimeConfigProviderApiKey(
@@ -42,8 +50,8 @@ export function fillRuntimeConfigProviderApiKey(
   }
 
   const providerId = typeof provider.providerId === "string" ? provider.providerId : "";
-  const envKey = SERVER_INJECTABLE_PI_BUILTIN_ENV_KEYS[providerId];
-  const realKey = envKey ? (env[envKey] as string | undefined) : undefined;
+  const envKeys = SERVER_INJECTABLE_PI_BUILTIN_ENV_KEYS[providerId];
+  const realKey = envKeys ? (env[envKeys.apiKeyEnvKey] as string | undefined) : undefined;
 
   if (!realKey) {
     return {
@@ -52,7 +60,20 @@ export function fillRuntimeConfigProviderApiKey(
     };
   }
 
+  const updatedProvider: Record<string, unknown> = { ...provider, apiKey: realKey };
+
+  if (envKeys?.accountIdEnvKey) {
+    const realAccountId = env[envKeys.accountIdEnvKey] as string | undefined;
+    if (!realAccountId) {
+      return {
+        config: rc,
+        error: `No account id configured on the server for provider "${providerId}"`,
+      };
+    }
+    updatedProvider.accountId = realAccountId;
+  }
+
   return {
-    config: { ...rc, provider: { ...provider, apiKey: realKey } },
+    config: { ...rc, provider: updatedProvider },
   };
 }

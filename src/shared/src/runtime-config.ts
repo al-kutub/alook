@@ -38,7 +38,7 @@ export type ModelConfig =
 export type ProviderConfig =
   | { kind: "default" }
   | { kind: "custom"; apiUrl: string; apiKey: string } // e.g. Claude-compatible endpoint
-  | { kind: "pi-builtin"; providerId: string; apiKey: string }; // Pi multi-provider
+  | { kind: "pi-builtin"; providerId: string; apiKey: string; accountId?: string }; // Pi multi-provider. accountId is for providers keyed by both an account id and a secret (e.g. Cloudflare Workers AI's CLOUDFLARE_ACCOUNT_ID + CLOUDFLARE_API_KEY) — unused by single-key providers like OpenRouter.
 
 /** Execution mode (e.g. fast lane). */
 export type ModeConfig = { kind: "default" | "fast" };

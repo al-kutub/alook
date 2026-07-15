@@ -49,13 +49,13 @@ import { AutoResizeTextarea } from "@/components/ui/auto-resize-textarea";
 // --- Provider Select ---
 //
 // "Default" leaves runtime_config.provider unset — the assigned runtime's
-// own default applies, unchanged from before this picker existed. Only
-// "OpenRouter" writes a provider config, and even then never an apiKey —
-// the server fills that in from its own env (see
-// src/web/src/lib/api/provider-keys.ts). Kept to these two options for
-// now; a "Custom" option would need the user to paste their own key, a
-// materially different flow not built here.
-export type ProviderKind = "default" | "openrouter";
+// own default applies, unchanged from before this picker existed.
+// "OpenRouter" and "Cloudflare Workers AI" write a provider config, and even
+// then never an apiKey (or, for Cloudflare, accountId) — the server fills
+// those in from its own env (see src/web/src/lib/api/provider-keys.ts). A
+// "Custom" option would need the user to paste their own key, a materially
+// different flow not built here.
+export type ProviderKind = "default" | "openrouter" | "cloudflare-workers-ai";
 
 interface ProviderSelectProps {
   value: ProviderKind;
@@ -73,6 +73,7 @@ export function ProviderSelect({ value, onChange }: ProviderSelectProps) {
         <SelectContent>
           <SelectItem value="default">Default</SelectItem>
           <SelectItem value="openrouter">OpenRouter</SelectItem>
+          <SelectItem value="cloudflare-workers-ai">Cloudflare Workers AI</SelectItem>
         </SelectContent>
       </Select>
     </div>
@@ -83,6 +84,7 @@ export function ProviderSelect({ value, onChange }: ProviderSelectProps) {
 export function providerKindFromRuntimeConfig(rc: Record<string, unknown> | undefined | null): ProviderKind {
   const p = rc?.provider as { kind?: string; providerId?: string } | undefined;
   if (p?.kind === "pi-builtin" && p.providerId === "openrouter") return "openrouter";
+  if (p?.kind === "pi-builtin" && p.providerId === "cloudflare-workers-ai") return "cloudflare-workers-ai";
   return "default";
 }
 
@@ -95,8 +97,8 @@ export function providerKindFromRuntimeConfig(rc: Record<string, unknown> | unde
  * provider at all" (see fillRuntimeConfigProviderApiKey).
  */
 export function runtimeConfigProviderForSave(kind: ProviderKind): Record<string, unknown> {
-  return kind === "openrouter"
-    ? { kind: "pi-builtin", providerId: "openrouter" }
+  return kind === "openrouter" || kind === "cloudflare-workers-ai"
+    ? { kind: "pi-builtin", providerId: kind }
     : { kind: "default" };
 }
 
@@ -308,7 +310,13 @@ export function GeneralFields({
               id="agent-model"
               value={model}
               onChange={(e) => setModel(e.target.value)}
-              placeholder={provider === "openrouter" ? "e.g. google/gemma-4-31b-it:free" : "Default (runtime model)"}
+              placeholder={
+                provider === "openrouter"
+                  ? "e.g. openrouter/google/gemma-4-31b-it:free"
+                  : provider === "cloudflare-workers-ai"
+                    ? "e.g. @cf/zai-org/glm-5.2"
+                    : "Default (runtime model)"
+              }
               list="agent-model-options"
               className="w-full border-0 bg-transparent px-0 py-1 text-sm text-foreground shadow-none outline-none placeholder:text-muted-foreground/40 focus-visible:ring-0"
             />

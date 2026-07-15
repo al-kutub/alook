@@ -1,7 +1,11 @@
 import { describe, it, expect } from "vitest";
 import { fillRuntimeConfigProviderApiKey } from "./provider-keys";
 
-const FAKE_ENV = { OPENROUTER_API_KEY: "sk-or-test-fake-value" };
+const FAKE_ENV = {
+  OPENROUTER_API_KEY: "sk-or-test-fake-value",
+  CLOUDFLARE_API_KEY: "cf-test-fake-key",
+  CLOUDFLARE_ACCOUNT_ID: "cf-test-fake-account",
+};
 
 describe("fillRuntimeConfigProviderApiKey", () => {
   it("passes through null config unchanged", () => {
@@ -47,5 +51,20 @@ describe("fillRuntimeConfigProviderApiKey", () => {
     const rc = { provider: { kind: "pi-builtin", providerId: "some-unknown-provider" } };
     const result = fillRuntimeConfigProviderApiKey(rc, FAKE_ENV);
     expect(result.error).toMatch(/some-unknown-provider/);
+  });
+
+  it("fills in both apiKey and accountId for pi-builtin/cloudflare-workers-ai from env when omitted", () => {
+    const rc = { model: "@cf/zai-org/glm-5.2", provider: { kind: "pi-builtin", providerId: "cloudflare-workers-ai" } };
+    const result = fillRuntimeConfigProviderApiKey(rc, FAKE_ENV);
+    expect(result.error).toBeUndefined();
+    const provider = result.config?.provider as { apiKey: string; accountId: string };
+    expect(provider.apiKey).toBe(FAKE_ENV.CLOUDFLARE_API_KEY);
+    expect(provider.accountId).toBe(FAKE_ENV.CLOUDFLARE_ACCOUNT_ID);
+  });
+
+  it("returns an error for pi-builtin/cloudflare-workers-ai when only the API key is configured (no account id)", () => {
+    const rc = { provider: { kind: "pi-builtin", providerId: "cloudflare-workers-ai" } };
+    const result = fillRuntimeConfigProviderApiKey(rc, { CLOUDFLARE_API_KEY: "cf-test-fake-key" });
+    expect(result.error).toMatch(/account id/i);
   });
 });

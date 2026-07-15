@@ -451,6 +451,55 @@ describe("daemon session runner dispatch", () => {
     expect(input.providerEnv).toEqual({ OPENROUTER_API_KEY: "or-test-key" });
   });
 
+  it("routes pi-builtin/cloudflare-workers-ai to opencode and injects both the API key and account id as env", async () => {
+    mockClientInstance.register.mockResolvedValueOnce({
+      runtimes: [{ id: "rt1" }, { id: "rt2" }, { id: "rt3" }],
+    });
+
+    const fakeTask = {
+      id: "t1",
+      agent_id: "a1",
+      runtime_id: "rt1", // agent is assigned to the claude runtime
+      conversation_id: "c1",
+      workspace_id: "ws1",
+      prompt: "do stuff",
+      status: "dispatched",
+      priority: 0,
+      dispatched_at: null,
+      started_at: null,
+      completed_at: null,
+      created_at: "2026-01-01T00:00:00Z",
+      type: "user_dm_message",
+      result: null,
+      error: null,
+      agent: {
+        name: "Agent 1",
+        instructions: "be helpful",
+        runtime_config: {
+          model: "@cf/zai-org/glm-5.2",
+          provider: { kind: "pi-builtin", providerId: "cloudflare-workers-ai", apiKey: "cf-test-key", accountId: "cf-test-account" },
+        },
+      },
+    };
+
+    let claimed = false;
+    mockClientInstance.poll.mockImplementation((async () => {
+      if (!claimed) {
+        claimed = true;
+        return { tasks: [fakeTask], evicted: false };
+      }
+      return { tasks: [], evicted: false };
+    }) as any);
+
+    await startDaemon();
+    await new Promise((r) => setTimeout(r, 50));
+
+    expect(mockClientInstance.failTask).not.toHaveBeenCalled();
+    const input = decodeSpawnInput(vi.mocked(spawn).mock.calls[0]);
+    expect(input.provider).toBe("opencode");
+    expect(input.providerEnv).toEqual({ CLOUDFLARE_API_KEY: "cf-test-key", CLOUDFLARE_ACCOUNT_ID: "cf-test-account" });
+  });
+
   it("fails the task instead of silently dispatching to the assigned runtime when pi-builtin routing has no opencode runtime to route to", async () => {
     // Only ONE runtime registered (the agent's assigned claude runtime) —
     // no opencode runtime for pi-builtin to redirect to.
