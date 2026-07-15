@@ -563,6 +563,14 @@ async function ensureCeoAgent(baseURL, cookie, workspaceId) {
   if (createRes.ok) {
     const created = await createRes.json();
     log("boot", `CEO agent seeded (${created.id})`);
+  } else if (createRes.status === 409) {
+    // The list lookup above didn't find a CEO, but the handle is taken —
+    // one genuinely exists, we just raced a stale read (getDb() uses D1's
+    // "first-unconstrained" session mode, which trades consistency for
+    // speed and can lag right after a fresh boot). Don't attempt a doomed
+    // create every boot; skip healing this cycle, it'll resolve once the
+    // read catches up on a later boot.
+    log("boot", "ensureCeoAgent: CEO agent already exists (handle taken) but wasn't visible in this boot's agent list — skipping heal this cycle, will retry next boot");
   } else {
     const text = await createRes.text();
     log("boot", `ensureCeoAgent: creation failed (${createRes.status}): ${text} — not fatal, continuing boot`);
