@@ -249,6 +249,8 @@ export {
   AddWhitelistRequestSchema,
   CreateAgentRequestSchema,
   UpdateAgentRequestSchema,
+  RuntimeProviderConfigSchema,
+  sanitizeRuntimeConfigInput,
   CreateConversationRequestSchema,
   CreateMessageRequestSchema,
   AgentDmRequestSchema,

@@ -1,5 +1,5 @@
 import { NextRequest } from "next/server";
-import { queries, isValidHandle, isOnline, CreateAgentRequestSchema, TASK_TYPES } from "@alook/shared"
+import { queries, isValidHandle, isOnline, CreateAgentRequestSchema, TASK_TYPES, sanitizeRuntimeConfigInput } from "@alook/shared"
 import { getDb } from "@/lib/db"
 import { withAuth } from "@/lib/middleware/auth";
 import { withWorkspaceMember } from "@/lib/middleware/workspace";
@@ -60,9 +60,7 @@ export const POST = withAuth(async (req: NextRequest, ctx) => {
   }
 
   const rc = body.runtime_config;
-  const sanitizedRc: Record<string, unknown> | null = rc
-    ? { ...(typeof rc.model === "string" ? { model: rc.model } : {}) }
-    : null;
+  const sanitizedRc: Record<string, unknown> | null = rc ? sanitizeRuntimeConfigInput(rc) : null;
 
   // CEO agents get a heartbeat by default — no dedicated "role" concept exists
   // yet, so we match on name until one does.

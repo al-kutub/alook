@@ -1,4 +1,4 @@
-import { queries, UpdateAgentRequestSchema, BUDGET_PAUSED_REASON_EXCEEDED, isOverBudget } from "@alook/shared"
+import { queries, UpdateAgentRequestSchema, BUDGET_PAUSED_REASON_EXCEEDED, isOverBudget, sanitizeRuntimeConfigInput } from "@alook/shared"
 import { getDb } from "@/lib/db"
 import { withAuth } from "@/lib/middleware/auth";
 import { withWorkspaceMember } from "@/lib/middleware/workspace";
@@ -52,12 +52,7 @@ export const PATCH = withAuth(async (req, ctx) => {
     data.runtimeId = body.runtime_id;
   }
   if (body.runtime_config !== undefined) {
-    const rc = body.runtime_config;
-    const sanitized: Record<string, unknown> = {};
-    if (typeof rc.model === "string") {
-      sanitized.model = rc.model;
-    }
-    data.runtimeConfig = sanitized;
+    data.runtimeConfig = sanitizeRuntimeConfigInput(body.runtime_config);
   }
   if (body.visibility !== undefined) data.visibility = body.visibility;
   if (body.avatar_url !== undefined) data.avatarUrl = body.avatar_url;

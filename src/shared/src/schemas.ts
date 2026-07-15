@@ -620,10 +620,41 @@ export type AddWhitelistRequest = z.infer<typeof AddWhitelistRequestSchema>;
 // Agent request schemas
 // ---------------------------------------------------------------------------
 
+// Mirrors `ProviderConfig` in `@alook/shared/runtime-config` — the shape
+// `resolveLaunchFields`'s `pi-builtin` case consumes at spawn time (e.g.
+// `{ kind: "pi-builtin", providerId: "openrouter", apiKey }` sets
+// `OPENROUTER_API_KEY` in the launched process's env). Validated here so the
+// API can safely persist a caller-supplied `provider` instead of dropping it.
+export const RuntimeProviderConfigSchema = z.discriminatedUnion("kind", [
+  z.object({ kind: z.literal("default") }),
+  z.object({ kind: z.literal("custom"), apiUrl: z.string().url(), apiKey: z.string().min(1) }),
+  z.object({ kind: z.literal("pi-builtin"), providerId: z.string().min(1), apiKey: z.string().min(1) }),
+]);
+export type RuntimeProviderConfigInput = z.infer<typeof RuntimeProviderConfigSchema>;
+
 const RuntimeConfigSchema = z
-  .object({ model: z.string().max(100).optional() })
+  .object({ model: z.string().max(100).optional(), provider: RuntimeProviderConfigSchema.optional() })
   .passthrough()
   .optional();
+
+/**
+ * Sanitize a caller-supplied `runtime_config` down to the fields the agent
+ * create/update APIs are willing to persist: `model` (string) and a
+ * validated `provider`. Any other caller-supplied keys are dropped rather
+ * than persisted verbatim.
+ */
+export function sanitizeRuntimeConfigInput(
+  rc: { model?: unknown; provider?: unknown } | null | undefined,
+): Record<string, unknown> {
+  if (!rc) return {};
+  const out: Record<string, unknown> = {};
+  if (typeof rc.model === "string") out.model = rc.model;
+  if (rc.provider !== undefined) {
+    const parsed = RuntimeProviderConfigSchema.safeParse(rc.provider);
+    if (parsed.success) out.provider = parsed.data;
+  }
+  return out;
+}
 
 export const CreateAgentRequestSchema = z.object({
   name: z.string().min(1, "name is required"),

@@ -55,6 +55,23 @@ RUN curl https://cursor.com/install -fsS | bash \
  && ln -sf /opt/cursor-agent/cursor-agent /usr/local/bin/cursor-agent \
  && /usr/local/bin/cursor-agent --version
 
+# OpenCode CLI (opencode) — the agent backend wired into
+# src/daemon/src/drivers/opencode.ts, needed to route agents through
+# provider.kind === "pi-builtin" (e.g. OpenRouter) — cursor-agent has no such
+# provider config path. Same install pattern as cursor-agent above: the
+# installer drops the binary at $HOME/.opencode/bin/opencode; copy that dir
+# to a fixed /opt path (stable, world-readable) and symlink onto
+# /usr/local/bin so it's found regardless of which user the daemon
+# subprocess runs as. Auth is OPENROUTER_API_KEY (or another provider's key),
+# passed through as a plain env var at deploy time — never baked in here.
+RUN curl -fsSL https://opencode.ai/install | bash \
+ && test -f "$HOME/.opencode/bin/opencode" \
+ && rm -rf /opt/opencode \
+ && cp -r "$HOME/.opencode/bin" /opt/opencode \
+ && chmod -R a+rX /opt/opencode \
+ && ln -sf /opt/opencode/opencode /usr/local/bin/opencode \
+ && /usr/local/bin/opencode --version
+
 # GitHub CLI — lets cursor-agent tasks create/push/pull repos on the user's
 # al-kutub org (auth via GH_TOKEN env var at deploy time, gh's own preferred
 # var name, checked before GITHUB_TOKEN — never baked in here). Official apt
