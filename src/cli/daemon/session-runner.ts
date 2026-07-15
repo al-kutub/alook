@@ -173,7 +173,7 @@ export async function downloadAttachments(
 }
 
 export async function runSession(input: SessionRunnerInput): Promise<void> {
-  const { task, provider, cliPath, model, serverURL, token, workspacesRoot, agentTimeout, messageInactivityTimeout } = input;
+  const { task, provider, cliPath, model, serverURL, token, workspacesRoot, agentTimeout, messageInactivityTimeout, providerEnv } = input;
 
   log.info(`starting (task=${task.id}, type=${task.type}, agent=${task.agentId}, provider=${provider}, model=${model || "default"})`);
 
@@ -191,10 +191,14 @@ export async function runSession(input: SessionRunnerInput): Promise<void> {
     createTimelineEntry(task.id, task.prompt, task.type, undefined, process.pid, provider, task.contextKey, input.logFilePath),
   );
 
-  const { workDir, env } = prepare(
+  const { workDir, env: baseEnv } = prepare(
     { workspacesRoot, token },
     task,
   );
+  // providerEnv (e.g. OPENROUTER_API_KEY from the agent's pi-builtin
+  // provider config) is layered last so it can't be shadowed by ALOOK_*
+  // vars — see resolvePiBuiltinRouting in daemon.ts.
+  const env = providerEnv ? { ...baseEnv, ...providerEnv } : baseEnv;
 
   // --- State shared by the kill handler, hoisted so the SINGLE handler below
   //     can see it whether the kill lands before or after the agent spawns. ---

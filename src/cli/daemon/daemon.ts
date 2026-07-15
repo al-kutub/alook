@@ -67,6 +67,64 @@ interface PendingEntry {
   wake: () => void;
 }
 
+// Env key per Pi built-in provider id — mirrors PI_BUILTIN_PROVIDER_ENV_KEYS
+// in src/daemon/src/runtimeConfig.ts (the @alook/daemon package's own
+// resolver). That package isn't what actually runs in this deployment (see
+// docker-entrypoint.mjs, which spawns THIS daemon.ts via `alook daemon
+// start`), so this file needs its own copy rather than importing across
+// packages for one small map.
+const PI_BUILTIN_PROVIDER_ENV_KEYS: Record<string, string> = {
+  google: "GEMINI_API_KEY",
+  openai: "OPENAI_API_KEY",
+  openrouter: "OPENROUTER_API_KEY",
+};
+
+/**
+ * `agent.runtime_id` fixes which physical CLI backend (claude/codex/opencode/
+ * cursor) a task dispatches to — see `runtimeData.provider` below. That's a
+ * SEPARATE concept from `task.agent.runtimeConfig.provider`
+ * (`ProviderConfig`, e.g. `{kind:"pi-builtin", providerId:"openrouter"}`),
+ * which the rest of this file otherwise never reads at all: only `model` is
+ * pulled out of `runtimeConfig` for the backend's `--model` flag. Left alone,
+ * an agent configured with a pi-builtin provider still dispatches through
+ * whatever backend `runtime_id` happens to point at (e.g. cursor-agent, which
+ * has no pi-builtin support and rejects the model against its own fixed
+ * whitelist — this was actually observed in production).
+ *
+ * cursor-agent has no multi-provider routing; opencode does (it forwards
+ * `--model` + the provider's API-key env straight through). So a pi-builtin
+ * provider config overrides the backend to "opencode" — matching the
+ * Dockerfile's own stated intent for installing opencode — as long as an
+ * opencode runtime is actually registered for this workspace. If not, this
+ * returns an `error` instead of silently dispatching through the wrong
+ * backend and producing a confusing whitelist rejection.
+ */
+function resolvePiBuiltinRouting(
+  task: Task,
+  runtimeIndex: Map<string, RuntimeData>,
+  workspaceId: string,
+): { provider?: string; providerEnv?: Record<string, string>; error?: string } {
+  const providerConfig = task.agent?.runtimeConfig?.provider as
+    | { kind?: string; providerId?: string; apiKey?: string }
+    | undefined;
+  if (!providerConfig || providerConfig.kind !== "pi-builtin") return {};
+
+  const opencodeRuntime = [...runtimeIndex.values()].find(
+    (r) => r.workspaceId === workspaceId && r.provider === "opencode",
+  );
+  if (!opencodeRuntime) {
+    return { error: "agent's runtime_config.provider is pi-builtin, but no opencode runtime is registered on this machine" };
+  }
+
+  const providerEnv: Record<string, string> = {};
+  if (providerConfig.providerId && providerConfig.apiKey) {
+    const envKey = PI_BUILTIN_PROVIDER_ENV_KEYS[providerConfig.providerId];
+    if (envKey) providerEnv[envKey] = providerConfig.apiKey;
+  }
+
+  return { provider: "opencode", providerEnv };
+}
+
 function isCommandAvailable(cmd: string): boolean {
   try {
     const check = process.platform === "win32" ? `where ${cmd}` : `which ${cmd}`;
@@ -1032,7 +1090,14 @@ async function handleTask(
     return;
   }
 
-  const provider = runtimeData.provider;
+  const piBuiltinRouting = resolvePiBuiltinRouting(task, runtimeIndex, task.workspaceId);
+  if (piBuiltinRouting.error) {
+    await client.failTask(token, task.id, piBuiltinRouting.error);
+    activeTasks.delete(task.id);
+    return;
+  }
+  const provider = piBuiltinRouting.provider ?? runtimeData.provider;
+  const providerEnv = piBuiltinRouting.providerEnv;
 
   // --- Steering: supersede predecessor if same context_key + provider ---
   let promptOverride: string | undefined;
@@ -1279,6 +1344,7 @@ async function handleTask(
     ...(promptOverride && { promptOverride }),
     ...(steeringEligible && { steeringEnabled: true }),
     ...(steeringMailboxDir && { steeringMailboxDir }),
+    ...(providerEnv && Object.keys(providerEnv).length > 0 && { providerEnv }),
   };
 
   const child = spawnSessionRunner(input);

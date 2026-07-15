@@ -395,6 +395,113 @@ describe("daemon session runner dispatch", () => {
     expect(input.model).toBe("opus");
   });
 
+  it("routes a pi-builtin provider config to opencode instead of the agent's assigned runtime, and injects the provider API key as env", async () => {
+    // All 4 backends detected on this machine (execSync mock never throws,
+    // so isCommandAvailable is true for claude/codex/opencode/cursor, in that
+    // registration order). Server returns 3 runtime rows: rt1 -> claude
+    // (first detected, matching the agent's assigned runtime_id), rt2 ->
+    // codex, rt3 -> opencode — the runtime pi-builtin routing must find and
+    // redirect to.
+    mockClientInstance.register.mockResolvedValueOnce({
+      runtimes: [{ id: "rt1" }, { id: "rt2" }, { id: "rt3" }],
+    });
+
+    const fakeTask = {
+      id: "t1",
+      agent_id: "a1",
+      runtime_id: "rt1", // agent is assigned to the claude runtime
+      conversation_id: "c1",
+      workspace_id: "ws1",
+      prompt: "do stuff",
+      status: "dispatched",
+      priority: 0,
+      dispatched_at: null,
+      started_at: null,
+      completed_at: null,
+      created_at: "2026-01-01T00:00:00Z",
+      type: "user_dm_message",
+      result: null,
+      error: null,
+      agent: {
+        name: "Agent 1",
+        instructions: "be helpful",
+        runtime_config: {
+          model: "google/gemma-4-31b-it:free",
+          provider: { kind: "pi-builtin", providerId: "openrouter", apiKey: "or-test-key" },
+        },
+      },
+    };
+
+    let claimed = false;
+    mockClientInstance.poll.mockImplementation((async () => {
+      if (!claimed) {
+        claimed = true;
+        return { tasks: [fakeTask], evicted: false };
+      }
+      return { tasks: [], evicted: false };
+    }) as any);
+
+    await startDaemon();
+    await new Promise((r) => setTimeout(r, 50));
+
+    expect(mockClientInstance.failTask).not.toHaveBeenCalled();
+    const input = decodeSpawnInput(vi.mocked(spawn).mock.calls[0]);
+    expect(input.provider).toBe("opencode");
+    expect(input.cliPath).toBe("opencode");
+    expect(input.providerEnv).toEqual({ OPENROUTER_API_KEY: "or-test-key" });
+  });
+
+  it("fails the task instead of silently dispatching to the assigned runtime when pi-builtin routing has no opencode runtime to route to", async () => {
+    // Only ONE runtime registered (the agent's assigned claude runtime) —
+    // no opencode runtime for pi-builtin to redirect to.
+    mockClientInstance.register.mockResolvedValueOnce({ runtimes: [{ id: "rt1" }] });
+
+    const fakeTask = {
+      id: "t1",
+      agent_id: "a1",
+      runtime_id: "rt1",
+      conversation_id: "c1",
+      workspace_id: "ws1",
+      prompt: "do stuff",
+      status: "dispatched",
+      priority: 0,
+      dispatched_at: null,
+      started_at: null,
+      completed_at: null,
+      created_at: "2026-01-01T00:00:00Z",
+      type: "user_dm_message",
+      result: null,
+      error: null,
+      agent: {
+        name: "Agent 1",
+        instructions: "be helpful",
+        runtime_config: {
+          model: "google/gemma-4-31b-it:free",
+          provider: { kind: "pi-builtin", providerId: "openrouter", apiKey: "or-test-key" },
+        },
+      },
+    };
+
+    let claimed = false;
+    mockClientInstance.poll.mockImplementation((async () => {
+      if (!claimed) {
+        claimed = true;
+        return { tasks: [fakeTask], evicted: false };
+      }
+      return { tasks: [], evicted: false };
+    }) as any);
+
+    await startDaemon();
+    await new Promise((r) => setTimeout(r, 50));
+
+    expect(spawn).not.toHaveBeenCalled();
+    expect(mockClientInstance.failTask).toHaveBeenCalledWith(
+      "al_test_token",
+      "t1",
+      expect.stringContaining("opencode"),
+    );
+  });
+
   it("spawns with detached: true, log file stdio, and calls unref()", async () => {
     setupTaskClaim();
 

@@ -106,6 +106,14 @@ export interface SessionRunnerInput {
   promptOverride?: string;
   steeringEnabled?: boolean;
   steeringMailboxDir?: string;
+  /**
+   * Env derived from `task.agent.runtimeConfig.provider` (e.g. the
+   * OpenRouter API key for a `pi-builtin` provider config) — see
+   * `resolvePiBuiltinRouting` in daemon.ts. Merged into the spawned
+   * backend's env in session-runner.ts, layered so it can't be shadowed by
+   * the daemon's own ambient env.
+   */
+  providerEnv?: Record<string, string>;
 }
 
 // --- Steering & ParsedEvent types ---
