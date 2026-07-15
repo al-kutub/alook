@@ -1,10 +1,15 @@
-import { eq, and, desc, inArray, count, countDistinct, max, notInArray } from "drizzle-orm";
+import { eq, and, desc, inArray, count, countDistinct, max, notInArray, sql } from "drizzle-orm";
 import { product, issue } from "../schema";
 import type { Database } from "../index";
 import { TERMINAL_ISSUE_STATUSES } from "../../constants";
 
 const UNSORTED_PRODUCT_NAME = "Unsorted";
 
+/** Finds an existing active product matching `name` (case-insensitive) in
+ * the workspace, or creates a new one. Prevents duplicate product cards
+ * (e.g. two "LUMINA" rows) when callers — API route or CLI `product create`
+ * — don't check `product list` first. Archived products don't block reuse
+ * of their name. */
 export async function createProduct(
   db: Database,
   data: {
@@ -16,6 +21,20 @@ export async function createProduct(
     createdByAgentId?: string;
   }
 ) {
+  const existing = await db
+    .select()
+    .from(product)
+    .where(
+      and(
+        eq(product.workspaceId, data.workspaceId),
+        eq(product.status, "active"),
+        eq(sql`lower(${product.name})`, data.name.toLowerCase())
+      )
+    )
+    .orderBy(product.createdAt)
+    .limit(1);
+  if (existing[0]) return existing[0];
+
   const rows = await db
     .insert(product)
     .values({
