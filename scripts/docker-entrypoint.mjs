@@ -152,6 +152,21 @@ function ensureDevVars() {
     writeFileSync(webSecretsPath, contents, { mode: 0o600 });
   }
 
+  // CLOUDFLARE_ACCOUNT_ID / CLOUDFLARE_API_KEY: same rewritten-every-boot
+  // pattern as OPENROUTER_API_KEY above, for the same reason (ctx.env only
+  // sees .dev.vars, never raw process.env under wrangler dev --local).
+  for (const key of ["CLOUDFLARE_ACCOUNT_ID", "CLOUDFLARE_API_KEY"]) {
+    if (process.env[key]) {
+      let contents = readFileSync(webSecretsPath, "utf-8");
+      const line = `${key}=${process.env[key]}`;
+      const re = new RegExp(`^${key}=.*$`, "m");
+      contents = re.test(contents)
+        ? contents.replace(re, line)
+        : `${contents.trimEnd()}\n${line}\n`;
+      writeFileSync(webSecretsPath, contents, { mode: 0o600 });
+    }
+  }
+
   writeFileSync(join(WEB_DIR, ".dev.vars"), readFileSync(webSecretsPath));
 
   const emailSecretsPath = join(SECRETS_DIR, "email-worker.dev.vars");

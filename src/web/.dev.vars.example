@@ -29,3 +29,9 @@ DEVICE_CLIENT_IDS=alook-cli
 # OpenRouter (see src/web/src/lib/api/provider-keys.ts). Never sent to or
 # accepted from the client.
 OPENROUTER_API_KEY=
+
+# Cloudflare Workers AI — server-side only, same fill-in pattern as
+# OpenRouter above, used when an agent's provider is set to
+# cloudflare-workers-ai.
+CLOUDFLARE_ACCOUNT_ID=
+CLOUDFLARE_API_KEY=
