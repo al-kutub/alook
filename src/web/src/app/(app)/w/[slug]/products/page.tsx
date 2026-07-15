@@ -10,6 +10,8 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Switch } from "@/components/ui/switch";
+import { Label } from "@/components/ui/label";
 import {
   Dialog,
   DialogContent,
@@ -20,7 +22,6 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 import { relativeTime } from "@/lib/time";
 import { IssueStatus } from "@alook/shared";
@@ -38,6 +39,7 @@ export default function ProductsPage() {
 
   const [products, setProducts] = useState<ProductDashboardItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const [showArchived, setShowArchived] = useState(false);
 
   const [dialogOpen, setDialogOpen] = useState(false);
   const [name, setName] = useState("");
@@ -84,7 +86,13 @@ export default function ProductsPage() {
         <div className="min-w-0">
           <h1 className="text-base font-semibold tracking-normal">Products</h1>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-4">
+          <div className="flex items-center gap-2">
+            <Switch id="show-archived" size="sm" checked={showArchived} onCheckedChange={setShowArchived} />
+            <Label htmlFor="show-archived" className="text-xs text-muted-foreground">
+              Show archived
+            </Label>
+          </div>
           <Button
             size="sm"
             className="w-full sm:w-auto"
@@ -101,25 +109,40 @@ export default function ProductsPage() {
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto thin-scrollbar p-4">
-        {loading ? (
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {[0, 1, 2].map((i) => (
-              <div key={i} className="space-y-3 rounded-xl border border-border/50 bg-card p-4">
-                <Skeleton className="h-4 w-28" />
-                <Skeleton className="h-3 w-full" />
-                <Skeleton className="h-3 w-20" />
+        {(() => {
+          const visibleProducts = showArchived
+            ? products
+            : products.filter((p) => p.status !== "archived");
+
+          if (loading) {
+            return (
+              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                {[0, 1, 2].map((i) => (
+                  <div key={i} className="space-y-3 rounded-xl border border-border/50 bg-card p-4">
+                    <Skeleton className="h-4 w-28" />
+                    <Skeleton className="h-3 w-full" />
+                    <Skeleton className="h-3 w-20" />
+                  </div>
+                ))}
               </div>
-            ))}
-          </div>
-        ) : products.length === 0 ? (
-          <div className="flex h-full flex-col items-center justify-center animate-[fade-up_400ms_ease-out_both]">
-            <Package className="size-8 text-muted-foreground mb-3" />
-            <p className="text-sm text-muted-foreground">No products</p>
-            <p className="text-xs text-muted-foreground/60 mt-1">Create one to get started.</p>
-          </div>
-        ) : (
+            );
+          }
+
+          if (visibleProducts.length === 0) {
+            return (
+              <div className="flex h-full flex-col items-center justify-center animate-[fade-up_400ms_ease-out_both]">
+                <Package className="size-8 text-muted-foreground mb-3" />
+                <p className="text-sm text-muted-foreground">No products</p>
+                <p className="text-xs text-muted-foreground/60 mt-1">
+                  {products.length === 0 ? "Create one to get started." : "No archived products."}
+                </p>
+              </div>
+            );
+          }
+
+          return (
           <div className="grid gap-4 animate-[fade-up_200ms_ease-out_both] sm:grid-cols-2 lg:grid-cols-3">
-            {products.map((p) => (
+            {visibleProducts.map((p) => (
               <Card
                 key={p.id}
                 size="sm"
@@ -159,7 +182,8 @@ export default function ProductsPage() {
               </Card>
             ))}
           </div>
-        )}
+          );
+        })()}
       </div>
 
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
