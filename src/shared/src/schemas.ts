@@ -632,7 +632,12 @@ export type AddWhitelistRequest = z.infer<typeof AddWhitelistRequestSchema>;
 export const RuntimeProviderConfigSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("default") }),
   z.object({ kind: z.literal("custom"), apiUrl: z.string().url(), apiKey: z.string().min(1) }),
-  z.object({ kind: z.literal("pi-builtin"), providerId: z.string().min(1), apiKey: z.string().min(1) }),
+  // apiKey is optional here: the client must never submit or receive the
+  // real provider secret (e.g. OPENROUTER_API_KEY) — the create/update API
+  // routes fill it in server-side from env when omitted. See
+  // agentToResponse() in src/web/src/lib/api/responses.ts for the
+  // corresponding read-side redaction.
+  z.object({ kind: z.literal("pi-builtin"), providerId: z.string().min(1), apiKey: z.string().min(1).optional() }),
 ]);
 export type RuntimeProviderConfigInput = z.infer<typeof RuntimeProviderConfigSchema>;
 

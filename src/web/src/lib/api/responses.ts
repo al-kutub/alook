@@ -49,9 +49,28 @@ export function workspaceToResponse(w: WorkspaceRow) {
   };
 }
 
+/**
+ * Redact `runtime_config.provider.apiKey` before it ever reaches the
+ * client. The real secret (e.g. the server's OPENROUTER_API_KEY) is
+ * server-only — see fillRuntimeConfigProviderApiKey in
+ * src/web/src/lib/api/provider-keys.ts for where it's injected on write.
+ * Deep-cloned so this never mutates the DB row object passed in (which may
+ * be a cached/shared reference — see cached() call sites in
+ * src/web/src/app/api/agents/route.ts).
+ */
+function redactRuntimeConfig(rc: Record<string, unknown>): Record<string, unknown> {
+  if (!rc.provider || typeof rc.provider !== "object") return rc;
+  const provider = rc.provider as Record<string, unknown>;
+  if ((provider.kind === "pi-builtin" || provider.kind === "custom") && "apiKey" in provider) {
+    return { ...rc, provider: { ...provider, apiKey: "***" } };
+  }
+  return rc;
+}
+
 export function agentToResponse(a: AgentRow, extra?: { spentMonthlyCents?: number }) {
   let rc = a.runtimeConfig;
   if (!rc) rc = {};
+  rc = redactRuntimeConfig(rc as Record<string, unknown>);
   const budgetMonthlyCents = a.budgetMonthlyCents ?? null;
   const spentMonthlyCents = extra?.spentMonthlyCents ?? 0;
   return {

@@ -4,6 +4,7 @@ import { withAuth } from "@/lib/middleware/auth";
 import { withWorkspaceMember } from "@/lib/middleware/workspace";
 import { writeJSON, writeError, parseBody } from "@/lib/middleware/helpers";
 import { agentToResponse } from "@/lib/api/responses";
+import { fillRuntimeConfigProviderApiKey } from "@/lib/api/provider-keys";
 import { invalidate, cacheKeys } from "@/lib/cache";
 
 export const GET = withAuth(async (req, ctx) => {
@@ -52,7 +53,10 @@ export const PATCH = withAuth(async (req, ctx) => {
     data.runtimeId = body.runtime_id;
   }
   if (body.runtime_config !== undefined) {
-    data.runtimeConfig = sanitizeRuntimeConfigInput(body.runtime_config);
+    const sanitizedRc = sanitizeRuntimeConfigInput(body.runtime_config);
+    const filled = fillRuntimeConfigProviderApiKey(sanitizedRc, ctx.env as unknown as Record<string, unknown>);
+    if (filled.error) return writeError(filled.error, 400);
+    data.runtimeConfig = filled.config;
   }
   if (body.visibility !== undefined) data.visibility = body.visibility;
   if (body.avatar_url !== undefined) data.avatarUrl = body.avatar_url;

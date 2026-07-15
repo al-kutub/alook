@@ -8,6 +8,8 @@ import {
   EmailHandleField,
   nameToHandle,
   getHandleError,
+  type ProviderKind,
+  runtimeConfigProviderForSave,
 } from "@/components/agent-form-fields";
 import {
   CustomEmailForm,
@@ -133,6 +135,7 @@ export function AgentCreateForm({
     null
   );
   const [model, setModel] = useState("");
+  const [provider, setProvider] = useState<ProviderKind>("default");
   const [avatarConfig, setAvatarConfig] = useState<AvatarConfig>(INITIAL_AVATAR);
 
   // Randomize avatar and name on client mount to avoid hydration mismatch
@@ -205,7 +208,10 @@ export function AgentCreateForm({
       instructions,
       runtime_id: runtimeId,
       email_handle: emailHandle || derivedHandle || undefined,
-      runtime_config: model ? { model } : {},
+      runtime_config: {
+        ...(model ? { model } : {}),
+        ...(provider === "openrouter" ? { provider: runtimeConfigProviderForSave(provider) } : {}),
+      },
       custom_email:
         customEmailGetDataRef.current?.() ?? customEmailData ?? undefined,
       avatar_url: serializeAvatarConfig(avatarConfig),
@@ -228,6 +234,8 @@ export function AgentCreateForm({
           setInstructions={setInstructions}
           model={model}
           setModel={setModel}
+          provider={provider}
+          setProvider={setProvider}
           runtimeId={runtimeId}
           setRuntimeId={updateRuntimeId}
           runtimes={runtimes}

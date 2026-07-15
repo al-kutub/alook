@@ -5,6 +5,7 @@ import { withAuth } from "@/lib/middleware/auth";
 import { withWorkspaceMember } from "@/lib/middleware/workspace";
 import { writeJSON, writeError, parseBody } from "@/lib/middleware/helpers";
 import { agentToResponse } from "@/lib/api/responses";
+import { fillRuntimeConfigProviderApiKey } from "@/lib/api/provider-keys";
 import { TaskService } from "@/lib/services/task";
 import { invalidate, cached, cacheKeys } from "@/lib/cache";
 import { filterVisibleAgents } from "@/lib/agent-visibility";
@@ -60,7 +61,12 @@ export const POST = withAuth(async (req: NextRequest, ctx) => {
   }
 
   const rc = body.runtime_config;
-  const sanitizedRc: Record<string, unknown> | null = rc ? sanitizeRuntimeConfigInput(rc) : null;
+  let sanitizedRc: Record<string, unknown> | null = rc ? sanitizeRuntimeConfigInput(rc) : null;
+  if (sanitizedRc) {
+    const filled = fillRuntimeConfigProviderApiKey(sanitizedRc, ctx.env as unknown as Record<string, unknown>);
+    if (filled.error) return writeError(filled.error, 400);
+    sanitizedRc = filled.config;
+  }
 
   // CEO agents get a heartbeat by default — no dedicated "role" concept exists
   // yet, so we match on name until one does.

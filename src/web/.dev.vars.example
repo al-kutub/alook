@@ -23,3 +23,9 @@ GOOGLE_CLIENT_SECRET=
 
 # Device Code Flow — comma-separated allowed client IDs
 DEVICE_CLIENT_IDS=alook-cli
+
+# OpenRouter API key — server-side only. Used to fill in
+# runtime_config.provider.apiKey when an agent's provider is set to
+# OpenRouter (see src/web/src/lib/api/provider-keys.ts). Never sent to or
+# accepted from the client.
+OPENROUTER_API_KEY=

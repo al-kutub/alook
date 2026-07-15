@@ -89,6 +89,86 @@ describe("agentToResponse", () => {
     });
     expect(res.runtime_id).toBe("");
   });
+
+  it("redacts apiKey for a pi-builtin provider", () => {
+    const realKey = "sk-or-test-do-not-leak";
+    const res = agentToResponse({
+      id: "a1",
+      workspaceId: "w1",
+      runtimeId: "r1",
+      name: "Agent",
+      description: "d",
+      instructions: "i",
+      runtimeMode: "auto",
+      runtimeConfig: {
+        model: "google/gemma-4-31b-it:free",
+        provider: { kind: "pi-builtin", providerId: "openrouter", apiKey: realKey },
+      },
+      status: "active",
+      maxConcurrentTasks: 1,
+      ...baseFields(),
+    });
+    const provider = (res.runtime_config as { provider: { apiKey: string } }).provider;
+    expect(provider.apiKey).toBe("***");
+    expect(JSON.stringify(res)).not.toContain(realKey);
+  });
+
+  it("redacts apiKey for a custom provider", () => {
+    const realKey = "custom-secret-do-not-leak";
+    const res = agentToResponse({
+      id: "a1",
+      workspaceId: "w1",
+      runtimeId: "r1",
+      name: "Agent",
+      description: "d",
+      instructions: "i",
+      runtimeMode: "auto",
+      runtimeConfig: {
+        provider: { kind: "custom", apiUrl: "https://example.com", apiKey: realKey },
+      },
+      status: "active",
+      maxConcurrentTasks: 1,
+      ...baseFields(),
+    });
+    const provider = (res.runtime_config as { provider: { apiKey: string } }).provider;
+    expect(provider.apiKey).toBe("***");
+    expect(JSON.stringify(res)).not.toContain(realKey);
+  });
+
+  it("does not mutate the original runtimeConfig object (no shared-reference leak into cache)", () => {
+    const cfg = { provider: { kind: "pi-builtin", providerId: "openrouter", apiKey: "real-key" } };
+    agentToResponse({
+      id: "a1",
+      workspaceId: "w1",
+      runtimeId: "r1",
+      name: "Agent",
+      description: "d",
+      instructions: "i",
+      runtimeMode: "auto",
+      runtimeConfig: cfg,
+      status: "active",
+      maxConcurrentTasks: 1,
+      ...baseFields(),
+    });
+    expect((cfg.provider as { apiKey: string }).apiKey).toBe("real-key");
+  });
+
+  it("leaves runtime_config untouched when provider is default or absent", () => {
+    const res = agentToResponse({
+      id: "a1",
+      workspaceId: "w1",
+      runtimeId: "r1",
+      name: "Agent",
+      description: "d",
+      instructions: "i",
+      runtimeMode: "auto",
+      runtimeConfig: { model: "sonnet", provider: { kind: "default" } },
+      status: "active",
+      maxConcurrentTasks: 1,
+      ...baseFields(),
+    });
+    expect(res.runtime_config).toEqual({ model: "sonnet", provider: { kind: "default" } });
+  });
 });
 
 describe("runtimeToResponse", () => {

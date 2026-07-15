@@ -46,6 +46,60 @@ import { toast } from "sonner";
 import { Switch } from "@/components/ui/switch";
 import { AutoResizeTextarea } from "@/components/ui/auto-resize-textarea";
 
+// --- Provider Select ---
+//
+// "Default" leaves runtime_config.provider unset — the assigned runtime's
+// own default applies, unchanged from before this picker existed. Only
+// "OpenRouter" writes a provider config, and even then never an apiKey —
+// the server fills that in from its own env (see
+// src/web/src/lib/api/provider-keys.ts). Kept to these two options for
+// now; a "Custom" option would need the user to paste their own key, a
+// materially different flow not built here.
+export type ProviderKind = "default" | "openrouter";
+
+interface ProviderSelectProps {
+  value: ProviderKind;
+  onChange: (v: ProviderKind) => void;
+}
+
+export function ProviderSelect({ value, onChange }: ProviderSelectProps) {
+  return (
+    <div className="space-y-1">
+      <Label className="text-xs text-muted-foreground">Provider</Label>
+      <Select value={value} onValueChange={(v) => v && onChange(v as ProviderKind)}>
+        <SelectTrigger>
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="default">Default</SelectItem>
+          <SelectItem value="openrouter">OpenRouter</SelectItem>
+        </SelectContent>
+      </Select>
+    </div>
+  );
+}
+
+/** Derive the ProviderSelect value from a persisted runtime_config.provider. */
+export function providerKindFromRuntimeConfig(rc: Record<string, unknown> | undefined | null): ProviderKind {
+  const p = rc?.provider as { kind?: string; providerId?: string } | undefined;
+  if (p?.kind === "pi-builtin" && p.providerId === "openrouter") return "openrouter";
+  return "default";
+}
+
+/**
+ * Build the `provider` field to send in a create/update payload. Form
+ * state is always initialized from the agent's current persisted provider
+ * (see providerKindFromRuntimeConfig), so resending it on every save is a
+ * no-op for agents that never had a provider configured — it round-trips
+ * `{ kind: "default" }`, which the server treats identically to "no
+ * provider at all" (see fillRuntimeConfigProviderApiKey).
+ */
+export function runtimeConfigProviderForSave(kind: ProviderKind): Record<string, unknown> {
+  return kind === "openrouter"
+    ? { kind: "pi-builtin", providerId: "openrouter" }
+    : { kind: "default" };
+}
+
 export function nameToHandle(name: string): string {
   return name
     .toLowerCase()
@@ -65,6 +119,8 @@ interface GeneralFieldsProps {
   setInstructions?: (v: string) => void;
   model: string;
   setModel: (v: string) => void;
+  provider?: ProviderKind;
+  setProvider?: (v: ProviderKind) => void;
   runtimeId: string;
   setRuntimeId: (v: string) => void;
   runtimes: Runtime[];
@@ -88,6 +144,8 @@ export function GeneralFields({
   setInstructions,
   model,
   setModel,
+  provider,
+  setProvider,
   runtimeId,
   setRuntimeId,
   runtimes,
@@ -240,13 +298,17 @@ export function GeneralFields({
             </div>
           )}
 
+          {setProvider && (
+            <ProviderSelect value={provider ?? "default"} onChange={setProvider} />
+          )}
+
           <div className="space-y-1">
             <Label className="text-xs text-muted-foreground">Model</Label>
             <input
               id="agent-model"
               value={model}
               onChange={(e) => setModel(e.target.value)}
-              placeholder="Default (runtime model)"
+              placeholder={provider === "openrouter" ? "e.g. google/gemma-4-31b-it:free" : "Default (runtime model)"}
               list="agent-model-options"
               className="w-full border-0 bg-transparent px-0 py-1 text-sm text-foreground shadow-none outline-none placeholder:text-muted-foreground/40 focus-visible:ring-0"
             />

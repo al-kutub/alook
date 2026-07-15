@@ -34,10 +34,12 @@ vi.mock("@alook/shared", async () => {
   };
 });
 
+let mockEnv: Record<string, unknown> = { OPENROUTER_API_KEY: "sk-or-test-fake-value" };
+
 vi.mock("@/lib/middleware/auth", () => ({
   withAuth: vi.fn((handler: any) => async (req: any, ctx?: any) => {
     const params = ctx?.params instanceof Promise ? await ctx.params : ctx?.params;
-    return handler(req, { env: {}, userId: "u1", email: "u@t.com", params });
+    return handler(req, { env: mockEnv, userId: "u1", email: "u@t.com", params });
   }),
 }));
 
@@ -74,7 +76,10 @@ vi.mock("@/lib/agent-visibility", () => ({
 
 import { GET, POST } from "./route";
 
-beforeEach(() => vi.clearAllMocks());
+beforeEach(() => {
+  vi.clearAllMocks();
+  mockEnv = { OPENROUTER_API_KEY: "sk-or-test-fake-value" };
+});
 
 describe("GET /api/agents", () => {
   it("lists agents in workspace", async () => {
@@ -225,5 +230,76 @@ describe("POST /api/agents", () => {
         runtimeConfig: { model: "claude-sonnet-4-6" },
       }),
     );
+  });
+
+  it("fills in the real OpenRouter apiKey server-side when the client omits it", async () => {
+    mockGetAgentRuntimeForWorkspace.mockResolvedValue({ machineLastSeenAt: null, runtimeMode: "local" });
+    mockCreateAgent.mockResolvedValue({ id: "a1", name: "New Agent" });
+
+    const req = new NextRequest("http://localhost/api/agents", {
+      method: "POST",
+      body: JSON.stringify({
+        ...validBody,
+        runtime_config: {
+          model: "google/gemma-4-31b-it:free",
+          provider: { kind: "pi-builtin", providerId: "openrouter" },
+        },
+      }),
+    });
+    const res = await POST(req, {});
+    const bodyText = await res.text();
+
+    expect(res.status).toBe(201);
+    expect(bodyText).not.toContain("sk-or-test-fake-value");
+    expect(mockCreateAgent).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        runtimeConfig: expect.objectContaining({
+          provider: { kind: "pi-builtin", providerId: "openrouter", apiKey: "sk-or-test-fake-value" },
+        }),
+      }),
+    );
+  });
+
+  it("never persists a client-supplied apiKey for pi-builtin/openrouter — always overwrites from env", async () => {
+    mockGetAgentRuntimeForWorkspace.mockResolvedValue({ machineLastSeenAt: null, runtimeMode: "local" });
+    mockCreateAgent.mockResolvedValue({ id: "a1", name: "New Agent" });
+
+    const req = new NextRequest("http://localhost/api/agents", {
+      method: "POST",
+      body: JSON.stringify({
+        ...validBody,
+        runtime_config: {
+          provider: { kind: "pi-builtin", providerId: "openrouter", apiKey: "client-supplied-fake" },
+        },
+      }),
+    });
+    await POST(req, {});
+
+    expect(mockCreateAgent).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        runtimeConfig: expect.objectContaining({
+          provider: { kind: "pi-builtin", providerId: "openrouter", apiKey: "sk-or-test-fake-value" },
+        }),
+      }),
+    );
+  });
+
+  it("returns 400 and does not create the agent when no server OpenRouter key is configured", async () => {
+    mockEnv = {};
+    mockGetAgentRuntimeForWorkspace.mockResolvedValue({ machineLastSeenAt: null, runtimeMode: "local" });
+
+    const req = new NextRequest("http://localhost/api/agents", {
+      method: "POST",
+      body: JSON.stringify({
+        ...validBody,
+        runtime_config: { provider: { kind: "pi-builtin", providerId: "openrouter" } },
+      }),
+    });
+    const res = await POST(req, {});
+
+    expect(res.status).toBe(400);
+    expect(mockCreateAgent).not.toHaveBeenCalled();
   });
 });

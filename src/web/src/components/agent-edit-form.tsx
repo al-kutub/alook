@@ -29,6 +29,10 @@ import {
   GeneralFields,
   AllowedSendersTab,
   AgentAccessTab,
+  ProviderSelect,
+  type ProviderKind,
+  providerKindFromRuntimeConfig,
+  runtimeConfigProviderForSave,
 } from "@/components/agent-form-fields";
 import {
   type AvatarConfig,
@@ -70,6 +74,8 @@ function UsageRing({ ratio, size = 16, stroke = 1.5 }: { ratio: number; size?: n
 function RuntimeTab({
   model,
   setModel,
+  runtimeProvider,
+  setRuntimeProvider,
   runtimeId,
   setRuntimeId,
   runtimes,
@@ -77,6 +83,8 @@ function RuntimeTab({
 }: {
   model: string;
   setModel: (v: string) => void;
+  runtimeProvider: ProviderKind;
+  setRuntimeProvider: (v: ProviderKind) => void;
   runtimeId: string;
   setRuntimeId: (v: string) => void;
   runtimes: Runtime[];
@@ -100,12 +108,14 @@ function RuntimeTab({
         />
       </div>
 
+      <ProviderSelect value={runtimeProvider} onChange={setRuntimeProvider} />
+
       <div className="space-y-2">
         <Label className="text-xs text-muted-foreground">Model</Label>
         <Input
           value={model}
           onChange={(e) => setModel(e.target.value)}
-          placeholder="Default (runtime model)"
+          placeholder={runtimeProvider === "openrouter" ? "e.g. google/gemma-4-31b-it:free" : "Default (runtime model)"}
           list="agent-model-options-edit"
         />
         {providerModels.length > 0 && (
@@ -230,6 +240,9 @@ export function AgentEditForm({
     const rc = agent.runtime_config;
     return typeof rc?.model === "string" ? rc.model : "";
   });
+  const [runtimeProvider, setRuntimeProvider] = useState<ProviderKind>(() =>
+    providerKindFromRuntimeConfig(agent.runtime_config)
+  );
 
   // Heartbeat tab state — auto-saves independently, like visibility
   const [heartbeatEnabled, setHeartbeatEnabled] = useState(agent.heartbeat_enabled ?? false);
@@ -372,7 +385,10 @@ export function AgentEditForm({
       name,
       description,
       runtime_id: runtimeId,
-      runtime_config: model ? { model } : {},
+      runtime_config: {
+        ...(model ? { model } : {}),
+        provider: runtimeConfigProviderForSave(runtimeProvider),
+      },
       avatar_url: serializeAvatarConfig(avatarConfig),
     });
   };
@@ -489,6 +505,8 @@ export function AgentEditForm({
                   <RuntimeTab
                     model={model}
                     setModel={setModel}
+                    runtimeProvider={runtimeProvider}
+                    setRuntimeProvider={setRuntimeProvider}
                     runtimeId={runtimeId}
                     setRuntimeId={setRuntimeId}
                     runtimes={runtimes}

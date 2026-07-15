@@ -133,6 +133,25 @@ function ensureDevVars() {
     writeFileSync(webSecretsPath, contents, { mode: 0o600 });
   }
 
+  // OPENROUTER_API_KEY: rewritten every boot (not just first-generation) so
+  // an operator can add/rotate the Railway secret without wiping the
+  // volume — same pattern as BETTER_AUTH_TRUSTED_ORIGINS above.
+  // `wrangler dev --local` (Miniflare) does NOT forward the host process's
+  // env into the Worker's `env` binding — only .dev.vars / [vars] in
+  // wrangler.toml reach `ctx.env` inside a route handler (see
+  // ENCRYPTION_KEY, which is generated straight into .dev.vars rather than
+  // just left in process.env for exactly this reason). Optional: skip
+  // silently if unset, like GH_TOKEN — OpenRouter agents just aren't
+  // creatable until it's configured.
+  if (process.env.OPENROUTER_API_KEY) {
+    let contents = readFileSync(webSecretsPath, "utf-8");
+    const line = `OPENROUTER_API_KEY=${process.env.OPENROUTER_API_KEY}`;
+    contents = /^OPENROUTER_API_KEY=.*$/m.test(contents)
+      ? contents.replace(/^OPENROUTER_API_KEY=.*$/m, line)
+      : `${contents.trimEnd()}\n${line}\n`;
+    writeFileSync(webSecretsPath, contents, { mode: 0o600 });
+  }
+
   writeFileSync(join(WEB_DIR, ".dev.vars"), readFileSync(webSecretsPath));
 
   const emailSecretsPath = join(SECRETS_DIR, "email-worker.dev.vars");
