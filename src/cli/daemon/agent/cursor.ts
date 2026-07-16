@@ -97,9 +97,9 @@ export class CursorBackend implements AgentBackend {
   execute(prompt: string, options: ExecOptions): AgentSession {
     const args = ["--print", "--output-format", "stream-json", "--yolo", "--approve-mcps", "--trust"];
 
-    if (options.model) {
-      args.push("--model", options.model);
-    }
+    // No model resolved from agent config / ALOOK_CURSOR_MODEL -> pin to "auto"
+    // rather than leaving cursor-agent's own unspecified default to decide.
+    args.push("--model", options.model || "auto");
     if (options.resumeSessionId) {
       args.push("--resume", options.resumeSessionId);
     }

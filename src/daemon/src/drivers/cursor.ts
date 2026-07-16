@@ -39,7 +39,9 @@ export class CursorDriver implements Driver {
     const { spawnEnv } = await prepareCliTransport(ctx, { NO_COLOR: "1" });
     const f = resolveLaunchFieldsOrDefault(ctx.config.runtimeConfig);
     const args = ["--print", "--output-format", "stream-json", "--yolo", "--approve-mcps", "--trust"];
-    if (f.model) args.push("--model", f.model);
+    // No explicit model on the agent config ({kind:"default"}) -> pin to "auto"
+    // rather than leaving cursor-agent's own unspecified default to decide.
+    args.push("--model", f.model || "auto");
     if (ctx.config.sessionId) args.push("--resume", ctx.config.sessionId);
     args.push(ctx.prompt);
 
