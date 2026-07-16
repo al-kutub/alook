@@ -75,7 +75,12 @@ export const PATCH = withAuth(async (req, ctx) => {
 
   const existing = await queries.agent.getAgent(db, id, ws.workspaceId, ctx.userId);
   if (!existing) return writeError("agent not found", 404);
-  if (existing.ownerId !== ctx.userId) return writeError("agent owner access required", 403);
+  // Agent owner (typically whichever agent hired it) OR the workspace owner
+  // (the human running the instance) can manage it — otherwise a human admin
+  // can never reconfigure an agent hired by another agent (e.g. a CEO hire).
+  if (existing.ownerId !== ctx.userId && ws.memberRole !== "owner") {
+    return writeError("agent owner access required", 403);
+  }
 
   const spentMonthlyCents = await queries.costEvent.getMonthlySpentCents(db, id, ws.workspaceId);
   // Budget just changed (or cleared) — reconcile the paused flag immediately
@@ -115,7 +120,9 @@ export const DELETE = withAuth(async (req, ctx) => {
 
   const existing = await queries.agent.getAgent(db, id, ws.workspaceId, ctx.userId);
   if (!existing) return writeError("agent not found", 404);
-  if (existing.ownerId !== ctx.userId) return writeError("agent owner access required", 403);
+  if (existing.ownerId !== ctx.userId && ws.memberRole !== "owner") {
+    return writeError("agent owner access required", 403);
+  }
 
   const deleted = await queries.agent.deleteAgent(db, id, ws.workspaceId, ctx.userId);
   if (!deleted) {

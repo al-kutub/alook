@@ -51,6 +51,7 @@ vi.mock("@/lib/api/responses", () => ({
 }));
 
 import { GET, DELETE, PATCH } from "./route";
+import { withWorkspaceMember } from "@/lib/middleware/workspace";
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -117,6 +118,18 @@ describe("DELETE /api/agents/[id]", () => {
 
     expect(res.status).toBe(403);
     expect(body.error).toBe("agent owner access required");
+  });
+
+  it("allows deletion by the workspace owner even when not the agent owner", async () => {
+    vi.mocked(withWorkspaceMember).mockResolvedValueOnce({ workspaceId: "w1", memberRole: "owner" });
+    mockGetAgent.mockResolvedValue({ id: "a1", ownerId: "other-user" });
+    mockDeleteAgent.mockResolvedValue(true);
+
+    const req = new NextRequest("http://localhost/api/agents/a1", { method: "DELETE" });
+    const ctx = { params: Promise.resolve({ id: "a1" }) };
+    const res = await DELETE(req, ctx);
+
+    expect(res.status).toBe(204);
   });
 });
 
@@ -293,6 +306,27 @@ describe("PATCH /api/agents/[id]", () => {
 
     expect(res.status).toBe(403);
     expect(body.error).toBe("agent owner access required");
+  });
+
+  it("allows a runtime_config update by the workspace owner even when not the agent owner (e.g. reconfiguring a CEO-hired agent for OpenRouter)", async () => {
+    vi.mocked(withWorkspaceMember).mockResolvedValueOnce({ workspaceId: "w1", memberRole: "owner" });
+    mockGetAgent.mockResolvedValue({ id: "a1", ownerId: "other-user" });
+    mockUpdateAgent.mockResolvedValue({ id: "a1", name: "Agent" });
+
+    const req = new NextRequest("http://localhost/api/agents/a1", {
+      method: "PATCH",
+      body: JSON.stringify({
+        runtime_config: {
+          model: "openrouter/google/gemma-4-26b-a4b-it:free",
+          provider: { kind: "pi-builtin", providerId: "openrouter" },
+        },
+      }),
+    });
+    const ctx = { params: Promise.resolve({ id: "a1" }) };
+    const res = await PATCH(req, ctx);
+
+    expect(res.status).toBe(200);
+    expect(mockUpdateAgent).toHaveBeenCalled();
   });
 
   it("fills in the real OpenRouter apiKey server-side when the client omits it", async () => {
